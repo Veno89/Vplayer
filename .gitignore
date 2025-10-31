@@ -1,1 +1,16 @@
-node_modules
+# Ignore dependencies and build output
+/node_modules/
+/dist/
+*.exe
+*.dll
+*.bin
+*.pak
+*.lock
+.DS_Store
+.env
+.vscode/
+Thumbs.db
+*.log
+*.tmp
+# Ignore Electron build output
+/dist/portable/
