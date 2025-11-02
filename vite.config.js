@@ -1,11 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Use a relative base for production so assets load correctly when opening
-// dist/index.html via file:// (as in portable/Electron builds).
-const isProduction = process.env.NODE_ENV === 'production'
-
 export default defineConfig({
-  base: isProduction ? './' : '/',
-  plugins: [react()]
+  plugins: [react()],
+  clearScreen: false,
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+  envPrefix: ['VITE_', 'TAURI_'],
+  build: {
+    target: ['es2021', 'chrome100', 'safari13'],
+    minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
+    sourcemap: !!process.env.TAURI_DEBUG,
+  },
 })

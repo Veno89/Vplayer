@@ -1,19 +1,11 @@
 import React from 'react';
 
-export const LibraryContent = React.memo(({ libraryFolders, tracksCount, isScanning, scanProgress, handleAddFolder, handleRemoveFolder, handleRescanAll, currentColors }) => {
+export const LibraryContent = React.memo(({ libraryFolders, tracksCount, isScanning, scanProgress, handleAddFolder, handleRemoveFolder, currentColors }) => {
   return (
     <div className="flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between">
         <h3 className="text-white font-semibold">Music Folders</h3>
         <div className="flex gap-2">
-          <button 
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); handleRescanAll(); }}
-            disabled={isScanning}
-            className={`px-3 py-1 bg-slate-700 text-white text-xs rounded hover:bg-slate-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            Rescan All
-          </button>
           <button 
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); handleAddFolder(); }}
@@ -36,7 +28,7 @@ export const LibraryContent = React.memo(({ libraryFolders, tracksCount, isScann
               <span className="text-slate-500 text-xs">{folder.dateAdded}</span>
               <button 
                 onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => { e.stopPropagation(); handleRemoveFolder(folder.path); }}
+                onClick={(e) => { e.stopPropagation(); handleRemoveFolder(folder.id, folder.path); }}
                 disabled={isScanning}
                 className="ml-2 px-2 py-1 bg-red-700 text-white text-xs rounded hover:bg-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >

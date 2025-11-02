@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { List } from 'lucide-react';
 import { FixedSizeList as ListVirtual } from 'react-window';
 import { Row } from './Row';
@@ -14,7 +14,8 @@ export const PlaylistContent = React.memo(({ tracks, currentTrack, setCurrentTra
     );
   }
 
-  const itemData = useMemo(() => ({ tracks, currentTrack, onSelect: setCurrentTrack, currentColors, loadingTrackIndex }), [tracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex]);
+  // Don't memoize - just create inline
+  const itemData = { tracks, currentTrack, onSelect: setCurrentTrack, currentColors, loadingTrackIndex };
   const itemSize = 64;
   const listHeight = Math.min(tracks.length * itemSize, 400);
 

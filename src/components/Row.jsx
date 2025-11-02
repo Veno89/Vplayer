@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDuration } from '../utils/formatters';
 
 export const Row = React.memo(({ data, index, style }) => {
   const { tracks, currentTrack, onSelect, currentColors, loadingTrackIndex } = data;
@@ -15,7 +16,7 @@ export const Row = React.memo(({ data, index, style }) => {
       <span className="flex-1 truncate">{track ? track.title : 'Unknown'}</span>
       <span className="w-32 truncate">{track ? track.artist : ''}</span>
       <span className="w-20 truncate">{track ? track.album : ''}</span>
-      <span className="w-12 text-right">{track ? track.duration : ''}</span>
+      <span className="w-12 text-right">{track && track.duration ? formatDuration(track.duration) : ''}</span>
     </div>
   );
 });

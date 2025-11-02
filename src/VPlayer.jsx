@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useCallback } from 'react';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
-import { LibraryProvider, useLibraryContext } from './context/LibraryContext';
 import { UIProvider, useUIContext } from './context/UIContext';
-import { useAudio } from './hooks/useAudio';
+import { AudioContextProvider } from './context/AudioContextProvider';
+import { useAudioTauri } from './hooks/useAudioTauri';
+import { useLibraryTauri } from './hooks/useLibraryTauri';
 import { 
-  Play, Pause, SkipForward, SkipBack, Volume2, Music, 
-  Settings, List, Sliders, FolderOpen, Shuffle, Repeat 
+  Music, Settings, List, Sliders, FolderOpen
 } from 'lucide-react';
 import { PlayerWindow } from './windows/PlayerWindow';
 import { PlaylistWindow } from './windows/PlaylistWindow';
@@ -28,28 +28,24 @@ const VPlayerInner = () => {
     loadingTrackIndex, setLoadingTrackIndex
   } = usePlayer();
 
-  // Library context - now with all the enhanced functions
+  // Library hook (Tauri)
+  const library = useLibraryTauri();
   const {
     tracks,
     libraryFolders,
-    orphanedTracks,
     isScanning,
     scanProgress,
-    addFolder,           // From enhanced useLibrary
-    removeFolder,        // From enhanced useLibrary
-    rescanFolder,        // From enhanced useLibrary
-    rescanAll,           // From enhanced useLibrary
-    cancelScan,          // From enhanced useLibrary
-    removeTrack,         // From enhanced useLibrary
-    addOrphanedTrack,    // From enhanced useLibrary
+    addFolder,
+    removeFolder,
+    removeTrack,
     searchQuery,
     setSearchQuery,
     sortBy,
     setSortBy,
     sortOrder,
     setSortOrder,
-    filteredTracks
-  } = useLibraryContext();
+    filteredTracks,
+  } = library;
 
   // UI context
   const {
@@ -61,115 +57,166 @@ const VPlayerInner = () => {
     debugVisible, setDebugVisible
   } = useUIContext();
 
-  // Audio hook - THIS WAS MISSING!
-  const audio = useAudio({
+  // Audio hook (Tauri)
+  const audio = useAudioTauri({
     initialVolume: volume,
     onEnded: () => {
-      // Handle track end based on repeat mode
       if (repeatMode === 'one') {
         audio.seek(0);
         audio.play();
-      } else if (repeatMode === 'all' || currentTrack < tracks.length - 1) {
+      } else if (repeatMode === 'all' || currentTrack < filteredTracks.length - 1) {
         handleNextTrack();
       } else {
         setPlaying(false);
       }
     },
-    onLoadedMetadata: (dur) => {
-      setDuration(dur);
-      setLoadingTrackIndex(null);
-    },
     onTimeUpdate: (time) => {
       setProgress(time);
     },
-    onError: (err) => {
-      console.error('Audio playback error:', err);
-      setLoadingTrackIndex(null);
-      setPlaying(false);
-      // Optionally skip to next track on error
-      // handleNextTrack();
-    }
   });
 
-  // Sync volume changes
+  // Sync duration from audio hook
   useEffect(() => {
-    audio.changeVolume(volume);
-  }, [volume, audio]);
+    setDuration(audio.duration);
+  }, [audio.duration, setDuration]);
 
-  // Sync playing state
   useEffect(() => {
-    if (playing) {
+    setProgress(audio.progress);
+    // Save position every few seconds (not every update to avoid excessive writes)
+    if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
+      localStorage.setItem('vplayer_last_position', audio.progress.toString());
+    }
+  }, [audio.progress, setProgress]);
+
+  // Volume change handler
+  const handleVolumeChange = useCallback((newVolume) => {
+    setVolume(newVolume);
+    audio.changeVolume(newVolume);
+  }, [audio, setVolume]);
+
+  // Track loading state
+  const [loadedTrackId, setLoadedTrackId] = React.useState(null);
+  const [hasRestoredTrack, setHasRestoredTrack] = React.useState(false);
+
+  // Restore last played track on mount
+  useEffect(() => {
+    if (hasRestoredTrack || filteredTracks.length === 0) return;
+    
+    const savedTrackId = localStorage.getItem('vplayer_last_track');
+    if (savedTrackId) {
+      const trackIndex = filteredTracks.findIndex(t => t.id === savedTrackId);
+      if (trackIndex !== -1) {
+        setCurrentTrack(trackIndex);
+      }
+    }
+    setHasRestoredTrack(true);
+  }, [filteredTracks, hasRestoredTrack, setCurrentTrack]);
+
+  // Sync playing state with audio
+  useEffect(() => {
+    if (playing && !audio.isPlaying) {
       audio.play();
-    } else {
+    } else if (!playing && audio.isPlaying) {
       audio.pause();
     }
   }, [playing, audio]);
 
   // Load track when currentTrack changes
   useEffect(() => {
-    if (currentTrack !== null && tracks[currentTrack]) {
-      const track = tracks[currentTrack];
-      if (track.url) {
+    const loadTrack = async () => {
+      if (currentTrack !== null && filteredTracks[currentTrack]) {
+        const track = filteredTracks[currentTrack];
+        
+        // Save last played track and position
+        localStorage.setItem('vplayer_last_track', track.id);
+        localStorage.setItem('vplayer_last_position', progress.toString());
+        
+        // Don't reload if already loaded
+        if (loadedTrackId === track.id) {
+          return;
+        }
+        
+        console.log('Loading track:', track.name);
         setLoadingTrackIndex(currentTrack);
-        audio.loadSrc(track.url);
-        // Auto-play if was playing
-        if (playing) {
-          audio.play();
+        
+        try {
+          await audio.loadTrack(track);
+          setLoadedTrackId(track.id);
+          setLoadingTrackIndex(null);
+          setDuration(track.duration || 0);
+          
+          // Restore last position if this is the restored track
+          const savedTrackId = localStorage.getItem('vplayer_last_track');
+          if (track.id === savedTrackId && hasRestoredTrack && progress === 0) {
+            const savedPosition = localStorage.getItem('vplayer_last_position');
+            if (savedPosition) {
+              const position = parseFloat(savedPosition);
+              if (position > 0 && position < track.duration) {
+                await audio.seek(position);
+                setProgress(position);
+              }
+            }
+          }
+          
+          // Auto-play if playing state is true
+          if (playing) {
+            await audio.play();
+          }
+        } catch (err) {
+          console.error('Failed to load track:', err);
+          setLoadingTrackIndex(null);
+          setLoadedTrackId(null);
         }
       }
-    }
-  }, [currentTrack, tracks, audio, playing, setLoadingTrackIndex]);
+    };
+    
+    loadTrack();
+  }, [currentTrack, filteredTracks, loadedTrackId, audio, playing, setLoadingTrackIndex, setDuration, hasRestoredTrack, progress]);
 
-  // Track navigation with shuffle support
+  // Track navigation
   const handleNextTrack = useCallback(() => {
-    if (!tracks.length) return;
+    if (!filteredTracks.length) return;
     
     if (shuffle) {
-      // Random track (avoid current track)
       let nextIdx;
       do {
-        nextIdx = Math.floor(Math.random() * tracks.length);
-      } while (nextIdx === currentTrack && tracks.length > 1);
+        nextIdx = Math.floor(Math.random() * filteredTracks.length);
+      } while (nextIdx === currentTrack && filteredTracks.length > 1);
       setCurrentTrack(nextIdx);
     } else {
-      // Sequential
       const nextIdx = currentTrack + 1;
-      if (nextIdx < tracks.length) {
+      if (nextIdx < filteredTracks.length) {
         setCurrentTrack(nextIdx);
       } else if (repeatMode === 'all') {
         setCurrentTrack(0);
       }
     }
-  }, [currentTrack, tracks, shuffle, repeatMode, setCurrentTrack]);
+  }, [currentTrack, filteredTracks, shuffle, repeatMode, setCurrentTrack]);
 
   const handlePrevTrack = useCallback(() => {
-    if (!tracks.length) return;
+    if (!filteredTracks.length) return;
     
-    // If more than 3 seconds in, restart current track
     if (progress > 3) {
       audio.seek(0);
       return;
     }
 
     if (shuffle) {
-      // Random track
       let prevIdx;
       do {
-        prevIdx = Math.floor(Math.random() * tracks.length);
-      } while (prevIdx === currentTrack && tracks.length > 1);
+        prevIdx = Math.floor(Math.random() * filteredTracks.length);
+      } while (prevIdx === currentTrack && filteredTracks.length > 1);
       setCurrentTrack(prevIdx);
     } else {
-      // Sequential
       const prevIdx = currentTrack - 1;
       if (prevIdx >= 0) {
         setCurrentTrack(prevIdx);
       } else if (repeatMode === 'all') {
-        setCurrentTrack(tracks.length - 1);
+        setCurrentTrack(filteredTracks.length - 1);
       }
     }
-  }, [currentTrack, tracks, shuffle, repeatMode, progress, audio, setCurrentTrack]);
+  }, [currentTrack, filteredTracks, shuffle, repeatMode, progress, audio, setCurrentTrack]);
 
-  // Seek handler
   const handleSeek = useCallback((percent) => {
     if (duration > 0) {
       const time = (percent / 100) * duration;
@@ -177,7 +224,6 @@ const VPlayerInner = () => {
     }
   }, [duration, audio]);
 
-  // Toggle window helper
   const toggleWindow = useCallback((id) => {
     setWindows(prev => ({
       ...prev,
@@ -185,7 +231,6 @@ const VPlayerInner = () => {
     }));
   }, [setWindows]);
 
-  // Bring window to front
   const bringToFront = useCallback((id) => {
     setMaxZIndex(prev => {
       const newZ = prev + 1;
@@ -197,27 +242,22 @@ const VPlayerInner = () => {
     });
   }, [setMaxZIndex, setWindows]);
 
-  // Add folder wrapper with error handling
   const handleAddFolder = useCallback(async () => {
     try {
-      const count = await addFolder();
-      console.log(`Added ${count} tracks`);
+      await addFolder();
+      console.log('Folder added successfully');
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error('Failed to add folder:', err);
-        alert(`Failed to add folder: ${err.message}`);
-      }
+      console.error('Failed to add folder:', err);
+      alert(`Failed to add folder: ${err.message}`);
     }
   }, [addFolder]);
 
-  // Remove folder wrapper
-  const handleRemoveFolder = useCallback(async (folderId) => {
+  const handleRemoveFolder = useCallback(async (folderId, folderPath) => {
     try {
-      const count = await removeFolder(folderId);
-      console.log(`Removed ${count} tracks`);
+      await removeFolder(folderId, folderPath);
+      console.log('Folder removed successfully');
       
-      // If current track was in removed folder, stop playback
-      if (currentTrack !== null && tracks[currentTrack]?.folderId === folderId) {
+      if (currentTrack !== null && filteredTracks[currentTrack]?.folderId === folderId) {
         setCurrentTrack(null);
         setPlaying(false);
       }
@@ -225,40 +265,24 @@ const VPlayerInner = () => {
       console.error('Failed to remove folder:', err);
       alert(`Failed to remove folder: ${err.message}`);
     }
-  }, [removeFolder, currentTrack, tracks, setCurrentTrack, setPlaying]);
+  }, [removeFolder, currentTrack, filteredTracks, setCurrentTrack, setPlaying]);
 
-  // Equalizer bands (could be moved to context)
+  // EQ bands state
   const [eqBands, setEqBands] = React.useState([
     { freq: "60Hz", value: 50 },
-    { freq: "170Hz", value: 45 },
-    { freq: "310Hz", value: 55 },
+    { freq: "170Hz", value: 50 },
+    { freq: "310Hz", value: 50 },
     { freq: "600Hz", value: 50 },
-    { freq: "1kHz", value: 60 },
-    { freq: "3kHz", value: 48 },
-    { freq: "6kHz", value: 52 },
-    { freq: "12kHz", value: 58 },
-    { freq: "14kHz", value: 55 },
+    { freq: "1kHz", value: 50 },
+    { freq: "3kHz", value: 50 },
+    { freq: "6kHz", value: 50 },
+    { freq: "12kHz", value: 50 },
+    { freq: "14kHz", value: 50 },
     { freq: "16kHz", value: 50 }
   ]);
 
-  // Visualizer bars (could be connected to actual audio analysis)
-  const [visualizerBars, setVisualizerBars] = React.useState(Array(32).fill(10));
-
-  // Update visualizer based on audio (placeholder - needs Web Audio API)
-  useEffect(() => {
-    if (!playing) return;
-    
-    const interval = setInterval(() => {
-      setVisualizerBars(bars => 
-        bars.map(() => Math.random() * 90 + 10)
-      );
-    }, 100);
-    
-    return () => clearInterval(interval);
-  }, [playing]);
-
-  // Window configurations
-  const windowConfigs = useMemo(() => [
+  // Window configurations - DON'T memoize, just define inline
+  const windowConfigs = [
     {
       id: 'player',
       title: 'Player',
@@ -266,13 +290,12 @@ const VPlayerInner = () => {
       content: (
         <PlayerWindow
           currentTrack={currentTrack}
-          tracks={tracks}
+          tracks={filteredTracks}
           playing={playing}
           progress={progress}
           duration={duration}
           volume={volume}
-          setVolume={setVolume}
-          colorScheme={colorScheme}
+          setVolume={handleVolumeChange}
           currentColors={currentColors}
           togglePlay={() => setPlaying(p => !p)}
           nextTrack={handleNextTrack}
@@ -284,6 +307,8 @@ const VPlayerInner = () => {
           seekToPercent={handleSeek}
           toggleWindow={toggleWindow}
           isLoading={audio.isLoading}
+          isMuted={false}
+          toggleMute={() => {}}
         />
       ),
     },
@@ -309,18 +334,13 @@ const VPlayerInner = () => {
       content: (
         <LibraryWindow
           libraryFolders={libraryFolders}
-          tracks={tracks}
-          tracksCount={tracks.length}
+          tracks={filteredTracks}
+          tracksCount={filteredTracks.length}
           currentColors={currentColors}
           isScanning={isScanning}
           scanProgress={scanProgress}
-          orphanedTracks={orphanedTracks}
-          currentTrack={currentTrack ?? 0}
           handleAddFolder={handleAddFolder}
           handleRemoveFolder={handleRemoveFolder}
-          handleRescanAll={rescanAll}
-          cancelScan={cancelScan}
-          addOrphanedTrack={addOrphanedTrack}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           sortBy={sortBy}
@@ -339,7 +359,6 @@ const VPlayerInner = () => {
           eqBands={eqBands}
           setEqBands={setEqBands}
           currentColors={currentColors}
-          audioElement={audio.audioRef.current}
         />
       ),
     },
@@ -349,9 +368,7 @@ const VPlayerInner = () => {
       icon: Music,
       content: (
         <VisualizerWindow
-          visualizerBars={visualizerBars}
           currentColors={currentColors}
-          audioElement={audio.audioRef.current}
           isPlaying={playing}
         />
       ),
@@ -373,78 +390,69 @@ const VPlayerInner = () => {
         />
       ),
     },
-  ], [
-    currentTrack, tracks, playing, progress, duration, volume, colorScheme,
-    currentColors, shuffle, repeatMode, loadingTrackIndex, libraryFolders,
-    isScanning, scanProgress, orphanedTracks, eqBands, visualizerBars,
-    windows, colorSchemes, debugVisible, filteredTracks, searchQuery,
-    sortBy, sortOrder, audio, handleNextTrack, handlePrevTrack, handleSeek,
-    toggleWindow, handleAddFolder, handleRemoveFolder, rescanAll, cancelScan,
-    addOrphanedTrack, removeTrack, setSearchQuery, setSortBy, setSortOrder,
-    setVolume, setPlaying, setShuffle, setRepeatMode, setCurrentTrack,
-    setColorScheme, setDebugVisible, setEqBands
-  ]);
+  ];
 
   return (
     <div className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative">
-      {/* Hidden audio element - CRITICAL! */}
-      <audio ref={audio.audioRef} />
-      
-      {/* Debug toggle button */}
-      {process.env.NODE_ENV === 'development' && (
-        <button
-          title="Toggle Debug"
-          onClick={() => setDebugVisible(v => !v)}
-          className="fixed bottom-4 right-4 z-[60] bg-slate-800 text-white px-3 py-2 rounded-full shadow-lg hover:bg-slate-700 transition-colors text-xs font-mono"
-        >
-          {debugVisible ? 'Hide' : 'Show'} Debug
-        </button>
-      )}
-
-      {/* Debug panel */}
-      {debugVisible && (
-        <div className="fixed bottom-16 right-4 z-[60] bg-slate-800/95 text-white p-4 rounded-lg shadow-xl max-w-sm text-xs font-mono space-y-1">
-          <div>Track: {currentTrack !== null ? `${currentTrack + 1}/${tracks.length}` : 'None'}</div>
-          <div>Playing: {playing ? 'Yes' : 'No'}</div>
-          <div>Loading: {audio.isLoading ? 'Yes' : 'No'}</div>
-          <div>Progress: {progress.toFixed(1)}s / {duration.toFixed(1)}s</div>
-          <div>Volume: {(volume * 100).toFixed(0)}%</div>
-          <div>Shuffle: {shuffle ? 'On' : 'Off'}</div>
-          <div>Repeat: {repeatMode}</div>
-          <div>Folders: {libraryFolders.length}</div>
-          <div>Scanning: {isScanning ? `${scanProgress}%` : 'No'}</div>
-        </div>
-      )}
-
-      {/* Render floating windows */}
-      {windowConfigs.map(cfg => (
-        windows[cfg.id]?.visible && (
-          <Window
-            key={cfg.id}
-            id={cfg.id}
-            title={cfg.title}
-            icon={cfg.icon}
-            windowData={windows[cfg.id]}
-            bringToFront={bringToFront}
-            setWindows={setWindows}
-            toggleWindow={toggleWindow}
-            currentColors={currentColors}
+      {/* Wrap with AudioContextProvider - no audio element needed for Tauri */}
+      <AudioContextProvider audioElement={null}>
+        {/* Debug toggle */}
+        {process.env.NODE_ENV === 'development' && (
+          <button
+            title="Toggle Debug"
+            onClick={() => setDebugVisible(v => !v)}
+            className="fixed bottom-4 right-4 z-[60] bg-slate-800 text-white px-3 py-2 rounded-full shadow-lg hover:bg-slate-700 transition-colors text-xs font-mono"
           >
-            {cfg.content}
-          </Window>
-        )
-      ))}
+            {debugVisible ? 'Hide' : 'Show'} Debug
+          </button>
+        )}
+
+        {/* Debug panel */}
+        {debugVisible && (
+          <div className="fixed bottom-16 right-4 z-[60] bg-slate-800/95 text-white p-4 rounded-lg shadow-xl max-w-sm text-xs font-mono space-y-1">
+            <div>Track: {currentTrack !== null ? `${currentTrack + 1}/${filteredTracks.length}` : 'None'}</div>
+            <div>Playing: {playing ? 'Yes' : 'No'}</div>
+            <div>Loading: {audio.isLoading ? 'Yes' : 'No'}</div>
+            <div>Progress: {progress.toFixed(1)}s / {duration.toFixed(1)}s</div>
+            <div>Volume: {(volume * 100).toFixed(0)}%</div>
+            <div>Shuffle: {shuffle ? 'On' : 'Off'}</div>
+            <div>Repeat: {repeatMode}</div>
+            <div>Folders: {libraryFolders.length}</div>
+            <div>Tracks: {filteredTracks.length} / {tracks.length}</div>
+            <div>Scanning: {isScanning ? `${scanProgress}%` : 'No'}</div>
+            <div>LoadedTrackId: {loadedTrackId ? 'Yes' : 'No'}</div>
+            {searchQuery && <div>Search: "{searchQuery}"</div>}
+          </div>
+        )}
+
+        {/* Render floating windows */}
+        {windowConfigs.map(cfg => (
+          windows[cfg.id]?.visible && (
+            <Window
+              key={cfg.id}
+              id={cfg.id}
+              title={cfg.title}
+              icon={cfg.icon}
+              windowData={windows[cfg.id]}
+              bringToFront={bringToFront}
+              setWindows={setWindows}
+              toggleWindow={toggleWindow}
+              currentColors={currentColors}
+            >
+              {cfg.content}
+            </Window>
+          )
+        ))}
+      </AudioContextProvider>
     </div>
   );
 };
 
 const VPlayer = () => (
   <PlayerProvider>
-    <LibraryProvider>
-      <UIProvider>
-        <VPlayerInner />
-      </UIProvider>
-    </LibraryProvider>
+    <UIProvider>
+      <VPlayerInner />
+    </UIProvider>
   </PlayerProvider>
 );
 

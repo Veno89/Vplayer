@@ -1,7 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 const UIContext = createContext();
-
 
 export function UIProvider({ children }) {
   // Load persisted UI state
@@ -22,8 +21,8 @@ export function UIProvider({ children }) {
   });
   const [maxZIndex, setMaxZIndex] = useState(persisted.maxZIndex || 10);
   const [colorScheme, setColorScheme] = useState(persisted.colorScheme || 'default');
-  const [currentColors, setCurrentColors] = useState(persisted.currentColors || { accent: '#fff', background: '#222' });
-  const [colorSchemes, setColorSchemes] = useState(persisted.colorSchemes || [
+  const [currentColors, setCurrentColors] = useState(persisted.currentColors || { accent: '#fff', background: '#222', primary: 'bg-cyan-500' });
+  const [colorSchemes] = useState([
     { name: 'default', accent: '#fff', background: '#222', primary: 'bg-cyan-500' },
     { name: 'blue', accent: '#3b82f6', background: '#1e293b', primary: 'bg-blue-500' },
     { name: 'emerald', accent: '#10b981', background: '#064e3b', primary: 'bg-emerald-500' },
@@ -32,24 +31,41 @@ export function UIProvider({ children }) {
   ]);
   const [debugVisible, setDebugVisible] = useState(persisted.debugVisible || false);
 
-  // Persist UI state on change
-  React.useEffect(() => {
-    localStorage.setItem('vplayer_ui', JSON.stringify({
-      windows,
-      maxZIndex,
-      colorScheme,
-      currentColors,
-      colorSchemes,
-      debugVisible
-    }));
-  }, [windows, maxZIndex, colorScheme, currentColors, colorSchemes, debugVisible]);
+  const saveTimeoutRef = useRef(null);
+
+  // Debounced persist UI state
+  useEffect(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem('vplayer_ui', JSON.stringify({
+          windows,
+          maxZIndex,
+          colorScheme,
+          currentColors,
+          debugVisible
+        }));
+      } catch (err) {
+        console.warn('Failed to persist UI state:', err);
+      }
+    }, 500);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [windows, maxZIndex, colorScheme, currentColors, debugVisible]);
 
   const value = {
     windows, setWindows,
     maxZIndex, setMaxZIndex,
     colorScheme, setColorScheme,
     currentColors, setCurrentColors,
-    colorSchemes, setColorSchemes,
+    colorSchemes,
     debugVisible, setDebugVisible
   };
 
@@ -57,5 +73,9 @@ export function UIProvider({ children }) {
 }
 
 export function useUIContext() {
-  return useContext(UIContext);
+  const context = useContext(UIContext);
+  if (!context) {
+    throw new Error('useUIContext must be used within a UIProvider');
+  }
+  return context;
 }
