@@ -141,8 +141,10 @@ export function useTrackLoading({
     };
     
     loadTrack();
-  }, [currentTrack, tracks, loadedTrackId, audio, playing, setLoadingTrackIndex, setDuration, hasRestoredTrack, toast, removeTrack, setCurrentTrack, handleNextTrack]);
-  // Note: progress is intentionally NOT in deps - it's only used to save position, not trigger reloads
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack, loadedTrackId]);
+  // Only re-run when currentTrack index or loadedTrackId changes
+  // All other values (tracks, audio, etc.) are accessed from the closure
 
   // Separate effect to save progress periodically
   useEffect(() => {
