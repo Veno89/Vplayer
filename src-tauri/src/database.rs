@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub struct Database {
-    conn: Mutex<Connection>,
+    pub conn: Mutex<Connection>,
 }
 
 impl Database {
@@ -99,6 +99,9 @@ impl Database {
             )",
             [],
         )?;
+        
+        // Initialize smart playlists table
+        crate::smart_playlists::create_smart_playlist_table(&conn)?;
         
         info!("Database initialized successfully");
         Ok(Self { conn: Mutex::new(conn) })
