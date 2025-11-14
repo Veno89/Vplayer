@@ -1,5 +1,6 @@
 use rodio::{Decoder, OutputStream, Sink, Source, DeviceTrait};
 use rodio::cpal::traits::HostTrait;
+use rodio::cpal::SampleFormat;
 use std::fs::File;
 use std::io::BufReader;
 use log::{info, error};
@@ -34,12 +35,10 @@ unsafe impl Sync for AudioPlayer {}
 
 impl AudioPlayer {
     pub fn new() -> AppResult<Self> {
-        info!("Initializing audio player");
-        let (stream, stream_handle) = OutputStream::try_default()
-            .map_err(|e| {
-                error!("Failed to create audio output: {}", e);
-                AppError::Audio(format!("Failed to create audio output: {}", e))
-            })?;
+        info!("Initializing audio player with high-quality settings");
+        
+        // Try to create output with optimal settings for quality
+        let (stream, stream_handle) = Self::create_high_quality_output()?;
         
         let sink = Sink::try_new(&stream_handle)
             .map_err(|e| {
@@ -60,6 +59,45 @@ impl AudioPlayer {
             preload_sink: Arc::new(Mutex::new(None)),
             preload_path: Arc::new(Mutex::new(None)),
         })
+    }
+    
+    fn create_high_quality_output() -> AppResult<(OutputStream, rodio::OutputStreamHandle)> {
+        let host = rodio::cpal::default_host();
+        let device = host.default_output_device()
+            .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
+        
+        // Try to get supported configs
+        let supported_configs = device.supported_output_configs()
+            .map_err(|e| AppError::Audio(format!("Failed to get supported configs: {}", e)))?;
+        
+        // Find the best config: prefer 32-bit float, highest sample rate
+        let best_config = supported_configs
+            .filter(|config| config.sample_format() == SampleFormat::F32)
+            .max_by_key(|config| config.max_sample_rate().0)
+            .or_else(|| {
+                // Fallback to any config if F32 not available
+                device.supported_output_configs()
+                    .ok()
+                    .and_then(|mut configs| configs.next())
+            })
+            .ok_or_else(|| AppError::Audio("No supported audio config found".to_string()))?;
+        
+        // Use maximum sample rate supported
+        let sample_rate = best_config.max_sample_rate();
+        let config_with_rate = best_config.with_sample_rate(sample_rate);
+        
+        info!("Using audio config: sample_rate={:?}, channels={}, format={:?}", 
+              config_with_rate.sample_rate(), 
+              config_with_rate.channels(),
+              config_with_rate.sample_format());
+        
+        // Create output stream with optimized config
+        OutputStream::try_from_device_config(&device, config_with_rate)
+            .or_else(|e| {
+                error!("Failed to create audio output with optimal settings, trying default: {}", e);
+                OutputStream::try_default()
+            })
+            .map_err(|e| AppError::Audio(format!("Failed to create audio output: {}", e)))
     }
     
     pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {

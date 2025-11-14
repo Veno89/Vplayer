@@ -18,7 +18,8 @@ tauri-plugin-shell = "2.0"
 tauri-plugin-global-shortcut = "2.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rodio = "0.19"
+rodio = { version = "0.19", features = ["symphonia-all"] }
+symphonia = { version = "0.5", features = ["all"] }
 lofty = "0.18"
 walkdir = "2"
 rusqlite = { version = "0.30", features = ["bundled"] }
