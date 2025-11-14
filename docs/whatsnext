@@ -1,0 +1,12 @@
+Code Quality Improvements
+1. Performance Optimization
+✅ Implement virtualized lists for large libraries (using react-window in PlaylistWindow)
+Add pagination or infinite scroll for very large libraries (optional - virtualization sufficient)
+
+
+2. Rust Backend
+✅ Add logging framework for better debugging (using log crate with tauri-plugin-log)
+✅ Consider using tokio for async operations in scanner (scan_folder already async with tokio runtime)
+✅ Add caching layer for metadata parsing (tracks cached in database, skips failed files)
+✅ Implement incremental folder scanning (scan_folder_incremental command with file_modified tracking)
+

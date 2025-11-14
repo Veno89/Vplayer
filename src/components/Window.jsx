@@ -1,7 +1,11 @@
 import React from 'react';
+import { ErrorBoundary } from './ErrorBoundary';
 
-export function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors }) {
+export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }) {
   if (!windowData.visible) return null;
+
+  // Safety check for currentColors
+  const colors = currentColors || { accent: 'text-blue-400', primary: 'bg-blue-600' };
 
   const handleTitleBarMouseDown = (e) => {
     if (e.target.closest('.window-controls')) return;
@@ -126,7 +130,8 @@ export function Window({ id, title, icon: Icon, children, className = "", window
         top: windowData.y, 
         width: windowData.width, 
         height: windowData.height,
-        zIndex: windowData.zIndex
+        zIndex: windowData.zIndex,
+        opacity: windowOpacity
       }}
       className="fixed bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-lg shadow-2xl backdrop-blur-xl"
       onMouseDown={() => bringToFront(id)}
@@ -136,7 +141,7 @@ export function Window({ id, title, icon: Icon, children, className = "", window
         onMouseDown={handleTitleBarMouseDown}
       >
         <div className="flex items-center gap-2">
-          <Icon className={`w-4 h-4 ${currentColors.accent}`} />
+          <Icon className={`w-4 h-4 ${colors.accent}`} />
           <span className="text-sm font-medium text-white">{title}</span>
         </div>
         <div className="window-controls flex gap-1">
@@ -157,7 +162,9 @@ export function Window({ id, title, icon: Icon, children, className = "", window
         </div>
       </div>
       <div className={`p-4 overflow-auto ${className}`} style={{ height: 'calc(100% - 40px)' }}>
-        {children}
+        <ErrorBoundary fallbackMessage={`Error in ${title} window`}>
+          {children}
+        </ErrorBoundary>
       </div>
       <div
         className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-slate-700/50 hover:bg-slate-600/50 transition-colors"
@@ -168,9 +175,11 @@ export function Window({ id, title, icon: Icon, children, className = "", window
         }}
       >
         <div className="absolute bottom-1 right-1 w-3 h-3" style={{
-          background: 'linear-gradient(135deg, transparent 40%, rgba(148, 163, 184, 0.8) 41%, rgba(148, 163, 184, 0.8) 44%, transparent 45%, transparent 54%, rgba(148, 163, 184, 0.8) 55%, rgba(148, 163, 184, 0.8) 58%, transparent 59%)'
+          borderTop: '2px solid currentColor',
+          borderRight: '2px solid currentColor',
+          transform: 'rotate(45deg)'
         }} />
       </div>
     </div>
   );
-}
+});

@@ -3,7 +3,7 @@ import { List } from 'lucide-react';
 import { FixedSizeList as ListVirtual } from 'react-window';
 import { Row } from './Row';
 
-export const PlaylistContent = React.memo(({ tracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex }) => {
+export const PlaylistContent = React.memo(({ tracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange }) => {
   if (tracks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-4">
@@ -15,7 +15,7 @@ export const PlaylistContent = React.memo(({ tracks, currentTrack, setCurrentTra
   }
 
   // Don't memoize - just create inline
-  const itemData = { tracks, currentTrack, onSelect: setCurrentTrack, currentColors, loadingTrackIndex };
+  const itemData = { tracks, currentTrack, onSelect: setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange };
   const itemSize = 64;
   const listHeight = Math.min(tracks.length * itemSize, 400);
 

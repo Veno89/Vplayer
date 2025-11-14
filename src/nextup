@@ -1,0 +1,121 @@
+Code Quality Improvements
+1. Error Handling & Recovery
+
+Add retry logic for failed audio loads with exponential backoff
+Implement graceful degradation when audio backend fails
+Add error boundaries in React components to prevent full app crashes
+Store failed track paths to skip on next scan
+2. Performance Optimization
+
+Implement virtualized lists for large libraries (already using react-window but could optimize further)
+Debounce search input to reduce filtering operations
+Memoize expensive computations in useLibrary filtering/sorting
+Consider lazy loading album art thumbnails
+Add pagination or infinite scroll for very large libraries
+3. Code Organization
+
+Extract magic numbers to constants file (e.g., volume step 0.1, seek threshold 3s)
+Create separate constants for localStorage keys
+Consider splitting VPlayer.jsx - it's 440+ lines and handles too much
+Move window configurations to separate config file
+4. Rust Backend
+
+Implement proper error types instead of String errors
+Add logging framework for better debugging
+Consider using tokio for async operations in scanner
+Add caching layer for metadata parsing (some audio files are slow to parse)
+Implement incremental folder scanning (only scan changed files)
+5. Testing
+
+Add integration tests for Rust commands
+Test edge cases: empty library, corrupted files, very long file paths
+Add E2E tests using Tauri's testing framework
+Test keyboard shortcuts thoroughly
+6. Type Safety
+
+Consider migrating to TypeScript for better type safety
+Add JSDoc comments to all functions for better IDE support
+Define prop types or use PropTypes library
+Feature Suggestions
+1. Core Playback Features
+
+Gapless playback - Pre-load next track in queue
+Crossfade between tracks
+Playback speed control (0.5x - 2x)
+A-B repeat for practicing sections
+Audio effects - reverb, echo, bass boost beyond EQ
+2. Library Management
+
+Auto-watch folders for new files using file system watcher
+Import/export library as M3U or PLS
+Duplicate detection based on metadata or audio fingerprint
+Missing file detection with option to relocate
+Batch metadata editing
+Album art management - fetch from online sources, embed in files
+3. Playlist Features
+
+Smart playlists with dynamic rules (recently added, most played, by genre)
+Playlist folders for organization
+Drag and drop reordering within playlists (backend already supports positions)
+Queue system separate from playlists
+Export playlists to M3U/PLS
+4. UI/UX Enhancements
+
+Mini player mode - compact always-on-top window
+System tray controls (play/pause, next, prev)
+Global media key support (using Tauri's global shortcuts)
+Album view - grid of albums instead of track list
+Artist view with artist details
+Now playing queue window showing upcoming tracks
+Lyrics display if embedded in files or from online source
+Last.fm scrobbling
+5. Visualizer Improvements
+
+More visualization modes - spectrum analyzer, oscilloscope
+Customizable colors for visualizer
+Full-screen visualizer mode
+VU meters for audio levels
+6. Search & Discovery
+
+Advanced search with multiple filters (year, genre, rating)
+Filter by folder in library view
+Recently played history
+Most played statistics
+Play count tracking per track
+Star ratings for tracks
+7. Audio Enhancement
+
+Save EQ presets (Rock, Jazz, Classical, etc.)
+Per-track EQ settings
+Normalization/ReplayGain support
+Channel balance control
+Audio output device switching UI (backend already supports it)
+8. Format Support
+
+Ensure all common formats work: MP3, FLAC, OGG, WAV, AAC, M4A, WMA
+Add support for CUE sheets for single-file albums
+Podcast support with resume position
+9. Themes & Customization
+
+Custom theme editor with color picker
+Import/export themes
+Background images with blur/transparency
+Font size adjustment
+Window opacity controls
+10. Social & Integration
+
+Discord Rich Presence showing now playing
+Sharing - copy track info, share to clipboard
+Export statistics as JSON/CSV
+11. Performance Monitoring
+
+Buffer health indicator to debug stuttering
+CPU/memory usage display in debug panel
+Audio latency display
+12. Accessibility
+
+Keyboard navigation improvements (tab through all controls)
+Screen reader support
+High contrast mode
+Tooltip on all interactive elements (partially done)
+Priority Recommendatio

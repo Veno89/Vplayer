@@ -1,11 +1,20 @@
 import React, { useEffect, useMemo, useCallback } from 'react';
-import { PlayerProvider, usePlayer } from './context/PlayerContext';
-import { UIProvider, useUIContext } from './context/UIContext';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { AudioContextProvider } from './context/AudioContextProvider';
-import { useAudioTauri } from './hooks/useAudioTauri';
-import { useLibraryTauri } from './hooks/useLibraryTauri';
+import { useStore } from './store/useStore';
+import { useAudio } from './hooks/useAudio';
+import { useLibrary } from './hooks/useLibrary';
+import { useToast } from './hooks/useToast';
+import { usePlayer as usePlayerHook } from './hooks/usePlayer';
+import { useTrackLoading } from './hooks/useTrackLoading';
+import { useEqualizer } from './hooks/useEqualizer';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useCrossfade } from './hooks/useCrossfade';
+import { ToastContainer } from './components/Toast';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
-  Music, Settings, List, Sliders, FolderOpen
+  Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles
 } from 'lucide-react';
 import { PlayerWindow } from './windows/PlayerWindow';
 import { PlaylistWindow } from './windows/PlaylistWindow';
@@ -13,30 +22,55 @@ import { LibraryWindow } from './windows/LibraryWindow';
 import { EqualizerWindow } from './windows/EqualizerWindow';
 import { VisualizerWindow } from './windows/VisualizerWindow';
 import { OptionsWindow } from './windows/OptionsWindow';
+import { QueueWindow } from './windows/QueueWindow';
+import { HistoryWindow } from './windows/HistoryWindow';
+import { AlbumViewWindow } from './windows/AlbumViewWindow';
+import { SmartPlaylistsWindow } from './windows/SmartPlaylistsWindow';
+import DuplicatesWindow from './windows/DuplicatesWindow';
+import ThemeEditorWindow from './windows/ThemeEditorWindow';
 import { Window } from './components/Window';
+import { VOLUME_STEP, EVENTS, SHORTCUT_ACTIONS } from './utils/constants';
 
 const VPlayerInner = () => {
-  // Player context
-  const {
-    currentTrack, setCurrentTrack,
-    playing, setPlaying,
-    progress, setProgress,
-    duration, setDuration,
-    volume, setVolume,
-    shuffle, setShuffle,
-    repeatMode, setRepeatMode,
-    loadingTrackIndex, setLoadingTrackIndex
-  } = usePlayer();
+  // Toast notifications
+  const toast = useToast();
+  
+  // Duplicates window state
+  const [duplicatesWindowOpen, setDuplicatesWindowOpen] = React.useState(false);
+  // Theme editor window state
+  const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
+
+  // Player state from Zustand
+  const currentTrack = useStore((state) => state.currentTrack);
+  const setCurrentTrack = useStore((state) => state.setCurrentTrack);
+  const playing = useStore((state) => state.playing);
+  const setPlaying = useStore((state) => state.setPlaying);
+  const progress = useStore((state) => state.progress);
+  const setProgress = useStore((state) => state.setProgress);
+  const duration = useStore((state) => state.duration);
+  const setDuration = useStore((state) => state.setDuration);
+  const volume = useStore((state) => state.volume);
+  const setVolume = useStore((state) => state.setVolume);
+  const shuffle = useStore((state) => state.shuffle);
+  const setShuffle = useStore((state) => state.setShuffle);
+  const repeatMode = useStore((state) => state.repeatMode);
+  const setRepeatMode = useStore((state) => state.setRepeatMode);
+  const loadingTrackIndex = useStore((state) => state.loadingTrackIndex);
+  const setLoadingTrackIndex = useStore((state) => state.setLoadingTrackIndex);
 
   // Library hook (Tauri)
-  const library = useLibraryTauri();
+  const library = useLibrary();
   const {
     tracks,
     libraryFolders,
     isScanning,
     scanProgress,
+    scanCurrent,
+    scanTotal,
+    scanCurrentFile,
     addFolder,
     removeFolder,
+    refreshFolders,
     removeTrack,
     searchQuery,
     setSearchQuery,
@@ -44,28 +78,54 @@ const VPlayerInner = () => {
     setSortBy,
     sortOrder,
     setSortOrder,
+    advancedFilters,
+    setAdvancedFilters,
     filteredTracks,
+    refreshTracks,
   } = library;
 
-  // UI context
-  const {
-    windows, setWindows,
-    maxZIndex, setMaxZIndex,
-    colorScheme, setColorScheme,
-    currentColors,
-    colorSchemes,
-    debugVisible, setDebugVisible
-  } = useUIContext();
+  // UI state from Zustand
+  const windows = useStore((state) => state.windows);
+  const setWindows = useStore((state) => state.setWindows);
+  const maxZIndex = useStore((state) => state.maxZIndex);
+  const setMaxZIndex = useStore((state) => state.setMaxZIndex);
+  const colorScheme = useStore((state) => state.colorScheme);
+  const setColorScheme = useStore((state) => state.setColorScheme);
+  const currentColors = useStore((state) => state.getCurrentColors());
+  const colorSchemes = useStore((state) => state.getColorSchemes());
+  const customThemes = useStore((state) => state.customThemes);
+  const saveCustomTheme = useStore((state) => state.saveCustomTheme);
+  const deleteCustomTheme = useStore((state) => state.deleteCustomTheme);
+  const applyCustomTheme = useStore((state) => state.applyCustomTheme);
+  const debugVisible = useStore((state) => state.debugVisible);
+  const setDebugVisible = useStore((state) => state.setDebugVisible);
+  const layouts = useStore((state) => state.getLayouts());
+  const currentLayout = useStore((state) => state.currentLayout);
+  const applyLayout = useStore((state) => state.applyLayout);
+  const backgroundImage = useStore((state) => state.backgroundImage);
+  const setBackgroundImage = useStore((state) => state.setBackgroundImage);
+  const backgroundBlur = useStore((state) => state.backgroundBlur);
+  const setBackgroundBlur = useStore((state) => state.setBackgroundBlur);
+  const backgroundOpacity = useStore((state) => state.backgroundOpacity);
+  const setBackgroundOpacity = useStore((state) => state.setBackgroundOpacity);
+  const windowOpacity = useStore((state) => state.windowOpacity);
+  const setWindowOpacity = useStore((state) => state.setWindowOpacity);
+  const fontSize = useStore((state) => state.fontSize);
+  const setFontSize = useStore((state) => state.setFontSize);
+
 
   // Audio hook (Tauri)
-  const audio = useAudioTauri({
+  const audio = useAudio({
     initialVolume: volume,
     onEnded: () => {
       if (repeatMode === 'one') {
         audio.seek(0);
-        audio.play();
+        audio.play().catch(err => {
+          console.error('Failed to replay:', err);
+          toast.showError('Failed to replay track');
+        });
       } else if (repeatMode === 'all' || currentTrack < filteredTracks.length - 1) {
-        handleNextTrack();
+        playerHook.handleNextTrack();
       } else {
         setPlaying(false);
       }
@@ -75,155 +135,67 @@ const VPlayerInner = () => {
     },
   });
 
-  // Sync duration from audio hook
+  const equalizer = useEqualizer();
+  const crossfade = useCrossfade();
+
+  // Unified player hook combining playback and volume controls
+  const playerHook = usePlayerHook({ 
+    audio, 
+    player: {
+      currentTrack, setCurrentTrack,
+      shuffle, repeatMode,
+      progress, duration,
+      volume, setVolume
+    }, 
+    tracks: filteredTracks,
+    toast,
+    crossfade
+  });
+
+  const trackLoading = useTrackLoading({ 
+    audio, 
+    tracks: filteredTracks, 
+    currentTrack,
+    playing,
+    setDuration,
+    setLoadingTrackIndex,
+    progress,
+    toast,
+    removeTrack,
+    setCurrentTrack,
+    handleNextTrack: playerHook.handleNextTrack
+  });
+
+  // Listen for global shortcuts from Tauri
   useEffect(() => {
-    setDuration(audio.duration);
-  }, [audio.duration, setDuration]);
-
-  useEffect(() => {
-    setProgress(audio.progress);
-    // Save position every few seconds (not every update to avoid excessive writes)
-    if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
-      localStorage.setItem('vplayer_last_position', audio.progress.toString());
-    }
-  }, [audio.progress, setProgress]);
-
-  // Volume change handler
-  const handleVolumeChange = useCallback((newVolume) => {
-    setVolume(newVolume);
-    audio.changeVolume(newVolume);
-  }, [audio, setVolume]);
-
-  // Track loading state
-  const [loadedTrackId, setLoadedTrackId] = React.useState(null);
-  const [hasRestoredTrack, setHasRestoredTrack] = React.useState(false);
-
-  // Restore last played track on mount
-  useEffect(() => {
-    if (hasRestoredTrack || filteredTracks.length === 0) return;
-    
-    const savedTrackId = localStorage.getItem('vplayer_last_track');
-    if (savedTrackId) {
-      const trackIndex = filteredTracks.findIndex(t => t.id === savedTrackId);
-      if (trackIndex !== -1) {
-        setCurrentTrack(trackIndex);
+    const unlistenPromise = listen(EVENTS.GLOBAL_SHORTCUT, (event) => {
+      const action = event.payload;
+      
+      switch (action) {
+        case SHORTCUT_ACTIONS.PLAY_PAUSE:
+          setPlaying(p => !p);
+          break;
+        case SHORTCUT_ACTIONS.NEXT_TRACK:
+          playbackControls.handleNextTrack();
+          break;
+        case SHORTCUT_ACTIONS.PREV_TRACK:
+          playbackControls.handlePrevTrack();
+          break;
       }
-    }
-    setHasRestoredTrack(true);
-  }, [filteredTracks, hasRestoredTrack, setCurrentTrack]);
+    });
 
-  // Sync playing state with audio
-  useEffect(() => {
-    if (playing && !audio.isPlaying) {
-      audio.play();
-    } else if (!playing && audio.isPlaying) {
-      audio.pause();
-    }
-  }, [playing, audio]);
-
-  // Load track when currentTrack changes
-  useEffect(() => {
-    const loadTrack = async () => {
-      if (currentTrack !== null && filteredTracks[currentTrack]) {
-        const track = filteredTracks[currentTrack];
-        
-        // Save last played track and position
-        localStorage.setItem('vplayer_last_track', track.id);
-        localStorage.setItem('vplayer_last_position', progress.toString());
-        
-        // Don't reload if already loaded
-        if (loadedTrackId === track.id) {
-          return;
+    return () => {
+      unlistenPromise.then(unlisten => {
+        if (unlisten && typeof unlisten === 'function') {
+          unlisten();
         }
-        
-        console.log('Loading track:', track.name);
-        setLoadingTrackIndex(currentTrack);
-        
-        try {
-          await audio.loadTrack(track);
-          setLoadedTrackId(track.id);
-          setLoadingTrackIndex(null);
-          setDuration(track.duration || 0);
-          
-          // Restore last position if this is the restored track
-          const savedTrackId = localStorage.getItem('vplayer_last_track');
-          if (track.id === savedTrackId && hasRestoredTrack && progress === 0) {
-            const savedPosition = localStorage.getItem('vplayer_last_position');
-            if (savedPosition) {
-              const position = parseFloat(savedPosition);
-              if (position > 0 && position < track.duration) {
-                await audio.seek(position);
-                setProgress(position);
-              }
-            }
-          }
-          
-          // Auto-play if playing state is true
-          if (playing) {
-            await audio.play();
-          }
-        } catch (err) {
-          console.error('Failed to load track:', err);
-          setLoadingTrackIndex(null);
-          setLoadedTrackId(null);
-        }
-      }
+      }).catch(err => {
+        console.warn('Failed to unlisten global-shortcut:', err);
+      });
     };
-    
-    loadTrack();
-  }, [currentTrack, filteredTracks, loadedTrackId, audio, playing, setLoadingTrackIndex, setDuration, hasRestoredTrack, progress]);
+  }, [setPlaying, playerHook]);
 
-  // Track navigation
-  const handleNextTrack = useCallback(() => {
-    if (!filteredTracks.length) return;
-    
-    if (shuffle) {
-      let nextIdx;
-      do {
-        nextIdx = Math.floor(Math.random() * filteredTracks.length);
-      } while (nextIdx === currentTrack && filteredTracks.length > 1);
-      setCurrentTrack(nextIdx);
-    } else {
-      const nextIdx = currentTrack + 1;
-      if (nextIdx < filteredTracks.length) {
-        setCurrentTrack(nextIdx);
-      } else if (repeatMode === 'all') {
-        setCurrentTrack(0);
-      }
-    }
-  }, [currentTrack, filteredTracks, shuffle, repeatMode, setCurrentTrack]);
-
-  const handlePrevTrack = useCallback(() => {
-    if (!filteredTracks.length) return;
-    
-    if (progress > 3) {
-      audio.seek(0);
-      return;
-    }
-
-    if (shuffle) {
-      let prevIdx;
-      do {
-        prevIdx = Math.floor(Math.random() * filteredTracks.length);
-      } while (prevIdx === currentTrack && filteredTracks.length > 1);
-      setCurrentTrack(prevIdx);
-    } else {
-      const prevIdx = currentTrack - 1;
-      if (prevIdx >= 0) {
-        setCurrentTrack(prevIdx);
-      } else if (repeatMode === 'all') {
-        setCurrentTrack(filteredTracks.length - 1);
-      }
-    }
-  }, [currentTrack, filteredTracks, shuffle, repeatMode, progress, audio, setCurrentTrack]);
-
-  const handleSeek = useCallback((percent) => {
-    if (duration > 0) {
-      const time = (percent / 100) * duration;
-      audio.seek(time);
-    }
-  }, [duration, audio]);
-
+  // Window and folder management callbacks
   const toggleWindow = useCallback((id) => {
     setWindows(prev => ({
       ...prev,
@@ -242,20 +214,118 @@ const VPlayerInner = () => {
     });
   }, [setMaxZIndex, setWindows]);
 
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    playback: {
+      togglePlay: () => setPlaying(p => !p),
+      nextTrack: playbackControls.handleNextTrack,
+      prevTrack: playbackControls.handlePrevTrack,
+      volumeUp: () => {
+        const newVol = Math.min(1, volume + VOLUME_STEP);
+        volumeControl.handleVolumeChange(newVol);
+      },
+      volumeDown: () => {
+        const newVol = Math.max(0, volume - VOLUME_STEP);
+        volumeControl.handleVolumeChange(newVol);
+      },
+    },
+    ui: {
+      toggleWindow,
+      focusSearch: () => {
+        const searchInput = document.querySelector('input[type="text"][placeholder*="Search"]');
+        searchInput?.focus();
+      },
+    },
+  });
+
+  // Apply saved volume to audio backend on mount
+  useEffect(() => {
+    audio.changeVolume(volume).catch(err => {
+      console.error('Failed to set initial volume:', err);
+    });
+  }, []); // Only run once on mount
+
+  // Sync duration from audio hook
+  useEffect(() => {
+    setDuration(audio.duration);
+  }, [audio.duration, setDuration]);
+
+  useEffect(() => {
+    setProgress(audio.progress);
+    // Save position every few seconds (not every update to avoid excessive writes)
+    if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
+      localStorage.setItem('vplayer_last_position', audio.progress.toString());
+    }
+  }, [audio.progress, setProgress]);
+
+  // Restore last played track on mount
+  useEffect(() => {
+    if (trackLoading.hasRestoredTrack || filteredTracks.length === 0) return;
+    
+    const savedTrackId = localStorage.getItem('vplayer_last_track');
+    if (savedTrackId) {
+      const trackIndex = filteredTracks.findIndex(t => t.id === savedTrackId);
+      if (trackIndex !== -1) {
+        setCurrentTrack(trackIndex);
+      }
+    }
+    trackLoading.setHasRestoredTrack(true);
+  }, [filteredTracks, trackLoading, setCurrentTrack]);
+
+  // Sync playing state with audio
+  useEffect(() => {
+    if (playing && !audio.isPlaying) {
+      audio.play().catch(err => {
+        console.error('Failed to play:', err);
+        toast.showError('Failed to play track');
+        setPlaying(false);
+      });
+    } else if (!playing && audio.isPlaying) {
+      audio.pause().catch(err => {
+        console.error('Failed to pause:', err);
+        toast.showError('Failed to pause');
+      });
+    }
+  }, [playing, audio, setPlaying, toast]);
+
+  // Track play count when a new track starts playing
+  useEffect(() => {
+    if (playing && currentTrack !== null && filteredTracks[currentTrack]) {
+      const track = filteredTracks[currentTrack];
+      
+      invoke('increment_play_count', { trackId: track.id })
+        .catch(err => console.warn('Failed to increment play count:', err));
+    }
+  }, [playing, currentTrack, filteredTracks]);
+
   const handleAddFolder = useCallback(async () => {
     try {
       await addFolder();
-      console.log('Folder added successfully');
+      toast.showSuccess('Folder added successfully');
     } catch (err) {
       console.error('Failed to add folder:', err);
-      alert(`Failed to add folder: ${err.message}`);
+      toast.showError('Failed to add folder');
     }
-  }, [addFolder]);
+  }, [addFolder, toast]);
+
+  const handleRefreshFolders = useCallback(async () => {
+    try {
+      const newTracksCount = await refreshFolders();
+      if (newTracksCount > 0) {
+        toast.showSuccess(`Found ${newTracksCount} new or modified track${newTracksCount > 1 ? 's' : ''}`);
+      } else {
+        toast.showInfo('All folders are up to date');
+      }
+    } catch (err) {
+      console.error('Failed to refresh folders:', err);
+      toast.showError('Failed to refresh folders');
+    }
+  }, [refreshFolders, toast]);
 
   const handleRemoveFolder = useCallback(async (folderId, folderPath) => {
     try {
       await removeFolder(folderId, folderPath);
-      console.log('Folder removed successfully');
+      toast.showSuccess('Folder removed successfully');
       
       if (currentTrack !== null && filteredTracks[currentTrack]?.folderId === folderId) {
         setCurrentTrack(null);
@@ -263,26 +333,59 @@ const VPlayerInner = () => {
       }
     } catch (err) {
       console.error('Failed to remove folder:', err);
-      alert(`Failed to remove folder: ${err.message}`);
+      toast.showError('Failed to remove folder');
     }
-  }, [removeFolder, currentTrack, filteredTracks, setCurrentTrack, setPlaying]);
+  }, [removeFolder, currentTrack, filteredTracks, setCurrentTrack, setPlaying, toast]);
 
-  // EQ bands state
-  const [eqBands, setEqBands] = React.useState([
-    { freq: "60Hz", value: 50 },
-    { freq: "170Hz", value: 50 },
-    { freq: "310Hz", value: 50 },
-    { freq: "600Hz", value: 50 },
-    { freq: "1kHz", value: 50 },
-    { freq: "3kHz", value: 50 },
-    { freq: "6kHz", value: 50 },
-    { freq: "12kHz", value: 50 },
-    { freq: "14kHz", value: 50 },
-    { freq: "16kHz", value: 50 }
-  ]);
+  // Handle track rating changes
+  const handleRatingChange = useCallback((trackId, newRating) => {
+    // Update track rating in local state optimistically
+    // The database is already updated by the StarRating component
+    // This just refreshes the UI if needed
+    refreshTracks();
+  }, [refreshTracks]);
+  
+  // Handle duplicates removed
+  const handleDuplicateRemoved = useCallback(() => {
+    refreshTracks();
+    toast.showSuccess('Track removed successfully');
+  }, [refreshTracks, toast]);
 
-  // Window configurations - DON'T memoize, just define inline
-  const windowConfigs = [
+  // Drag & Drop handlers
+  const handleDrop = useCallback(async (e) => {
+    e.preventDefault();
+    
+    try {
+      const files = e.dataTransfer.files;
+      if (files.length === 0) return;
+      
+      // For now, only handle folders (directories)
+      // Tauri file drop gives us paths as File objects
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        // In Tauri, we get the path from the file
+        // We'll attempt to add it as a folder
+        try {
+          await addFolder();
+          toast.showSuccess('Folder added successfully');
+        } catch (err) {
+          console.error('Failed to add dropped folder:', err);
+          toast.showError('Failed to add folder. Please use the Add Folder button.');
+        }
+      }
+    } catch (err) {
+      console.error('Drop error:', err);
+      toast.showError('Failed to process dropped files');
+    }
+  }, [addFolder, toast]);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  // Memoize window configurations to prevent unnecessary re-renders
+  const windowConfigs = useMemo(() => [
     {
       id: 'player',
       title: 'Player',
@@ -295,20 +398,21 @@ const VPlayerInner = () => {
           progress={progress}
           duration={duration}
           volume={volume}
-          setVolume={handleVolumeChange}
+          setVolume={volumeControl.handleVolumeChange}
           currentColors={currentColors}
           togglePlay={() => setPlaying(p => !p)}
-          nextTrack={handleNextTrack}
-          prevTrack={handlePrevTrack}
+          nextTrack={playbackControls.handleNextTrack}
+          prevTrack={playbackControls.handlePrevTrack}
           setShuffle={setShuffle}
           shuffle={shuffle}
           setRepeatMode={setRepeatMode}
           repeatMode={repeatMode}
-          seekToPercent={handleSeek}
+          seekToPercent={playbackControls.handleSeek}
           toggleWindow={toggleWindow}
           isLoading={audio.isLoading}
           isMuted={false}
           toggleMute={() => {}}
+          audioBackendError={audio.audioBackendError}
         />
       ),
     },
@@ -324,6 +428,7 @@ const VPlayerInner = () => {
           currentColors={currentColors}
           loadingTrackIndex={loadingTrackIndex}
           removeTrack={removeTrack}
+          onRatingChange={handleRatingChange}
         />
       ),
     },
@@ -339,7 +444,11 @@ const VPlayerInner = () => {
           currentColors={currentColors}
           isScanning={isScanning}
           scanProgress={scanProgress}
+          scanCurrent={scanCurrent}
+          scanTotal={scanTotal}
+          scanCurrentFile={scanCurrentFile}
           handleAddFolder={handleAddFolder}
+          handleRefreshFolders={handleRefreshFolders}
           handleRemoveFolder={handleRemoveFolder}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -347,6 +456,9 @@ const VPlayerInner = () => {
           setSortBy={setSortBy}
           sortOrder={sortOrder}
           setSortOrder={setSortOrder}
+          advancedFilters={advancedFilters}
+          setAdvancedFilters={setAdvancedFilters}
+          onOpenDuplicates={() => setDuplicatesWindowOpen(true)}
         />
       ),
     },
@@ -356,9 +468,13 @@ const VPlayerInner = () => {
       icon: Sliders,
       content: (
         <EqualizerWindow
-          eqBands={eqBands}
-          setEqBands={setEqBands}
+          eqBands={equalizer.eqBands}
+          setEqBands={equalizer.setEqBands}
           currentColors={currentColors}
+          currentPreset={equalizer.currentPreset}
+          applyPreset={equalizer.applyPreset}
+          resetEQ={equalizer.resetEQ}
+          presets={equalizer.presets}
         />
       ),
     },
@@ -387,17 +503,121 @@ const VPlayerInner = () => {
           debugVisible={debugVisible}
           setDebugVisible={setDebugVisible}
           currentColors={currentColors}
+          layouts={layouts}
+          currentLayout={currentLayout}
+          applyLayout={applyLayout}
+          crossfade={crossfade}
+          onOpenThemeEditor={() => setThemeEditorOpen(true)}
+          backgroundImage={backgroundImage}
+          setBackgroundImage={setBackgroundImage}
+          backgroundBlur={backgroundBlur}
+          setBackgroundBlur={setBackgroundBlur}
+          backgroundOpacity={backgroundOpacity}
+          setBackgroundOpacity={setBackgroundOpacity}
+          windowOpacity={windowOpacity}
+          setWindowOpacity={setWindowOpacity}
+          fontSize={fontSize}
+          setFontSize={setFontSize}
         />
       ),
     },
-  ];
+    {
+      id: 'queue',
+      title: 'Queue',
+      icon: ListOrdered,
+      content: (
+        <QueueWindow
+          currentColors={currentColors}
+          setCurrentTrack={setCurrentTrack}
+          tracks={filteredTracks}
+        />
+      ),
+    },
+    {
+      id: 'history',
+      title: 'History',
+      icon: History,
+      content: (
+        <HistoryWindow
+          currentColors={currentColors}
+          setCurrentTrack={setCurrentTrack}
+          tracks={filteredTracks}
+        />
+      ),
+    },
+    {
+      id: 'albums',
+      title: 'Albums',
+      icon: Disc,
+      content: (
+        <AlbumViewWindow
+          tracks={filteredTracks}
+          currentColors={currentColors}
+          setCurrentTrack={setCurrentTrack}
+        />
+      ),
+    },
+    {
+      id: 'smartPlaylists',
+      title: 'Smart Playlists',
+      icon: Sparkles,
+      content: (
+        <SmartPlaylistsWindow
+          tracks={filteredTracks}
+          currentColors={currentColors}
+          setCurrentTrack={setCurrentTrack}
+        />
+      ),
+    },
+  ], [
+    currentTrack, filteredTracks, playing, progress, duration, volume,
+    currentColors, shuffle, repeatMode, audio.isLoading,
+    playerHook.handleVolumeChange, playerHook.handleNextTrack,
+    playerHook.handlePrevTrack, playerHook.handleSeek,
+    setPlaying, setShuffle, setRepeatMode, toggleWindow, setCurrentTrack,
+    removeTrack, libraryFolders, isScanning, scanProgress, scanCurrent,
+    scanTotal, scanCurrentFile, handleAddFolder, handleRemoveFolder,
+    searchQuery, setSearchQuery, sortBy, setSortBy, sortOrder, setSortOrder,
+    equalizer.eqBands, equalizer.setEqBands, windows, colorScheme,
+    setColorScheme, colorSchemes, debugVisible, setDebugVisible, loadingTrackIndex,
+    layouts, currentLayout, applyLayout
+  ]);
 
   return (
-    <div className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative">
-      {/* Wrap with AudioContextProvider - no audio element needed for Tauri */}
-      <AudioContextProvider audioElement={null}>
-        {/* Debug toggle */}
-        {process.env.NODE_ENV === 'development' && (
+    <div 
+      className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      style={{ fontSize: `${fontSize}px` }}
+    >
+      {/* Background Image */}
+      {backgroundImage && (
+        <div 
+          className="absolute inset-0 z-0 bg-cover bg-center"
+          style={{
+            backgroundImage: `url("${backgroundImage}")`,
+            filter: `blur(${backgroundBlur}px)`,
+            opacity: backgroundOpacity,
+            transform: 'scale(1.1)' // Prevent blur edges from showing
+          }}
+        />
+      )}
+      
+      {/* Toast notifications */}
+      <ToastContainer toasts={toast.toasts} removeToast={toast.removeToast} />
+
+      {/* Audio backend error banner */}
+      {audio.audioBackendError && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-red-900/90 backdrop-blur-sm text-white px-4 py-3 text-center text-sm border-b border-red-700">
+          <div className="font-semibold">Audio System Unavailable</div>
+          <div className="text-xs mt-1 text-red-200">
+            {audio.audioBackendError}. Playback controls are disabled. Please restart the application.
+          </div>
+        </div>
+      )}
+
+      {/* Debug toggle */}
+      {process.env.NODE_ENV === 'development' && (
           <button
             title="Toggle Debug"
             onClick={() => setDebugVisible(v => !v)}
@@ -419,8 +639,8 @@ const VPlayerInner = () => {
             <div>Repeat: {repeatMode}</div>
             <div>Folders: {libraryFolders.length}</div>
             <div>Tracks: {filteredTracks.length} / {tracks.length}</div>
-            <div>Scanning: {isScanning ? `${scanProgress}%` : 'No'}</div>
-            <div>LoadedTrackId: {loadedTrackId ? 'Yes' : 'No'}</div>
+            <div>Scanning: {isScanning ? `${scanProgress}% (${scanCurrent}/${scanTotal})` : 'No'}</div>
+            <div>LoadedTrackId: {trackLoading.loadedTrackId ? 'Yes' : 'No'}</div>
             {searchQuery && <div>Search: "{searchQuery}"</div>}
           </div>
         )}
@@ -428,32 +648,49 @@ const VPlayerInner = () => {
         {/* Render floating windows */}
         {windowConfigs.map(cfg => (
           windows[cfg.id]?.visible && (
-            <Window
-              key={cfg.id}
-              id={cfg.id}
-              title={cfg.title}
-              icon={cfg.icon}
-              windowData={windows[cfg.id]}
-              bringToFront={bringToFront}
-              setWindows={setWindows}
-              toggleWindow={toggleWindow}
-              currentColors={currentColors}
-            >
-              {cfg.content}
-            </Window>
+            <ErrorBoundary key={cfg.id} fallbackMessage={`Failed to render ${cfg.title} window`}>
+              <Window
+                id={cfg.id}
+                title={cfg.title}
+                icon={cfg.icon}
+                windowData={windows[cfg.id]}
+                currentColors={currentColors}
+                bringToFront={bringToFront}
+                setWindows={setWindows}
+                toggleWindow={toggleWindow}
+                windowOpacity={windowOpacity}
+              >
+                {cfg.content}
+              </Window>
+            </ErrorBoundary>
           )
         ))}
-      </AudioContextProvider>
+        
+        {/* Duplicates Window */}
+        <DuplicatesWindow
+          isOpen={duplicatesWindowOpen}
+          onClose={() => setDuplicatesWindowOpen(false)}
+          onDuplicateRemoved={handleDuplicateRemoved}
+        />
+        
+        {/* Theme Editor Window */}
+        <ThemeEditorWindow
+          isOpen={themeEditorOpen}
+          onClose={() => setThemeEditorOpen(false)}
+          currentColors={currentColors}
+          colorSchemes={colorSchemes}
+          onSaveTheme={saveCustomTheme}
+          onDeleteTheme={deleteCustomTheme}
+          onApplyTheme={applyCustomTheme}
+        />
     </div>
   );
 };
 
 const VPlayer = () => (
-  <PlayerProvider>
-    <UIProvider>
-      <VPlayerInner />
-    </UIProvider>
-  </PlayerProvider>
+  <AudioContextProvider>
+    <VPlayerInner />
+  </AudioContextProvider>
 );
 
 export default VPlayer;

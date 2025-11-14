@@ -1,28 +1,53 @@
 import React, { useMemo, useState } from 'react';
-import { List, Trash2, MoreVertical, Loader } from 'lucide-react';
+import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, GripVertical } from 'lucide-react';
 import { FixedSizeList as ListVirtual } from 'react-window';
 import { formatDuration } from '../utils/formatters';
+import { usePlaylists } from '../hooks/usePlaylists';
 
-// Enhanced Row component with context menu
+// Enhanced Row component with drag-and-drop support for playlists
 const Row = React.memo(({ data, index, style }) => {
-  const { tracks, currentTrack, onSelect, currentColors, loadingTrackIndex, onRemove, onShowMenu } = data;
+  const { 
+    tracks, 
+    currentTrack, 
+    onSelect, 
+    currentColors, 
+    loadingTrackIndex, 
+    onShowMenu, 
+    isDraggable,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    draggedIndex
+  } = data;
   const track = tracks[index];
   const isActive = index === currentTrack;
   const isLoading = loadingTrackIndex === index;
+  const isDragging = draggedIndex === index;
 
   if (!track) return null;
 
   return (
     <div
       style={style}
+      draggable={isDraggable}
+      onDragStart={(e) => isDraggable && onDragStart?.(e, index)}
+      onDragOver={(e) => isDraggable && onDragOver?.(e, index)}
+      onDrop={(e) => isDraggable && onDrop?.(e, index)}
       className={`flex items-center px-3 py-2 text-sm cursor-pointer select-none transition-colors group ${
         isActive 
           ? `${currentColors.accent} bg-slate-800/80 font-semibold` 
           : 'hover:bg-slate-700/60 text-slate-300'
-      } ${isLoading ? 'opacity-50' : ''}`}
+      } ${isLoading ? 'opacity-50' : ''} ${isDragging ? 'opacity-40' : ''}`}
       onClick={() => onSelect(index)}
       title={`${track.title} - ${track.artist}`}
     >
+      {/* Drag Handle - only show in playlist view */}
+      {isDraggable && (
+        <div className="w-6 flex items-center justify-center text-slate-500 cursor-grab active:cursor-grabbing">
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
+
       {/* Track Number */}
       <span className="w-10 text-center text-slate-500 text-xs">
         {isLoading ? (
@@ -77,20 +102,86 @@ export function PlaylistWindow({
   setCurrentTrack, 
   currentColors, 
   loadingTrackIndex,
-  removeTrack 
+  removeTrack,
+  onRatingChange
 }) {
   const [contextMenu, setContextMenu] = useState(null);
+  const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [viewMode, setViewMode] = useState('library'); // 'library' or 'playlist'
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  
+  const playlists = usePlaylists();
+  
+  // Determine which tracks to display
+  const displayTracks = viewMode === 'playlist' && playlists.currentPlaylist 
+    ? playlists.playlistTracks 
+    : tracks;
 
-  // Show context menu for track
-  const handleShowMenu = (index, e) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    setContextMenu({
-      index,
-      x: rect.left,
-      y: rect.bottom + 5
-    });
+  // Drag and drop handlers for playlist reordering
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
   };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = async (e, dropIndex) => {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    // Reorder tracks
+    const newTracks = [...displayTracks];
+    const draggedTrack = newTracks[draggedIndex];
+    newTracks.splice(draggedIndex, 1);
+    newTracks.splice(dropIndex, 0, draggedTrack);
+
+    // Update positions in database
+    const trackPositions = newTracks.map((track, idx) => [track.id, idx]);
+    
+    try {
+      await playlists.reorderPlaylistTracks(playlists.currentPlaylist, trackPositions);
+    } catch (err) {
+      console.error('Failed to reorder tracks:', err);
+    }
+
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  // Memoize itemData to prevent recreating on every render (must be before any conditional returns)
+  const itemData = useMemo(() => ({ 
+    tracks: displayTracks, 
+    currentTrack, 
+    onSelect: setCurrentTrack, 
+    currentColors, 
+    loadingTrackIndex,
+    onRatingChange,
+    isDraggable: viewMode === 'playlist' && playlists.currentPlaylist,
+    onDragStart: handleDragStart,
+    onDragOver: handleDragOver,
+    onDrop: handleDrop,
+    draggedIndex,
+    onShowMenu: (index, e) => {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      setContextMenu({
+        index,
+        x: rect.left,
+        y: rect.bottom + 5
+      });
+    }
+  }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, viewMode, playlists.currentPlaylist, draggedIndex]);
 
   // Close context menu
   const closeContextMenu = () => {
@@ -99,18 +190,60 @@ export function PlaylistWindow({
 
   // Handle track removal
   const handleRemoveTrack = (index) => {
-    const track = tracks[index];
-    if (track && confirm(`Remove "${track.title}" from playlist?`)) {
-      removeTrack?.(track.id);
-      
-      // Adjust current track if needed
-      if (currentTrack === index) {
-        setCurrentTrack(Math.min(index, tracks.length - 2));
-      } else if (currentTrack > index) {
-        setCurrentTrack(currentTrack - 1);
+    const track = displayTracks[index];
+    if (!track) return;
+    
+    if (viewMode === 'playlist' && playlists.currentPlaylist) {
+      // Remove from playlist
+      if (confirm(`Remove "${track.title}" from this playlist?`)) {
+        playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+      }
+    } else {
+      // Remove from library
+      if (confirm(`Remove "${track.title}" from library?`)) {
+        removeTrack?.(track.id);
       }
     }
+    
+    // Adjust current track if needed
+    if (currentTrack === index) {
+      setCurrentTrack(Math.min(index, displayTracks.length - 2));
+    } else if (currentTrack > index) {
+      setCurrentTrack(currentTrack - 1);
+    }
+    
     closeContextMenu();
+  };
+  
+  // Create new playlist
+  const handleCreatePlaylist = async () => {
+    if (!newPlaylistName.trim()) return;
+    
+    try {
+      await playlists.createPlaylist(newPlaylistName);
+      setNewPlaylistName('');
+      setShowNewPlaylistDialog(false);
+    } catch (err) {
+      alert('Failed to create playlist');
+    }
+  };
+  
+  // Delete playlist
+  const handleDeletePlaylist = async (playlistId) => {
+    if (!confirm('Delete this playlist?')) return;
+    
+    try {
+      await playlists.deletePlaylist(playlistId);
+      setViewMode('library');
+    } catch (err) {
+      alert('Failed to delete playlist');
+    }
+  };
+  
+  // Switch to playlist view
+  const handleSelectPlaylist = (playlistId) => {
+    playlists.setCurrentPlaylist(playlistId);
+    setViewMode('playlist');
   };
 
   // Close context menu on outside click
@@ -123,41 +256,153 @@ export function PlaylistWindow({
   }, [contextMenu]);
 
   // Empty state
-  if (tracks.length === 0) {
+  if (displayTracks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-4">
-        <List className="w-12 h-12 text-slate-600 mb-3" />
-        <p className="text-slate-400 text-sm mb-2">No music in playlist</p>
-        <p className="text-slate-500 text-xs mb-4">
-          Add folders to your library to see tracks here
-        </p>
+      <div className="flex flex-col h-full">
+        {/* Playlist Selector */}
+        <div className="flex items-center gap-2 p-3 border-b border-slate-700">
+          <button
+            onClick={() => setViewMode('library')}
+            className={`px-3 py-1 text-sm rounded transition-colors ${
+              viewMode === 'library' 
+                ? `${currentColors.accent} bg-slate-800` 
+                : 'text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            Library
+          </button>
+          <div className="flex-1 overflow-x-auto flex gap-1">
+            {playlists.playlists.map(pl => (
+              <button
+                key={pl.id}
+                onClick={() => handleSelectPlaylist(pl.id)}
+                className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${
+                  viewMode === 'playlist' && playlists.currentPlaylist === pl.id
+                    ? `${currentColors.accent} bg-slate-800`
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                {pl.name}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowNewPlaylistDialog(true)}
+            className="p-1.5 hover:bg-slate-700 rounded transition-colors"
+            title="New Playlist"
+          >
+            <Plus className="w-4 h-4 text-slate-400" />
+          </button>
+        </div>
+        
+        {/* Empty State */}
+        <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
+          <List className="w-12 h-12 text-slate-600 mb-3" />
+          <p className="text-slate-400 text-sm mb-2">
+            {viewMode === 'playlist' ? 'No tracks in this playlist' : 'No music in library'}
+          </p>
+          <p className="text-slate-500 text-xs">
+            {viewMode === 'playlist' 
+              ? 'Add tracks from your library to this playlist' 
+              : 'Add folders to your library to see tracks here'}
+          </p>
+        </div>
+        
+        {/* New Playlist Dialog */}
+        {showNewPlaylistDialog && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl">
+              <h3 className="text-white font-semibold mb-3">New Playlist</h3>
+              <input
+                type="text"
+                value={newPlaylistName}
+                onChange={(e) => setNewPlaylistName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
+                placeholder="Playlist name"
+                className="w-full px-3 py-2 bg-slate-900 text-white rounded border border-slate-700 focus:outline-none focus:border-blue-500 mb-3"
+                autoFocus
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setShowNewPlaylistDialog(false)}
+                  className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreatePlaylist}
+                  className={`px-3 py-1.5 text-sm text-white rounded transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  // Don't memoize - just create inline
-  const itemData = { 
-    tracks, 
-    currentTrack, 
-    onSelect: setCurrentTrack, 
-    currentColors, 
-    loadingTrackIndex,
-    onShowMenu: handleShowMenu
-  };
-
   const itemSize = 48;
-  const listHeight = Math.min(500, tracks.length * itemSize);
+  const listHeight = Math.min(500, displayTracks.length * itemSize);
 
   return (
     <div className="flex flex-col h-full gap-3">
+      {/* Playlist Selector */}
+      <div className="flex items-center gap-2 px-3">
+        <button
+          onClick={() => setViewMode('library')}
+          className={`px-3 py-1 text-sm rounded transition-colors ${
+            viewMode === 'library' 
+              ? `${currentColors.accent} bg-slate-800` 
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+          }`}
+        >
+          Library
+        </button>
+        <div className="flex-1 overflow-x-auto flex gap-1">
+          {playlists.playlists.map(pl => (
+            <button
+              key={pl.id}
+              onClick={() => handleSelectPlaylist(pl.id)}
+              className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${
+                viewMode === 'playlist' && playlists.currentPlaylist === pl.id
+                  ? `${currentColors.accent} bg-slate-800`
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              {pl.name}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setShowNewPlaylistDialog(true)}
+          className="p-1.5 hover:bg-slate-700 rounded transition-colors"
+          title="New Playlist"
+        >
+          <Plus className="w-4 h-4 text-slate-400" />
+        </button>
+        {viewMode === 'playlist' && playlists.currentPlaylist && (
+          <button
+            onClick={() => handleDeletePlaylist(playlists.currentPlaylist)}
+            className="p-1.5 hover:bg-red-900/50 rounded transition-colors"
+            title="Delete Playlist"
+          >
+            <Trash2 className="w-4 h-4 text-red-400" />
+          </button>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-3">
         <h3 className="text-white font-semibold flex items-center gap-2">
           <List className={`w-5 h-5 ${currentColors.accent}`} />
-          Current Playlist
+          {viewMode === 'playlist' && playlists.currentPlaylist
+            ? playlists.playlists.find(p => p.id === playlists.currentPlaylist)?.name || 'Playlist'
+            : 'Current Playlist'}
         </h3>
         <span className="text-slate-400 text-xs">
-          {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+          {displayTracks.length} track{displayTracks.length !== 1 ? 's' : ''}
         </span>
       </div>
 
@@ -175,7 +420,7 @@ export function PlaylistWindow({
       <div className="flex-1 overflow-hidden">
         <ListVirtual
           height={listHeight}
-          itemCount={tracks.length}
+          itemCount={displayTracks.length}
           itemSize={itemSize}
           width="100%"
           itemData={itemData}
@@ -183,6 +428,38 @@ export function PlaylistWindow({
           {Row}
         </ListVirtual>
       </div>
+
+      {/* New Playlist Dialog */}
+      {showNewPlaylistDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl">
+            <h3 className="text-white font-semibold mb-3">New Playlist</h3>
+            <input
+              type="text"
+              value={newPlaylistName}
+              onChange={(e) => setNewPlaylistName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
+              placeholder="Playlist name"
+              className="w-full px-3 py-2 bg-slate-900 text-white rounded border border-slate-700 focus:outline-none focus:border-blue-500 mb-3"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowNewPlaylistDialog(false)}
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreatePlaylist}
+                className={`px-3 py-1.5 text-sm text-white rounded transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Context Menu */}
       {contextMenu && (
@@ -211,13 +488,13 @@ export function PlaylistWindow({
       )}
 
       {/* Footer with stats */}
-      {tracks.length > 0 && (
+      {displayTracks.length > 0 && (
         <div className="border-t border-slate-700 pt-2 px-3 text-xs text-slate-400 flex justify-between">
           <span>
-            Playing: Track {currentTrack !== null ? currentTrack + 1 : 0} of {tracks.length}
+            Playing: Track {currentTrack !== null ? currentTrack + 1 : 0} of {displayTracks.length}
           </span>
           <span>
-            Total: {Math.floor(tracks.reduce((sum, t) => sum + (t.duration || 0), 0) / 60)} minutes
+            Total: {Math.floor(displayTracks.reduce((sum, t) => sum + (t.duration || 0), 0) / 60)} minutes
           </span>
         </div>
       )}

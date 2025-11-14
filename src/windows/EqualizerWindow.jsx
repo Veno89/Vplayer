@@ -1,20 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Sliders, RotateCcw } from 'lucide-react';
 import { useAudioContextAPI } from '../context/AudioContextProvider';
 
-const EQ_PRESETS = {
-  flat: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
-  rock: [60, 55, 45, 40, 45, 50, 55, 60, 60, 60],
-  pop: [45, 55, 60, 60, 55, 50, 45, 50, 55, 60],
-  jazz: [55, 60, 55, 45, 40, 45, 55, 60, 60, 55],
-  classical: [60, 55, 50, 45, 45, 45, 50, 55, 60, 65],
-  bass_boost: [70, 65, 60, 50, 45, 45, 45, 50, 50, 50],
-  treble_boost: [45, 45, 45, 50, 50, 55, 60, 65, 70, 70],
-  vocal: [40, 45, 50, 60, 65, 60, 55, 50, 45, 40],
-};
-
-export function EqualizerWindow({ eqBands, setEqBands, currentColors }) {
-  const [selectedPreset, setSelectedPreset] = useState('flat');
+export function EqualizerWindow({ eqBands, setEqBands, currentColors, currentPreset, applyPreset, resetEQ, presets }) {
   const { isInitialized, setEQBand, resetEQ: resetEQContext } = useAudioContextAPI();
 
   // Update filter gains when bands change
@@ -31,25 +19,11 @@ export function EqualizerWindow({ eqBands, setEqBands, currentColors }) {
     const newBands = [...eqBands];
     newBands[index] = { ...newBands[index], value: Number(value) };
     setEqBands(newBands);
-    setSelectedPreset('custom');
-  };
-
-  // Apply preset
-  const applyPreset = (presetName) => {
-    const presetValues = EQ_PRESETS[presetName];
-    if (!presetValues) return;
-
-    const newBands = eqBands.map((band, index) => ({
-      ...band,
-      value: presetValues[index]
-    }));
-    setEqBands(newBands);
-    setSelectedPreset(presetName);
   };
 
   // Reset to flat
-  const resetToFlat = () => {
-    applyPreset('flat');
+  const handleReset = () => {
+    resetEQ();
     if (resetEQContext) {
       resetEQContext();
     }
@@ -62,9 +36,14 @@ export function EqualizerWindow({ eqBands, setEqBands, currentColors }) {
         <h3 className="text-white font-semibold flex items-center gap-2">
           <Sliders className={`w-5 h-5 ${currentColors.accent}`} />
           Equalizer
+          {currentPreset && currentPreset !== 'CUSTOM' && (
+            <span className="text-xs text-slate-400">
+              ({presets[currentPreset]?.name || currentPreset})
+            </span>
+          )}
         </h3>
         <button
-          onClick={resetToFlat}
+          onClick={handleReset}
           onMouseDown={e => e.stopPropagation()}
           className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded transition-colors flex items-center gap-1"
           title="Reset to Flat"
@@ -76,31 +55,32 @@ export function EqualizerWindow({ eqBands, setEqBands, currentColors }) {
 
       {/* Presets */}
       <div className="flex gap-2 flex-wrap">
-        {Object.keys(EQ_PRESETS).map(presetName => (
+        {Object.entries(presets).map(([presetKey, preset]) => (
           <button
-            key={presetName}
-            onClick={() => applyPreset(presetName)}
+            key={presetKey}
+            onClick={() => applyPreset(presetKey)}
             onMouseDown={e => e.stopPropagation()}
             className={`px-3 py-1 text-xs rounded transition-all ${
-              selectedPreset === presetName
+              currentPreset === presetKey
                 ? `${currentColors.primary} text-white font-medium`
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
+            title={preset.name}
           >
-            {presetName.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+            {preset.name}
           </button>
         ))}
       </div>
 
       {/* EQ Sliders */}
-      <div className="flex-1 flex items-end justify-between gap-3 px-2">
+      <div className="flex justify-around items-end gap-2 h-full">
         {eqBands.map((band, idx) => (
-          <div key={idx} className="flex flex-col items-center gap-2 flex-1">
-            {/* Value display */}
-            <div className="text-xs text-slate-400 font-mono min-h-[16px]">
-              {band.value > 50 ? '+' : band.value < 50 ? '-' : '0'}
+          <div key={idx} className="flex flex-col items-center gap-2">
+            {/* Value label */}
+            <span className="text-xs text-white font-medium">
+              {band.value > 50 ? '+' : band.value < 50 ? '-' : ''}
               {Math.abs(band.value - 50)}
-            </div>
+            </span>
 
             {/* Slider */}
             <input
