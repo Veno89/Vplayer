@@ -130,12 +130,24 @@ export const useStore = create(
           };
         }),
       toggleWindow: (id) =>
-        set((state) => ({
-          windows: {
-            ...state.windows,
-            [id]: { ...state.windows[id], visible: !state.windows[id].visible }
+        set((state) => {
+          // If window doesn't exist, create it with default values
+          if (!state.windows[id]) {
+            return {
+              windows: {
+                ...state.windows,
+                [id]: { x: 100, y: 100, width: 400, height: 300, visible: true, minimized: false, zIndex: state.maxZIndex + 1 }
+              },
+              maxZIndex: state.maxZIndex + 1
+            };
           }
-        })),
+          return {
+            windows: {
+              ...state.windows,
+              [id]: { ...state.windows[id], visible: !state.windows[id].visible }
+            }
+          };
+        }),
       setColorScheme: (scheme) => set({ colorScheme: scheme }),
       getCurrentColors: () => {
         const state = get();
