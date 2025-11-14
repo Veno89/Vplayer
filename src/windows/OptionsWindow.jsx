@@ -147,10 +147,7 @@ export function OptionsWindow({
                 {enhancedColorSchemes.map((scheme) => (
                   <button
                     key={scheme.name}
-                    onClick={() => {
-                      setColorScheme(scheme.name);
-                      setCurrentColors(scheme);
-                    }}
+                    onClick={() => setColorScheme(scheme.name)}
                     onMouseDown={e => e.stopPropagation()}
                     className={`relative p-3 rounded-lg border-2 transition-all ${
                       colorScheme === scheme.name
