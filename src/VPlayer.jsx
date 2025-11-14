@@ -118,6 +118,8 @@ const VPlayerInner = () => {
   });
 
   const equalizer = useEqualizer();
+  const crossfade = useCrossfade({ audio, enabled: false, duration: 3 });
+  
   // Unified player hook combining playback and volume controls
   const playerHook = usePlayerHook({ 
     audio, 
