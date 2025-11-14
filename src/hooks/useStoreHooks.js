@@ -26,15 +26,18 @@ export function useWindowManagement() {
 export function useUIState() {
   const colorScheme = useStore((state) => state.colorScheme);
   const setColorScheme = useStore((state) => state.setColorScheme);
-  const currentColors = useStore((state) => state.getCurrentColors());
-  const colorSchemes = useStore((state) => state.getColorSchemes());
+  const getCurrentColors = useCallback((state) => state.getCurrentColors(), []);
+  const currentColors = useStore(getCurrentColors);
+  const getColorSchemes = useCallback((state) => state.getColorSchemes(), []);
+  const colorSchemes = useStore(getColorSchemes);
   const customThemes = useStore((state) => state.customThemes);
   const saveCustomTheme = useStore((state) => state.saveCustomTheme);
   const deleteCustomTheme = useStore((state) => state.deleteCustomTheme);
   const applyCustomTheme = useStore((state) => state.applyCustomTheme);
   const debugVisible = useStore((state) => state.debugVisible);
   const setDebugVisible = useStore((state) => state.setDebugVisible);
-  const layouts = useStore((state) => state.getLayouts());
+  const getLayouts = useCallback((state) => state.getLayouts(), []);
+  const layouts = useStore(getLayouts);
   const currentLayout = useStore((state) => state.currentLayout);
   const applyLayout = useStore((state) => state.applyLayout);
   const backgroundImage = useStore((state) => state.backgroundImage);

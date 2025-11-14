@@ -158,10 +158,10 @@ const VPlayerInner = () => {
           setPlaying(p => !p);
           break;
         case SHORTCUT_ACTIONS.NEXT_TRACK:
-          playbackControls.handleNextTrack();
+          playerHook.handleNextTrack();
           break;
         case SHORTCUT_ACTIONS.PREV_TRACK:
-          playbackControls.handlePrevTrack();
+          playerHook.handlePrevTrack();
           break;
         case SHORTCUT_ACTIONS.STOP:
           audio.stop();
@@ -374,16 +374,16 @@ const VPlayerInner = () => {
           progress={progress}
           duration={duration}
           volume={volume}
-          setVolume={volumeControl.handleVolumeChange}
+          setVolume={playerHook.handleVolumeChange}
           currentColors={currentColors}
           togglePlay={() => setPlaying(p => !p)}
-          nextTrack={playbackControls.handleNextTrack}
-          prevTrack={playbackControls.handlePrevTrack}
+          nextTrack={playerHook.handleNextTrack}
+          prevTrack={playerHook.handlePrevTrack}
           setShuffle={setShuffle}
           shuffle={shuffle}
           setRepeatMode={setRepeatMode}
           repeatMode={repeatMode}
-          seekToPercent={playbackControls.handleSeek}
+          seekToPercent={playerHook.handleSeek}
           toggleWindow={toggleWindow}
           isLoading={audio.isLoading}
           isMuted={audio.isMuted}
