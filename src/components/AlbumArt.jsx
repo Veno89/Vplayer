@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import TauriAPI from '../services/TauriAPI';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }) {
   const [artData, setArtData] = useState(null);

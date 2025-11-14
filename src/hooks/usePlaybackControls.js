@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { SEEK_THRESHOLD_SECONDS } from '../utils/constants';
-import TauriAPI from '../services/TauriAPI';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function usePlaybackControls({ 
   audio, 

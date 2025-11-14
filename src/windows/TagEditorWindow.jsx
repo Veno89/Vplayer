@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, X, Music } from 'lucide-react';
-import TauriAPI from '../services/TauriAPI';
+import { TauriAPI } from '../services/TauriAPI';
 import { AlbumArt } from '../components/AlbumArt';
 
 export function TagEditorWindow({ track, onClose, onSave, currentColors }) {

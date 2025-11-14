@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Clock, Star, Music, Disc, Play } from 'lucide-react';
-import TauriAPI from '../services/TauriAPI';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function LibraryStatsWindow({ tracks, currentColors }) {
   const [stats, setStats] = useState({
