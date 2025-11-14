@@ -18,6 +18,7 @@ import {
   Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles
 } from 'lucide-react';
 import { PlayerWindow } from './windows/PlayerWindow';
+import { MiniPlayerWindow } from './windows/MiniPlayerWindow';
 import { PlaylistWindow } from './windows/PlaylistWindow';
 import { LibraryWindow } from './windows/LibraryWindow';
 import { EqualizerWindow } from './windows/EqualizerWindow';
@@ -40,6 +41,8 @@ const VPlayerInner = () => {
   const [duplicatesWindowOpen, setDuplicatesWindowOpen] = React.useState(false);
   // Theme editor window state
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
+  // Mini player state
+  const [miniPlayerMode, setMiniPlayerMode] = React.useState(false);
 
   // Player state
   const {
@@ -381,9 +384,10 @@ const VPlayerInner = () => {
           seekToPercent={playbackControls.handleSeek}
           toggleWindow={toggleWindow}
           isLoading={audio.isLoading}
-          isMuted={false}
-          toggleMute={() => {}}
+          isMuted={audio.isMuted}
+          toggleMute={playerHook.toggleMute}
           audioBackendError={audio.audioBackendError}
+          onMinimize={() => setMiniPlayerMode(true)}
         />
       ),
     },
@@ -561,6 +565,28 @@ const VPlayerInner = () => {
       onDragOver={handleDragOver}
       style={{ fontSize: `${fontSize}px` }}
     >
+      {/* Mini Player Mode */}
+      {miniPlayerMode ? (
+        <div className="fixed top-4 right-4 z-[100]">
+          <MiniPlayerWindow
+            currentTrack={currentTrack}
+            tracks={filteredTracks}
+            playing={playing}
+            progress={progress}
+            duration={duration}
+            volume={volume}
+            togglePlay={() => setPlaying(p => !p)}
+            nextTrack={playerHook.handleNextTrack}
+            prevTrack={playerHook.handlePrevTrack}
+            onMaximize={() => setMiniPlayerMode(false)}
+            onClose={() => setMiniPlayerMode(false)}
+            currentColors={currentColors}
+            isMuted={audio.isMuted}
+            toggleMute={playerHook.toggleMute}
+          />
+        </div>
+      ) : (
+        <>
       {/* Background Image */}
       {backgroundImage && (
         <div 
@@ -654,6 +680,8 @@ const VPlayerInner = () => {
           onDeleteTheme={deleteCustomTheme}
           onApplyTheme={applyCustomTheme}
         />
+        </>
+      )}
     </div>
   );
 };

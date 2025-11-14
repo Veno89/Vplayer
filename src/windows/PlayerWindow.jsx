@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader, Minimize2 } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
 
@@ -25,6 +25,7 @@ export function PlayerWindow({
   isMuted,
   toggleMute,
   audioBackendError,
+  onMinimize,
 }) {
   const currentTrackData = currentTrack !== null ? tracks[currentTrack] : null;
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
@@ -75,19 +76,33 @@ export function PlayerWindow({
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      {/* Settings Button */}
-      <button
-        onMouseDown={e => e.stopPropagation()}
-        onClick={e => {
-          e.stopPropagation();
-          toggleWindow('options');
-        }}
-        aria-label="Open Settings"
-        className="self-end p-2 hover:bg-slate-800 rounded-lg transition-colors"
-        title="Settings"
-      >
-        <Settings className={`w-5 h-5 ${currentColors.accent}`} />
-      </button>
+      {/* Header Buttons */}
+      <div className="flex justify-between">
+        <button
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => {
+            e.stopPropagation();
+            onMinimize?.();
+          }}
+          aria-label="Mini Player"
+          className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+          title="Mini Player Mode"
+        >
+          <Minimize2 className={`w-5 h-5 ${currentColors.accent}`} />
+        </button>
+        <button
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => {
+            e.stopPropagation();
+            toggleWindow('options');
+          }}
+          aria-label="Open Settings"
+          className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+          title="Settings"
+        >
+          <Settings className={`w-5 h-5 ${currentColors.accent}`} />
+        </button>
+      </div>
 
       {/* Album Art & Track Info */}
       <div className="flex items-center gap-4">

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import TauriAPI from '../services/TauriAPI';
 
-export default function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }) {
+export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }) {
   const [artData, setArtData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
