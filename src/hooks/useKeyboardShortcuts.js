@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export function useKeyboardShortcuts({ playback, ui }) {
+export function useKeyboardShortcuts({ playback, ui, navigation }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       // Don't handle shortcuts when typing in inputs
@@ -12,28 +12,60 @@ export function useKeyboardShortcuts({ playback, ui }) {
         playback.togglePlay();
       }
       
-      // Arrow Right: Next track
-      if (e.code === 'ArrowRight' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      // Arrow Right: Next track (or seek forward with Shift)
+      if (e.code === 'ArrowRight' && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        playback.nextTrack();
+        if (e.shiftKey) {
+          playback.seekForward?.();
+        } else {
+          playback.nextTrack();
+        }
       }
       
-      // Arrow Left: Previous track
-      if (e.code === 'ArrowLeft' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      // Arrow Left: Previous track (or seek backward with Shift)
+      if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        playback.prevTrack();
+        if (e.shiftKey) {
+          playback.seekBackward?.();
+        } else {
+          playback.prevTrack();
+        }
       }
       
-      // Arrow Up: Volume up
-      if (e.code === 'ArrowUp' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      // Arrow Up: Volume up (or navigate up in lists with Ctrl)
+      if (e.code === 'ArrowUp' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        playback.volumeUp();
+        if (e.ctrlKey) {
+          navigation?.moveUp?.();
+        } else {
+          playback.volumeUp();
+        }
       }
       
-      // Arrow Down: Volume down
-      if (e.code === 'ArrowDown' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      // Arrow Down: Volume down (or navigate down in lists with Ctrl)
+      if (e.code === 'ArrowDown' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        playback.volumeDown();
+        if (e.ctrlKey) {
+          navigation?.moveDown?.();
+        } else {
+          playback.volumeDown();
+        }
+      }
+      
+      // Enter: Play selected track (list navigation)
+      if (e.code === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        navigation?.playSelected?.();
+      }
+      
+      // J/K: Vim-style navigation
+      if (e.code === 'KeyJ' && e.ctrlKey) {
+        e.preventDefault();
+        navigation?.moveDown?.();
+      }
+      if (e.code === 'KeyK' && e.ctrlKey) {
+        e.preventDefault();
+        navigation?.moveUp?.();
       }
       
       // Ctrl+F: Focus search
