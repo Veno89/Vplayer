@@ -604,6 +604,16 @@ fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Resu
     Ok(tracks)
 }
 
+#[tauri::command]
+fn vacuum_database(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    info!("Running database vacuum to reclaim space and optimize");
+    let conn = state.db.conn.lock().unwrap();
+    conn.execute("VACUUM", [])
+        .map_err(|e| format!("Failed to vacuum database: {}", e))?;
+    info!("Database vacuum completed successfully");
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -776,6 +786,7 @@ fn main() {
             update_smart_playlist,
             delete_smart_playlist,
             execute_smart_playlist,
+            vacuum_database,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

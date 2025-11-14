@@ -103,6 +103,40 @@ impl Database {
         // Initialize smart playlists table
         crate::smart_playlists::create_smart_playlist_table(&conn)?;
         
+        // Create indexes for common queries to improve performance
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_rating ON tracks(rating)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_date_added ON tracks(date_added)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)",
+            [],
+        );
+        
         info!("Database initialized successfully");
         Ok(Self { conn: Mutex::new(conn) })
     }
