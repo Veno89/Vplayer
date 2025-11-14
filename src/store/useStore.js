@@ -120,6 +120,11 @@ export const useStore = create(
       setMaxZIndex: (zIndex) => set({ maxZIndex: zIndex }),
       bringToFront: (id) =>
         set((state) => {
+          // Safety check - if window doesn't exist, don't update
+          if (!state.windows[id]) {
+            console.warn(`Attempted to bring non-existent window '${id}' to front`);
+            return state;
+          }
           const newZIndex = state.maxZIndex + 1;
           return {
             maxZIndex: newZIndex,
