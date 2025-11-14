@@ -627,7 +627,7 @@ fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_json
     // Calculate average query times (simplified - just track count queries)
     let start = std::time::Instant::now();
     let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000").map_err(|e| format!("Query error: {}", e))?;
-    let track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
+    let _track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
         .map_err(|e| format!("Query error: {}", e))?
         .filter_map(Result::ok)
         .collect();

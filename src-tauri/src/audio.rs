@@ -245,6 +245,7 @@ impl AudioPlayer {
         sink.empty()
     }
     
+    #[allow(dead_code)]
     pub fn get_current_path(&self) -> Option<String> {
         self.current_path.lock().unwrap().clone()
     }

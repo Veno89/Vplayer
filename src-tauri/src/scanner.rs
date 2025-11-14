@@ -333,7 +333,7 @@ impl Scanner {
     
     /// Extract album art from audio file
     pub fn extract_album_art(path: &str) -> Result<Option<Vec<u8>>, String> {
-        use lofty::{Probe, Accessor};
+        use lofty::Probe;
         
         let tagged_file = Probe::open(path)
             .map_err(|e| format!("Failed to open file: {}", e))?

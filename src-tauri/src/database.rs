@@ -200,6 +200,7 @@ impl Database {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn get_play_count(&self, track_id: &str) -> Result<i32> {
         let conn = self.conn.lock().unwrap();
         let count: i32 = conn.query_row(
@@ -284,6 +285,7 @@ impl Database {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn get_all_folders(&self) -> Result<Vec<(String, String, String, i64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(

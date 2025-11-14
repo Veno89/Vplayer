@@ -67,6 +67,7 @@ impl From<AppError> for String {
 pub type AppResult<T> = Result<T, AppError>;
 
 // Helper trait to add context to errors
+#[allow(dead_code)]
 pub trait ErrorContext<T> {
     fn context<S: Into<String>>(self, msg: S) -> AppResult<T>;
 }
