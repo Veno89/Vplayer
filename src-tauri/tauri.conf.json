@@ -38,6 +38,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "VPlayer",
+    "copyright": "Copyright © 2025 VPlayer. All rights reserved.",
+    "category": "Music",
+    "shortDescription": "Modern desktop music player",
+    "longDescription": "VPlayer is a powerful, feature-rich desktop music player with smart playlists, equalizer, tag editing, and more."
   }
 }

@@ -605,6 +605,60 @@ fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Resu
 }
 
 #[tauri::command]
+fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let conn = state.db.conn.lock().unwrap();
+    
+    // Get database stats
+    let track_count: i32 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+        .unwrap_or(0);
+    let playlist_count: i32 = conn.query_row("SELECT COUNT(*) FROM playlists", [], |row| row.get(0))
+        .unwrap_or(0);
+    let smart_playlist_count: i32 = conn.query_row("SELECT COUNT(*) FROM smart_playlists", [], |row| row.get(0))
+        .unwrap_or(0);
+    
+    // Get database file size
+    let db_size: i64 = conn.query_row("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()", [], |row| row.get(0))
+        .unwrap_or(0);
+    
+    // Get index usage stats
+    let index_count: i32 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'", [], |row| row.get(0))
+        .unwrap_or(0);
+    
+    // Calculate average query times (simplified - just track count queries)
+    let start = std::time::Instant::now();
+    let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000").map_err(|e| format!("Query error: {}", e))?;
+    let track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
+        .map_err(|e| format!("Query error: {}", e))?
+        .filter_map(Result::ok)
+        .collect();
+    let query_time_ms = start.elapsed().as_millis();
+    drop(stmt);
+    
+    // Memory stats (approximation)
+    let memory_usage = std::mem::size_of_val(&*conn) + (track_count as usize * 1024); // Rough estimate
+    
+    Ok(serde_json::json!({
+        "database": {
+            "tracks": track_count,
+            "playlists": playlist_count,
+            "smart_playlists": smart_playlist_count,
+            "size_bytes": db_size,
+            "size_mb": (db_size as f64 / 1024.0 / 1024.0),
+            "indexes": index_count,
+        },
+        "performance": {
+            "query_time_ms": query_time_ms,
+            "memory_usage_bytes": memory_usage,
+            "memory_usage_mb": (memory_usage as f64 / 1024.0 / 1024.0),
+        },
+        "recommendations": {
+            "vacuum_recommended": db_size > 10_000_000, // > 10MB
+            "optimize_queries": query_time_ms > 100,
+        }
+    }))
+}
+
+#[tauri::command]
 fn vacuum_database(state: tauri::State<'_, AppState>) -> Result<(), String> {
     info!("Running database vacuum to reclaim space and optimize");
     let conn = state.db.conn.lock().unwrap();
@@ -786,6 +840,7 @@ fn main() {
             update_smart_playlist,
             delete_smart_playlist,
             execute_smart_playlist,
+            get_performance_stats,
             vacuum_database,
         ])
         .build(tauri::generate_context!())
