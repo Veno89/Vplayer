@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES, STORAGE_KEYS } from '../utils/constants';
 
 export function useTrackLoading({ 
@@ -16,6 +16,7 @@ export function useTrackLoading({
 }) {
   const [loadedTrackId, setLoadedTrackId] = useState(null);
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
+  const lastToastTrackId = useRef(null);
 
   // Restore last played track on mount
   useEffect(() => {
@@ -37,14 +38,15 @@ export function useTrackLoading({
       if (currentTrack !== null && tracks[currentTrack]) {
         const track = tracks[currentTrack];
         
-        // Save last played track and position
-        localStorage.setItem('vplayer_last_track', track.id);
-        localStorage.setItem('vplayer_last_position', progress.toString());
-        
         // Don't reload if already loaded
         if (loadedTrackId === track.id) {
+          // Position will be saved by the separate progress effect
           return;
         }
+        
+        // Save last played track (position will be saved incrementally during playback)
+        localStorage.setItem('vplayer_last_track', track.id);
+        localStorage.setItem('vplayer_last_position', '0');
         
         console.log('Loading track:', track.name);
         setLoadingTrackIndex(currentTrack);
@@ -57,7 +59,7 @@ export function useTrackLoading({
           
           // Restore last position if this is the restored track
           const savedTrackId = localStorage.getItem('vplayer_last_track');
-          if (track.id === savedTrackId && hasRestoredTrack && progress === 0) {
+          if (track.id === savedTrackId && hasRestoredTrack) {
             const savedPosition = localStorage.getItem('vplayer_last_position');
             if (savedPosition) {
               const position = parseFloat(savedPosition);
@@ -72,7 +74,11 @@ export function useTrackLoading({
             await audio.play();
           }
           
-          toast.showSuccess(`Now playing: ${track.title || track.name}`, 2000);
+          // Only show toast if we haven't already shown it for this track
+          if (lastToastTrackId.current !== track.id) {
+            toast.showSuccess(`Now playing: ${track.title || track.name}`, 2000);
+            lastToastTrackId.current = track.id;
+          }
         } catch (err) {
           console.error('Failed to load track:', err);
           setLoadingTrackIndex(null);
@@ -135,7 +141,15 @@ export function useTrackLoading({
     };
     
     loadTrack();
-  }, [currentTrack, tracks, loadedTrackId, audio, playing, setLoadingTrackIndex, setDuration, hasRestoredTrack, progress, toast]);
+  }, [currentTrack, tracks, loadedTrackId, audio, playing, setLoadingTrackIndex, setDuration, hasRestoredTrack, toast, removeTrack, setCurrentTrack, handleNextTrack]);
+  // Note: progress is intentionally NOT in deps - it's only used to save position, not trigger reloads
+
+  // Separate effect to save progress periodically
+  useEffect(() => {
+    if (loadedTrackId && progress > 0) {
+      localStorage.setItem('vplayer_last_position', progress.toString());
+    }
+  }, [progress, loadedTrackId]);
 
   return {
     loadedTrackId,
