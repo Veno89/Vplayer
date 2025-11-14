@@ -2,6 +2,7 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from './StarRating';
+import { AlbumArt } from './AlbumArt';
 
 export const Row = React.memo(({ data, index, style }) => {
   const { tracks, currentTrack, onSelect, currentColors, loadingTrackIndex, onRatingChange } = data;
@@ -27,6 +28,9 @@ export const Row = React.memo(({ data, index, style }) => {
       title={track ? `${track.title} - ${track.artist}` : ''}
     >
       <span className="w-6 text-center">{index + 1}</span>
+      <div className="w-8 mr-2">
+        {track && <AlbumArt trackId={track.id} trackPath={track.path} size="small" />}
+      </div>
       <span className="flex-1 truncate">{track ? track.title : 'Unknown'}</span>
       <span className="w-32 truncate">{track ? track.artist : ''}</span>
       <span className="w-20 truncate">{track ? track.album : ''}</span>

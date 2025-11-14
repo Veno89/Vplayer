@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { AudioContextProvider } from './context/AudioContextProvider';
 import { useStore } from './store/useStore';
+import { usePlayerState, useUIState, useWindowManagement } from './hooks/useStoreHooks';
 import { useAudio } from './hooks/useAudio';
 import { useLibrary } from './hooks/useLibrary';
 import { useToast } from './hooks/useToast';
@@ -40,23 +41,17 @@ const VPlayerInner = () => {
   // Theme editor window state
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
 
-  // Player state from Zustand
-  const currentTrack = useStore((state) => state.currentTrack);
-  const setCurrentTrack = useStore((state) => state.setCurrentTrack);
-  const playing = useStore((state) => state.playing);
-  const setPlaying = useStore((state) => state.setPlaying);
-  const progress = useStore((state) => state.progress);
-  const setProgress = useStore((state) => state.setProgress);
-  const duration = useStore((state) => state.duration);
-  const setDuration = useStore((state) => state.setDuration);
-  const volume = useStore((state) => state.volume);
-  const setVolume = useStore((state) => state.setVolume);
-  const shuffle = useStore((state) => state.shuffle);
-  const setShuffle = useStore((state) => state.setShuffle);
-  const repeatMode = useStore((state) => state.repeatMode);
-  const setRepeatMode = useStore((state) => state.setRepeatMode);
-  const loadingTrackIndex = useStore((state) => state.loadingTrackIndex);
-  const setLoadingTrackIndex = useStore((state) => state.setLoadingTrackIndex);
+  // Player state
+  const {
+    currentTrack, setCurrentTrack,
+    playing, setPlaying,
+    progress, setProgress,
+    duration, setDuration,
+    volume, setVolume,
+    shuffle, setShuffle,
+    repeatMode, setRepeatMode,
+    loadingTrackIndex, setLoadingTrackIndex
+  } = usePlayerState();
 
   // Library hook (Tauri)
   const library = useLibrary();
@@ -84,34 +79,18 @@ const VPlayerInner = () => {
     refreshTracks,
   } = library;
 
-  // UI state from Zustand
-  const windows = useStore((state) => state.windows);
-  const setWindows = useStore((state) => state.setWindows);
-  const maxZIndex = useStore((state) => state.maxZIndex);
-  const setMaxZIndex = useStore((state) => state.setMaxZIndex);
-  const colorScheme = useStore((state) => state.colorScheme);
-  const setColorScheme = useStore((state) => state.setColorScheme);
-  const currentColors = useStore((state) => state.getCurrentColors());
-  const colorSchemes = useStore((state) => state.getColorSchemes());
-  const customThemes = useStore((state) => state.customThemes);
-  const saveCustomTheme = useStore((state) => state.saveCustomTheme);
-  const deleteCustomTheme = useStore((state) => state.deleteCustomTheme);
-  const applyCustomTheme = useStore((state) => state.applyCustomTheme);
-  const debugVisible = useStore((state) => state.debugVisible);
-  const setDebugVisible = useStore((state) => state.setDebugVisible);
-  const layouts = useStore((state) => state.getLayouts());
-  const currentLayout = useStore((state) => state.currentLayout);
-  const applyLayout = useStore((state) => state.applyLayout);
-  const backgroundImage = useStore((state) => state.backgroundImage);
-  const setBackgroundImage = useStore((state) => state.setBackgroundImage);
-  const backgroundBlur = useStore((state) => state.backgroundBlur);
-  const setBackgroundBlur = useStore((state) => state.setBackgroundBlur);
-  const backgroundOpacity = useStore((state) => state.backgroundOpacity);
-  const setBackgroundOpacity = useStore((state) => state.setBackgroundOpacity);
-  const windowOpacity = useStore((state) => state.windowOpacity);
-  const setWindowOpacity = useStore((state) => state.setWindowOpacity);
-  const fontSize = useStore((state) => state.fontSize);
-  const setFontSize = useStore((state) => state.setFontSize);
+  // UI state
+  const {
+    colorScheme, setColorScheme, currentColors, colorSchemes,
+    customThemes, saveCustomTheme, deleteCustomTheme, applyCustomTheme,
+    debugVisible, setDebugVisible, layouts, currentLayout, applyLayout,
+    backgroundImage, setBackgroundImage, backgroundBlur, setBackgroundBlur,
+    backgroundOpacity, setBackgroundOpacity, windowOpacity, setWindowOpacity,
+    fontSize, setFontSize
+  } = useUIState();
+
+  // Window management
+  const { windows, setWindows, setMaxZIndex, bringToFront, toggleWindow } = useWindowManagement();
 
 
   // Audio hook (Tauri)
@@ -136,8 +115,6 @@ const VPlayerInner = () => {
   });
 
   const equalizer = useEqualizer();
-  const crossfade = useCrossfade();
-
   // Unified player hook combining playback and volume controls
   const playerHook = usePlayerHook({ 
     audio, 
@@ -181,6 +158,19 @@ const VPlayerInner = () => {
         case SHORTCUT_ACTIONS.PREV_TRACK:
           playbackControls.handlePrevTrack();
           break;
+        case SHORTCUT_ACTIONS.STOP:
+          audio.stop();
+          setPlaying(false);
+          break;
+        case SHORTCUT_ACTIONS.VOLUME_UP:
+          playerHook.handleVolumeChange(Math.min(1, volume + VOLUME_STEP));
+          break;
+        case SHORTCUT_ACTIONS.VOLUME_DOWN:
+          playerHook.handleVolumeChange(Math.max(0, volume - VOLUME_STEP));
+          break;
+        case SHORTCUT_ACTIONS.MUTE:
+          playerHook.toggleMute();
+          break;
       }
     });
 
@@ -193,40 +183,21 @@ const VPlayerInner = () => {
         console.warn('Failed to unlisten global-shortcut:', err);
       });
     };
-  }, [setPlaying, playerHook]);
-
-  // Window and folder management callbacks
-  const toggleWindow = useCallback((id) => {
-    setWindows(prev => ({
-      ...prev,
-      [id]: { ...prev[id], visible: !prev[id].visible }
-    }));
-  }, [setWindows]);
-
-  const bringToFront = useCallback((id) => {
-    setMaxZIndex(prev => {
-      const newZ = prev + 1;
-      setWindows(w => ({
-        ...w,
-        [id]: { ...w[id], zIndex: newZ }
-      }));
-      return newZ;
-    });
-  }, [setMaxZIndex, setWindows]);
+  }, [setPlaying, playerHook, audio, volume]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
     playback: {
       togglePlay: () => setPlaying(p => !p),
-      nextTrack: playbackControls.handleNextTrack,
-      prevTrack: playbackControls.handlePrevTrack,
+      nextTrack: playerHook.handleNextTrack,
+      prevTrack: playerHook.handlePrevTrack,
       volumeUp: () => {
         const newVol = Math.min(1, volume + VOLUME_STEP);
-        volumeControl.handleVolumeChange(newVol);
+        playerHook.handleVolumeChange(newVol);
       },
       volumeDown: () => {
         const newVol = Math.max(0, volume - VOLUME_STEP);
-        volumeControl.handleVolumeChange(newVol);
+        playerHook.handleVolumeChange(newVol);
       },
     },
     ui: {

@@ -1,0 +1,117 @@
+import React, { useCallback } from 'react';
+import { useStore } from '../store/useStore';
+
+/**
+ * Custom hook for window management using Zustand store
+ */
+export function useWindowManagement() {
+  const windows = useStore((state) => state.windows);
+  const setWindows = useStore((state) => state.setWindows);
+  const setMaxZIndex = useStore((state) => state.setMaxZIndex);
+  const bringToFront = useStore((state) => state.bringToFront);
+  const toggleWindow = useStore((state) => state.toggleWindow);
+
+  return {
+    windows,
+    setWindows,
+    setMaxZIndex,
+    bringToFront,
+    toggleWindow
+  };
+}
+
+/**
+ * Custom hook for UI state using Zustand store
+ */
+export function useUIState() {
+  const colorScheme = useStore((state) => state.colorScheme);
+  const setColorScheme = useStore((state) => state.setColorScheme);
+  const currentColors = useStore((state) => state.getCurrentColors());
+  const colorSchemes = useStore((state) => state.getColorSchemes());
+  const customThemes = useStore((state) => state.customThemes);
+  const saveCustomTheme = useStore((state) => state.saveCustomTheme);
+  const deleteCustomTheme = useStore((state) => state.deleteCustomTheme);
+  const applyCustomTheme = useStore((state) => state.applyCustomTheme);
+  const debugVisible = useStore((state) => state.debugVisible);
+  const setDebugVisible = useStore((state) => state.setDebugVisible);
+  const layouts = useStore((state) => state.getLayouts());
+  const currentLayout = useStore((state) => state.currentLayout);
+  const applyLayout = useStore((state) => state.applyLayout);
+  const backgroundImage = useStore((state) => state.backgroundImage);
+  const setBackgroundImage = useStore((state) => state.setBackgroundImage);
+  const backgroundBlur = useStore((state) => state.backgroundBlur);
+  const setBackgroundBlur = useStore((state) => state.setBackgroundBlur);
+  const backgroundOpacity = useStore((state) => state.backgroundOpacity);
+  const setBackgroundOpacity = useStore((state) => state.setBackgroundOpacity);
+  const windowOpacity = useStore((state) => state.windowOpacity);
+  const setWindowOpacity = useStore((state) => state.setWindowOpacity);
+  const fontSize = useStore((state) => state.fontSize);
+  const setFontSize = useStore((state) => state.setFontSize);
+
+  return {
+    colorScheme,
+    setColorScheme,
+    currentColors,
+    colorSchemes,
+    customThemes,
+    saveCustomTheme,
+    deleteCustomTheme,
+    applyCustomTheme,
+    debugVisible,
+    setDebugVisible,
+    layouts,
+    currentLayout,
+    applyLayout,
+    backgroundImage,
+    setBackgroundImage,
+    backgroundBlur,
+    setBackgroundBlur,
+    backgroundOpacity,
+    setBackgroundOpacity,
+    windowOpacity,
+    setWindowOpacity,
+    fontSize,
+    setFontSize
+  };
+}
+
+/**
+ * Custom hook for player state using Zustand store
+ */
+export function usePlayerState() {
+  const currentTrack = useStore((state) => state.currentTrack);
+  const setCurrentTrack = useStore((state) => state.setCurrentTrack);
+  const playing = useStore((state) => state.playing);
+  const setPlaying = useStore((state) => state.setPlaying);
+  const progress = useStore((state) => state.progress);
+  const setProgress = useStore((state) => state.setProgress);
+  const duration = useStore((state) => state.duration);
+  const setDuration = useStore((state) => state.setDuration);
+  const volume = useStore((state) => state.volume);
+  const setVolume = useStore((state) => state.setVolume);
+  const shuffle = useStore((state) => state.shuffle);
+  const setShuffle = useStore((state) => state.setShuffle);
+  const repeatMode = useStore((state) => state.repeatMode);
+  const setRepeatMode = useStore((state) => state.setRepeatMode);
+  const loadingTrackIndex = useStore((state) => state.loadingTrackIndex);
+  const setLoadingTrackIndex = useStore((state) => state.setLoadingTrackIndex);
+
+  return {
+    currentTrack,
+    setCurrentTrack,
+    playing,
+    setPlaying,
+    progress,
+    setProgress,
+    duration,
+    setDuration,
+    volume,
+    setVolume,
+    shuffle,
+    setShuffle,
+    repeatMode,
+    setRepeatMode,
+    loadingTrackIndex,
+    setLoadingTrackIndex
+  };
+}

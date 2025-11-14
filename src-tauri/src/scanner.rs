@@ -287,7 +287,7 @@ impl Scanner {
         Ok(tracks)
     }
     
-    fn extract_track_info(path: &Path) -> Result<Track, String> {
+    pub fn extract_track_info(path: &Path) -> Result<Track, String> {
         use lofty::{Probe, Accessor, AudioFile};
         use std::time::{SystemTime, UNIX_EPOCH};
         
@@ -329,5 +329,26 @@ impl Scanner {
             date_added: now,
             rating: 0,
         })
+    }
+    
+    /// Extract album art from audio file
+    pub fn extract_album_art(path: &str) -> Result<Option<Vec<u8>>, String> {
+        use lofty::{Probe, Accessor};
+        
+        let tagged_file = Probe::open(path)
+            .map_err(|e| format!("Failed to open file: {}", e))?
+            .read()
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+        
+        let tags = tagged_file.primary_tag()
+            .or_else(|| tagged_file.first_tag());
+        
+        if let Some(tag) = tags {
+            if let Some(pictures) = tag.pictures().first() {
+                return Ok(Some(pictures.data().to_vec()));
+            }
+        }
+        
+        Ok(None)
     }
 }

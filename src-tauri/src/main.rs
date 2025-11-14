@@ -8,15 +8,17 @@ mod scanner;
 mod database;
 mod error;
 mod watcher;
+mod playlist_io;
 
 use audio::{AudioPlayer, AudioDevice};
 use scanner::{Scanner, Track};
 use database::Database;
 use watcher::FolderWatcher;
+use playlist_io::PlaylistIO;
 use std::sync::Arc;
 use tauri::{Manager, Window, Emitter, AppHandle};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use log::info;
+use log::{info, warn};
 
 struct AppState {
     player: Arc<AudioPlayer>,
@@ -84,6 +86,27 @@ fn get_audio_devices() -> Result<Vec<AudioDevice>, String> {
 #[tauri::command]
 fn set_audio_device(device_name: String, state: tauri::State<AppState>) -> Result<(), String> {
     state.player.set_output_device(&device_name).map_err(|e| e.into())
+}
+
+// Gapless playback commands
+#[tauri::command]
+fn preload_track(path: String, state: tauri::State<AppState>) -> Result<(), String> {
+    state.player.preload(path).map_err(|e| e.into())
+}
+
+#[tauri::command]
+fn swap_to_preloaded(state: tauri::State<AppState>) -> Result<(), String> {
+    state.player.swap_to_preloaded().map_err(|e| e.into())
+}
+
+#[tauri::command]
+fn clear_preload(state: tauri::State<AppState>) {
+    state.player.clear_preload()
+}
+
+#[tauri::command]
+fn has_preloaded(state: tauri::State<AppState>) -> bool {
+    state.player.has_preloaded()
 }
 
 #[tauri::command]
@@ -315,6 +338,199 @@ fn remove_track(track_id: String, state: tauri::State<'_, AppState>) -> Result<(
     state.db.remove_track(&track_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_album_art(track_id: String, state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    info!("Getting album art for track: {}", track_id);
+    match state.db.get_album_art(&track_id) {
+        Ok(Some(art_data)) => {
+            use base64::{Engine as _, engine::general_purpose};
+            let base64_data = general_purpose::STANDARD.encode(&art_data);
+            Ok(Some(base64_data))
+        },
+        Ok(None) => Ok(None),
+        Err(e) => Err(format!("Failed to get album art: {}", e)),
+    }
+}
+
+#[tauri::command]
+fn extract_and_cache_album_art(track_id: String, track_path: String, state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    info!("Extracting album art for: {}", track_path);
+    
+    // Check if already cached
+    if state.db.has_album_art(&track_id) {
+        return get_album_art(track_id, state);
+    }
+    
+    // Extract from file
+    match scanner::Scanner::extract_album_art(&track_path) {
+        Ok(Some(art_data)) => {
+            // Cache in database
+            state.db.set_album_art(&track_id, &art_data)
+                .map_err(|e| format!("Failed to cache album art: {}", e))?;
+            
+            use base64::{Engine as _, engine::general_purpose};
+            let base64_data = general_purpose::STANDARD.encode(&art_data);
+            Ok(Some(base64_data))
+        },
+        Ok(None) => Ok(None),
+        Err(e) => Err(format!("Failed to extract album art: {}", e)),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TagUpdate {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    year: Option<String>,
+    genre: Option<String>,
+    comment: Option<String>,
+    track_number: Option<String>,
+    disc_number: Option<String>,
+}
+
+#[tauri::command]
+fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    use lofty::{Probe, Accessor, TagExt, ItemKey, TaggedFileExt};
+    use std::fs::OpenOptions;
+    
+    info!("Updating tags for: {}", track_path);
+    
+    // Open file and read tags
+    let tagged_file = Probe::open(&track_path)
+        .map_err(|e| format!("Failed to open file: {}", e))?
+        .read()
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    let mut tag = tagged_file.primary_tag()
+        .or_else(|| tagged_file.first_tag())
+        .ok_or_else(|| "No tag found in file".to_string())?
+        .to_owned();
+    
+    // Update tags
+    if let Some(ref title) = tags.title {
+        tag.set_title(title.clone());
+    }
+    if let Some(ref artist) = tags.artist {
+        tag.set_artist(artist.clone());
+    }
+    if let Some(ref album) = tags.album {
+        tag.set_album(album.clone());
+    }
+    if let Some(ref year) = tags.year {
+        tag.insert_text(ItemKey::Year, year.clone());
+    }
+    if let Some(ref genre) = tags.genre {
+        tag.insert_text(ItemKey::Genre, genre.clone());
+    }
+    if let Some(ref comment) = tags.comment {
+        tag.insert_text(ItemKey::Comment, comment.clone());
+    }
+    if let Some(ref track_number) = tags.track_number {
+        if let Ok(num) = track_number.parse::<u32>() {
+            tag.set_track(num);
+        }
+    }
+    if let Some(ref disc_number) = tags.disc_number {
+        if let Ok(num) = disc_number.parse::<u32>() {
+            tag.set_disk(num);
+        }
+    }
+    
+    // Save to file
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&track_path)
+        .map_err(|e| format!("Failed to open file for writing: {}", e))?;
+    
+    tag.save_to(&mut file)
+        .map_err(|e| format!("Failed to save tags: {}", e))?;
+    
+    // Update database
+    state.db.update_track_metadata(&track_id, &tags.title, &tags.artist, &tags.album)
+        .map_err(|e| format!("Failed to update database: {}", e))?;
+    
+    info!("Tags updated successfully");
+    Ok(())
+}
+
+#[tauri::command]
+fn export_playlist(playlist_id: String, output_path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    info!("Exporting playlist {} to {}", playlist_id, output_path);
+    
+    // Get playlist tracks from database
+    let tracks = state.db.get_playlist_tracks(&playlist_id)
+        .map_err(|e| format!("Failed to get playlist tracks: {}", e))?;
+    
+    // Convert to (title, path) tuples
+    let track_data: Vec<(String, String)> = tracks.iter()
+        .map(|t| {
+            let title = t.title.as_ref()
+                .unwrap_or(&t.name)
+                .clone();
+            (title, t.path.clone())
+        })
+        .collect();
+    
+    // Export to M3U
+    PlaylistIO::export_m3u(&track_data, &output_path)
+        .map_err(|e| format!("Failed to export playlist: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+fn import_playlist(playlist_name: String, input_path: String, state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    info!("Importing playlist from {} as {}", input_path, playlist_name);
+    
+    // Import M3U file
+    let tracks = PlaylistIO::import_m3u(&input_path)
+        .map_err(|e| format!("Failed to import playlist: {}", e))?;
+    
+    // Create playlist in database
+    let playlist_id = state.db.create_playlist(&playlist_name)
+        .map_err(|e| format!("Failed to create playlist: {}", e))?;
+    
+    let mut imported_track_ids = Vec::new();
+    
+    // Add tracks to database and playlist
+    for (_title, path) in tracks {
+        // Check if track exists in library
+        let track_id = match state.db.get_track_by_path(&path) {
+            Ok(Some(track)) => track.id,
+            Ok(None) => {
+                // Track not in library, scan it
+                match Scanner::extract_track_info(std::path::Path::new(&path)) {
+                    Ok(track) => {
+                        state.db.add_track(&track)
+                            .map_err(|e| format!("Failed to add track: {}", e))?;
+                        track.id
+                    },
+                    Err(e) => {
+                        warn!("Failed to scan {}: {}", path, e);
+                        continue;
+                    }
+                }
+            },
+            Err(e) => {
+                warn!("Database error for {}: {}", path, e);
+                continue;
+            }
+        };
+        
+        // Add to playlist
+        let position = imported_track_ids.len() as i32;
+        state.db.add_track_to_playlist(&playlist_id, &track_id, position)
+            .map_err(|e| format!("Failed to add track to playlist: {}", e))?;
+        
+        imported_track_ids.push(track_id);
+    }
+    
+    info!("Successfully imported {} tracks", imported_track_ids.len());
+    Ok(imported_track_ids)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -375,6 +591,38 @@ fn main() {
                 let app_handle = app.handle().clone();
                 let _ = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
                     let _ = app_handle.emit("global-shortcut", "prev-track");
+                });
+            }
+            
+            // Stop - Media Stop key
+            if let Ok(shortcut) = "MediaStop".parse::<Shortcut>() {
+                let app_handle = app.handle().clone();
+                let _ = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                    let _ = app_handle.emit("global-shortcut", "stop");
+                });
+            }
+            
+            // Volume Up - Volume Up key
+            if let Ok(shortcut) = "VolumeUp".parse::<Shortcut>() {
+                let app_handle = app.handle().clone();
+                let _ = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                    let _ = app_handle.emit("global-shortcut", "volume-up");
+                });
+            }
+            
+            // Volume Down - Volume Down key
+            if let Ok(shortcut) = "VolumeDown".parse::<Shortcut>() {
+                let app_handle = app.handle().clone();
+                let _ = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                    let _ = app_handle.emit("global-shortcut", "volume-down");
+                });
+            }
+            
+            // Mute - Volume Mute key
+            if let Ok(shortcut) = "VolumeMute".parse::<Shortcut>() {
+                let app_handle = app.handle().clone();
+                let _ = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                    let _ = app_handle.emit("global-shortcut", "mute");
                 });
             }
             
@@ -440,6 +688,15 @@ fn main() {
             update_track_path,
             find_duplicates,
             remove_track,
+            get_album_art,
+            extract_and_cache_album_art,
+            update_track_tags,
+            preload_track,
+            swap_to_preloaded,
+            clear_preload,
+            has_preloaded,
+            export_playlist,
+            import_playlist,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

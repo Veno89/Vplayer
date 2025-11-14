@@ -23,6 +23,9 @@ pub struct AudioPlayer {
     pause_start: Arc<Mutex<Option<Instant>>>,
     paused_duration: Arc<Mutex<Duration>>,
     total_duration: Arc<Mutex<Duration>>,
+    // For gapless playback
+    preload_sink: Arc<Mutex<Option<Sink>>>,
+    preload_path: Arc<Mutex<Option<String>>>,
 }
 
 // Manually implement Send and Sync for AudioPlayer
@@ -54,6 +57,8 @@ impl AudioPlayer {
             pause_start: Arc::new(Mutex::new(None)),
             paused_duration: Arc::new(Mutex::new(Duration::ZERO)),
             total_duration: Arc::new(Mutex::new(Duration::ZERO)),
+            preload_sink: Arc::new(Mutex::new(None)),
+            preload_path: Arc::new(Mutex::new(None)),
         })
     }
     
@@ -299,5 +304,89 @@ impl AudioPlayer {
         }
         
         Ok(())
+    }
+    
+    // Gapless playback support
+    pub fn preload(&self, path: String) -> AppResult<()> {
+        info!("Preloading audio file: {}", path);
+        
+        let file = File::open(&path)
+            .map_err(|e| AppError::NotFound(format!("Failed to open file {}: {}", path, e)))?;
+        
+        let source = Decoder::new(BufReader::new(file))
+            .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
+        
+        // Get stream handle from current sink
+        let host = rodio::cpal::default_host();
+        let device = host.default_output_device()
+            .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
+        
+        let (_stream, stream_handle) = OutputStream::try_from_device(&device)
+            .map_err(|e| AppError::Audio(format!("Failed to create stream: {}", e)))?;
+        
+        let new_sink = Sink::try_new(&stream_handle)
+            .map_err(|e| AppError::Audio(format!("Failed to create preload sink: {}", e)))?;
+        
+        // Copy volume from current sink
+        let current_volume = {
+            let sink = self.sink.lock().unwrap();
+            sink.volume()
+        };
+        new_sink.set_volume(current_volume);
+        
+        new_sink.append(source);
+        new_sink.pause(); // Keep paused until we swap
+        
+        *self.preload_sink.lock().unwrap() = Some(new_sink);
+        *self.preload_path.lock().unwrap() = Some(path);
+        
+        info!("Audio file preloaded successfully");
+        Ok(())
+    }
+    
+    pub fn swap_to_preloaded(&self) -> AppResult<()> {
+        info!("Swapping to preloaded track");
+        
+        let mut preload_sink = self.preload_sink.lock().unwrap();
+        let mut preload_path = self.preload_path.lock().unwrap();
+        
+        if let (Some(new_sink), Some(new_path)) = (preload_sink.take(), preload_path.take()) {
+            // Stop current sink
+            {
+                let sink = self.sink.lock().unwrap();
+                sink.stop();
+            }
+            
+            // Swap sinks
+            {
+                let mut sink = self.sink.lock().unwrap();
+                *sink = new_sink;
+            }
+            
+            // Update state
+            *self.current_path.lock().unwrap() = Some(new_path);
+            *self.start_time.lock().unwrap() = Some(Instant::now());
+            *self.seek_offset.lock().unwrap() = Duration::ZERO;
+            *self.paused_duration.lock().unwrap() = Duration::ZERO;
+            *self.pause_start.lock().unwrap() = None;
+            
+            // Start playing
+            let sink = self.sink.lock().unwrap();
+            sink.play();
+            
+            info!("Successfully swapped to preloaded track");
+            Ok(())
+        } else {
+            Err(AppError::Audio("No preloaded track available".to_string()))
+        }
+    }
+    
+    pub fn clear_preload(&self) {
+        *self.preload_sink.lock().unwrap() = None;
+        *self.preload_path.lock().unwrap() = None;
+    }
+    
+    pub fn has_preloaded(&self) -> bool {
+        self.preload_sink.lock().unwrap().is_some()
     }
 }

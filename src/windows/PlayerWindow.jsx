@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
+import { AlbumArt } from '../components/AlbumArt';
 
 export function PlayerWindow({
   currentTrack,
@@ -90,13 +91,18 @@ export function PlayerWindow({
 
       {/* Album Art & Track Info */}
       <div className="flex items-center gap-4">
-        <div className={`w-20 h-20 bg-gradient-to-br ${currentColors.primary} rounded-lg flex items-center justify-center shadow-lg relative`}>
-          {isLoading ? (
-            <Loader className="w-8 h-8 text-white animate-spin" />
-          ) : (
+        {currentTrackData ? (
+          <AlbumArt
+            trackId={currentTrackData.id}
+            trackPath={currentTrackData.path}
+            size="large"
+            className="shadow-lg"
+          />
+        ) : (
+          <div className={`w-20 h-20 bg-gradient-to-br ${currentColors.primary} rounded-lg flex items-center justify-center shadow-lg`}>
             <Music className="w-10 h-10 text-white" />
-          )}
-        </div>
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           {currentTrackData ? (
             <>

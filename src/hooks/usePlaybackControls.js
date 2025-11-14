@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { SEEK_THRESHOLD_SECONDS } from '../utils/constants';
+import TauriAPI from '../services/TauriAPI';
 
 export function usePlaybackControls({ 
   audio, 
@@ -16,16 +17,13 @@ export function usePlaybackControls({
     duration
   } = player;
 
-  // Track for gapless playback
   const nextTrackPreloadedRef = useRef(false);
-  const preloadAudioRef = useRef(null);
   const crossfadeStartedRef = useRef(false);
 
-  // Pre-load next track and handle crossfade
+  // Pre-load next track for gapless playback
   useEffect(() => {
     if (!tracks.length || currentTrack === null || !duration) return;
     
-    // When we're close to the end of the current track, preload the next one
     const timeRemaining = duration - progress;
     
     // Check if we should start crossfade
@@ -36,7 +34,6 @@ export function usePlaybackControls({
         crossfadeStartedRef.current = true;
         console.log('Starting crossfade...');
         
-        // Start crossfade and trigger next track
         crossfade.startCrossfade(() => {
           setCurrentTrack(nextIdx);
           crossfadeStartedRef.current = false;
@@ -45,16 +42,17 @@ export function usePlaybackControls({
       }
     }
     
+    // Gapless playback: preload next track when 5 seconds remain
     if (timeRemaining <= 5 && timeRemaining > 0 && !nextTrackPreloadedRef.current && !crossfade?.enabled) {
       const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
       
       if (nextIdx !== null && nextIdx !== currentTrack) {
-        // Preload next track in background
         const nextTrack = tracks[nextIdx];
         if (nextTrack) {
-          // Create a new Audio object for preloading (browser only, for Tauri this is handled differently)
-          // In Tauri, we could potentially load it in a second audio player instance
           console.log(`Preloading next track: ${nextTrack.title || nextTrack.name}`);
+          TauriAPI.preloadTrack(nextTrack.path).catch(err => {
+            console.error('Failed to preload track:', err);
+          });
           nextTrackPreloadedRef.current = true;
         }
       }
@@ -86,12 +84,25 @@ export function usePlaybackControls({
     }
   };
 
-  const handleNextTrack = useCallback(() => {
+  const handleNextTrack = useCallback(async () => {
     if (!tracks.length) return;
     
     const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
     if (nextIdx !== null) {
-      setCurrentTrack(nextIdx);
+      // Check if next track is preloaded
+      const hasPreload = await TauriAPI.hasPreloaded().catch(() => false);
+      
+      if (hasPreload && nextTrackPreloadedRef.current) {
+        // Swap to preloaded track for gapless transition
+        await TauriAPI.swapToPreloaded().catch(err => {
+          console.error('Failed to swap to preloaded:', err);
+          // Fallback to normal loading
+          setCurrentTrack(nextIdx);
+        });
+      } else {
+        setCurrentTrack(nextIdx);
+      }
+      
       nextTrackPreloadedRef.current = false;
       crossfadeStartedRef.current = false;
       if (crossfade) {
@@ -100,7 +111,7 @@ export function usePlaybackControls({
     }
   }, [currentTrack, tracks, shuffle, repeatMode, setCurrentTrack, crossfade]);
 
-  const handlePrevTrack = useCallback(() => {
+  const handlePrevTrack = useCallback(async () => {
     if (!tracks.length) return;
     
     if (progress > SEEK_THRESHOLD_SECONDS) {
@@ -111,6 +122,9 @@ export function usePlaybackControls({
       return;
     }
 
+    // Clear any preloaded track
+    TauriAPI.clearPreload();
+    
     if (shuffle) {
       let prevIdx;
       do {

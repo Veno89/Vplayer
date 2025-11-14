@@ -53,6 +53,12 @@ impl Database {
             [],
         );
         
+        // Migration: Add album_art column for storing album art
+        let _ = conn.execute(
+            "ALTER TABLE tracks ADD COLUMN album_art BLOB",
+            [],
+        );
+        
         conn.execute(
             "CREATE TABLE IF NOT EXISTS folders (
                 id TEXT PRIMARY KEY,
@@ -466,6 +472,39 @@ impl Database {
         Ok(())
     }
     
+    pub fn update_track_metadata(&self, track_id: &str, title: &Option<String>, artist: &Option<String>, album: &Option<String>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tracks SET title = ?1, artist = ?2, album = ?3 WHERE id = ?4",
+            params![title, artist, album, track_id],
+        )?;
+        Ok(())
+    }
+    
+    pub fn get_track_by_path(&self, path: &str) -> Result<Option<Track>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, path, name, title, artist, album, duration, date_added, rating FROM tracks WHERE path = ?1"
+        )?;
+        
+        let mut rows = stmt.query(params![path])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Track {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                title: row.get(3)?,
+                artist: row.get(4)?,
+                album: row.get(5)?,
+                duration: row.get(6)?,
+                date_added: row.get(7)?,
+                rating: row.get(8)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    
     // Find duplicate tracks based on metadata similarity
     pub fn find_duplicates(&self) -> Result<Vec<Vec<Track>>> {
         info!("Searching for duplicate tracks");
@@ -589,4 +628,35 @@ impl Database {
         )?;
         Ok(())
     }
+    
+    // Album art operations
+    pub fn get_album_art(&self, track_id: &str) -> Result<Option<Vec<u8>>> {
+        let conn = self.conn.lock().unwrap();
+        let result: Result<Option<Vec<u8>>> = conn.query_row(
+            "SELECT album_art FROM tracks WHERE id = ?1",
+            params![track_id],
+            |row| row.get(0),
+        );
+        result.or(Ok(None))
+    }
+    
+    pub fn set_album_art(&self, track_id: &str, art_data: &[u8]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tracks SET album_art = ?1 WHERE id = ?2",
+            params![art_data, track_id],
+        )?;
+        Ok(())
+    }
+    
+    pub fn has_album_art(&self, track_id: &str) -> bool {
+        let conn = self.conn.lock().unwrap();
+        let result: Result<i32> = conn.query_row(
+            "SELECT 1 FROM tracks WHERE id = ?1 AND album_art IS NOT NULL",
+            params![track_id],
+            |row| row.get(0),
+        );
+        result.is_ok()
+    }
 }
+

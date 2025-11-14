@@ -133,6 +133,50 @@ class TauriAPIService {
     return this._invoke('find_duplicates');
   }
 
+  // ========== Album Art Commands ==========
+
+  async getAlbumArt(trackId) {
+    return this._invoke('get_album_art', { trackId });
+  }
+
+  async extractAndCacheAlbumArt(trackId, trackPath) {
+    return this._invoke('extract_and_cache_album_art', { trackId, trackPath });
+  }
+
+  // ========== Gapless Playback Commands ==========
+
+  async preloadTrack(path) {
+    return this._invoke('preload_track', { path });
+  }
+
+  async swapToPreloaded() {
+    return this._invoke('swap_to_preloaded');
+  }
+
+  clearPreload() {
+    return this._invoke('clear_preload');
+  }
+
+  async hasPreloaded() {
+    return this._invoke('has_preloaded');
+  }
+
+  // ========== Tag Editor Commands ==========
+
+  async updateTrackTags(trackId, trackPath, tags) {
+    return this._invoke('update_track_tags', { trackId, trackPath, tags });
+  }
+
+  // ========== Playlist Import/Export Commands ==========
+
+  async exportPlaylist(playlistId, outputPath) {
+    return this._invoke('export_playlist', { playlistId, outputPath });
+  }
+
+  async importPlaylist(playlistName, inputPath) {
+    return this._invoke('import_playlist', { playlistName, inputPath });
+  }
+
   // ========== Playlist Commands ==========
 
   async getAllPlaylists() {

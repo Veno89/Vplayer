@@ -113,8 +113,10 @@ export const SHORTCUT_ACTIONS = {
   PLAY_PAUSE: 'play-pause',
   NEXT_TRACK: 'next-track',
   PREV_TRACK: 'prev-track',
+  STOP: 'stop',
   VOLUME_UP: 'volume-up',
   VOLUME_DOWN: 'volume-down',
+  MUTE: 'mute',
 };
 
 // Toast Types
