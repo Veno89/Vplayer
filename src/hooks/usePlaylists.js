@@ -105,16 +105,24 @@ export function usePlaylists() {
 
   const addTracksToPlaylist = useCallback(async (playlistId, trackIds) => {
     try {
+      console.log('Starting to add', trackIds.length, 'tracks to playlist', playlistId);
       setAddingProgress({ current: 0, total: trackIds.length, isAdding: true });
       
       for (let i = 0; i < trackIds.length; i++) {
         await invoke('add_track_to_playlist', { playlistId, trackId: trackIds[i] });
         setAddingProgress({ current: i + 1, total: trackIds.length, isAdding: true });
+        
+        // Log progress every 10 tracks
+        if ((i + 1) % 10 === 0 || i === trackIds.length - 1) {
+          console.log('Progress:', i + 1, '/', trackIds.length);
+        }
       }
       
       if (currentPlaylist === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
+      
+      console.log('Finished adding all tracks');
     } catch (err) {
       console.error('Failed to add tracks to playlist:', err);
       throw err;

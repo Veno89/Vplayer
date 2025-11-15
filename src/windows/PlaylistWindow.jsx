@@ -109,7 +109,6 @@ export function PlaylistWindow({
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [viewMode, setViewMode] = useState('library'); // 'library' or 'playlist'
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -143,12 +142,15 @@ export function PlaylistWindow({
     return () => {
       window.removeEventListener('vplayer-track-drop', handleGlobalDrop);
     };
-  }, [viewMode, playlists.currentPlaylist]);
+  }, [playlists.currentPlaylist]);
   
-  // Determine which tracks to display
-  const displayTracks = viewMode === 'playlist' && playlists.currentPlaylist 
-    ? playlists.playlistTracks 
-    : tracks;
+  // Debug: Log when adding progress changes
+  useEffect(() => {
+    console.log('Adding progress changed:', playlists.addingProgress);
+  }, [playlists.addingProgress]);
+  
+  // Always show playlist tracks (no library view)
+  const displayTracks = playlists.playlistTracks;
   
   // Update active tracks when displayTracks changes
   useEffect(() => {
@@ -215,32 +217,12 @@ export function PlaylistWindow({
     try {
       const tracks = JSON.parse(data);
       
-      if (viewMode === 'library') {
-        // If in library view, prompt to select/create playlist
-        if (!playlists.playlists || playlists.playlists.length === 0) {
-          alert('Please create a playlist first');
-          setShowNewPlaylistDialog(true);
-          return;
-        }
-        
-        // Auto-select first playlist if none selected
-        if (!playlists.currentPlaylist && playlists.playlists.length > 0) {
-          await playlists.setCurrentPlaylist(playlists.playlists[0].id);
-          setViewMode('playlist');
-        }
-      }
-      
       if (!playlists.currentPlaylist) {
         alert('Please select or create a playlist first');
         return;
       }
       
       await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
-      
-      // If we were in library view, switch to playlist view to show the added tracks
-      if (viewMode === 'library') {
-        setViewMode('playlist');
-      }
     } catch (err) {
       console.error('Drop failed:', err);
       alert('Failed to add tracks to playlist');
@@ -255,7 +237,7 @@ export function PlaylistWindow({
     currentColors, 
     loadingTrackIndex,
     onRatingChange,
-    isDraggable: viewMode === 'playlist' && playlists.currentPlaylist,
+    isDraggable: !!playlists.currentPlaylist,
     onDragStart: handleDragStart,
     onDragOver: handleDragOver,
     onDrop: handleDrop,
@@ -269,7 +251,7 @@ export function PlaylistWindow({
         y: rect.bottom + 5
       });
     }
-  }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, viewMode, playlists.currentPlaylist, draggedIndex]);
+  }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, playlists.currentPlaylist, draggedIndex]);
 
   // Close context menu
   const closeContextMenu = () => {
@@ -279,18 +261,11 @@ export function PlaylistWindow({
   // Handle track removal
   const handleRemoveTrack = (index) => {
     const track = displayTracks[index];
-    if (!track) return;
+    if (!track || !playlists.currentPlaylist) return;
     
-    if (viewMode === 'playlist' && playlists.currentPlaylist) {
-      // Remove from playlist
-      if (confirm(`Remove "${track.title}" from this playlist?`)) {
-        playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
-      }
-    } else {
-      // Remove from library
-      if (confirm(`Remove "${track.title}" from library?`)) {
-        removeTrack?.(track.id);
-      }
+    // Remove from playlist
+    if (confirm(`Remove "${track.title}" from this playlist?`)) {
+      playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
     }
     
     // Adjust current track if needed
@@ -314,7 +289,6 @@ export function PlaylistWindow({
       // Auto-select the new playlist
       if (newPlaylist && newPlaylist.id) {
         await playlists.setCurrentPlaylist(newPlaylist.id);
-        setViewMode('playlist');
       }
     } catch (err) {
       alert('Failed to create playlist');
@@ -323,17 +297,9 @@ export function PlaylistWindow({
   
   // Delete playlist
   const handleDeletePlaylist = async (playlistId) => {
-    const playlist = playlists.playlists.find(p => p.id === playlistId);
-    const isLibrary = playlistId === 'library';
-    const message = isLibrary 
-      ? `Remove "${playlist?.name || 'Library'}" from playlists? This won't delete your music files, only removes the playlist entry.`
-      : 'Delete this playlist?';
-    
-    if (!confirm(message)) return;
-    
+    console.log('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
     try {
       await playlists.deletePlaylist(playlistId);
-      setViewMode('library');
       
       // Clear saved playlist if we deleted it
       if (localStorage.getItem('vplayer_last_playlist') === playlistId) {
@@ -344,10 +310,9 @@ export function PlaylistWindow({
     }
   };
   
-  // Switch to playlist view
+  // Switch to playlist
   const handleSelectPlaylist = (playlistId) => {
     playlists.setCurrentPlaylist(playlistId);
-    setViewMode('playlist');
   };
 
   // Close context menu on outside click
@@ -365,23 +330,13 @@ export function PlaylistWindow({
       <div className="flex flex-col h-full" ref={containerRef}>
         {/* Playlist Selector */}
         <div className="flex items-center gap-2 p-3 border-b border-slate-700">
-          <button
-            onClick={() => setViewMode('library')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'library' 
-                ? `${currentColors.accent} bg-slate-800` 
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
-          >
-            Library
-          </button>
           <div className="flex-1 overflow-x-auto flex gap-1">
             {playlists.playlists.map(pl => (
               <button
                 key={pl.id}
                 onClick={() => handleSelectPlaylist(pl.id)}
                 className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${
-                  viewMode === 'playlist' && playlists.currentPlaylist === pl.id
+                  playlists.currentPlaylist === pl.id
                     ? `${currentColors.accent} bg-slate-800`
                     : 'text-slate-400 hover:text-white hover:bg-slate-700'
                 }`}
@@ -409,12 +364,10 @@ export function PlaylistWindow({
           <p className="text-slate-400 text-sm mb-2">
             {isDraggingOver 
               ? 'Drop tracks here to add them'
-              : viewMode === 'playlist' ? 'No tracks in this playlist' : 'No music in library'}
+              : 'No tracks in this playlist'}
           </p>
           <p className="text-slate-500 text-xs">
-            {viewMode === 'playlist' 
-              ? 'Drag tracks from your library to this playlist' 
-              : 'Add folders to your library to see tracks here'}
+            Drag tracks from your library to this playlist
           </p>
         </div>
         
@@ -466,23 +419,13 @@ export function PlaylistWindow({
     >
       {/* Playlist Selector */}
       <div className="flex items-center gap-2 px-3">
-        <button
-          onClick={() => setViewMode('library')}
-          className={`px-3 py-1 text-sm rounded transition-colors ${
-            viewMode === 'library' 
-              ? `${currentColors.accent} bg-slate-800` 
-              : 'text-slate-400 hover:text-white hover:bg-slate-700'
-          }`}
-        >
-          Library
-        </button>
         <div className="flex-1 overflow-x-auto flex gap-1">
           {playlists.playlists.map(pl => (
             <button
               key={pl.id}
               onClick={() => handleSelectPlaylist(pl.id)}
               className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${
-                viewMode === 'playlist' && playlists.currentPlaylist === pl.id
+                playlists.currentPlaylist === pl.id
                   ? `${currentColors.accent} bg-slate-800`
                   : 'text-slate-400 hover:text-white hover:bg-slate-700'
               }`}
@@ -498,11 +441,11 @@ export function PlaylistWindow({
         >
           <Plus className="w-4 h-4 text-slate-400" />
         </button>
-        {viewMode === 'playlist' && playlists.currentPlaylist && (
+        {playlists.currentPlaylist && (
           <button
             onClick={() => handleDeletePlaylist(playlists.currentPlaylist)}
             className="p-1.5 hover:bg-red-900/50 rounded transition-colors"
-            title="Delete Playlist"
+            title="DELETE NOW (no confirmation)"
           >
             <Trash2 className="w-4 h-4 text-red-400" />
           </button>
@@ -536,9 +479,9 @@ export function PlaylistWindow({
       <div className="flex items-center justify-between px-3">
         <h3 className="text-white font-semibold flex items-center gap-2">
           <List className={`w-5 h-5 ${currentColors.accent}`} />
-          {viewMode === 'playlist' && playlists.currentPlaylist
+          {playlists.currentPlaylist
             ? playlists.playlists.find(p => p.id === playlists.currentPlaylist)?.name || 'Playlist'
-            : 'Current Playlist'}
+            : 'Select a Playlist'}
         </h3>
         <span className="text-slate-400 text-xs">
           {displayTracks.length} track{displayTracks.length !== 1 ? 's' : ''}
@@ -572,7 +515,7 @@ export function PlaylistWindow({
       {isDraggingOver && (
         <div className="absolute inset-0 bg-blue-500/10 pointer-events-none flex items-center justify-center">
           <div className="text-blue-400 text-lg font-semibold">
-            Drop to add to {viewMode === 'playlist' ? 'playlist' : 'library'}
+            Drop to add to playlist
           </div>
         </div>
       )}

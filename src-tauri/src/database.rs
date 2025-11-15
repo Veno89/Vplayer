@@ -353,6 +353,7 @@ impl Database {
     
     pub fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        // Allow deletion of any playlist including 'library'
         conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
             params![playlist_id],
