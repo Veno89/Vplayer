@@ -300,7 +300,10 @@ export function OptionsWindow({
               </div>
 
               <div className="pt-4 border-t border-slate-700">
-                <label className="flex items-center gap-3 text-slate-300 text-sm cursor-pointer hover:text-white transition-colors">
+                <label
+                  onMouseDown={e => e.stopPropagation()}
+                  className="flex items-center gap-3 text-slate-300 text-sm cursor-pointer hover:text-white transition-colors"
+                >
                   <input
                     type="checkbox"
                     checked={debugVisible}
@@ -379,6 +382,7 @@ export function OptionsWindow({
                   {audioDevices.map((device, idx) => (
                     <label
                       key={idx}
+                      onMouseDown={e => e.stopPropagation()}
                       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
                         selectedDevice === device.name
                           ? `border-cyan-500 bg-cyan-500/10`
@@ -427,7 +431,10 @@ export function OptionsWindow({
                 </h4>
                 
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/30">
+                  <label
+                    onMouseDown={e => e.stopPropagation()}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/30"
+                  >
                     <input
                       type="checkbox"
                       checked={crossfade.enabled}
@@ -480,6 +487,7 @@ export function OptionsWindow({
                 {Object.entries(windows).map(([id, window]) => (
                   <label
                     key={id}
+                    onMouseDown={e => e.stopPropagation()}
                     className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 border border-slate-700 hover:bg-slate-800/50 cursor-pointer transition-colors"
                   >
                     <span className="text-slate-300 text-sm capitalize">

@@ -109,7 +109,13 @@ export const useStore = create(
       setRepeatMode: (mode) => set({ repeatMode: mode }),
 
       // UI Actions
-      setWindows: (windows) => set({ windows }),
+      setWindows: (windowsOrUpdater) => 
+        set((state) => {
+          const windows = typeof windowsOrUpdater === 'function' 
+            ? windowsOrUpdater(state.windows) 
+            : windowsOrUpdater;
+          return { windows };
+        }),
       updateWindow: (id, updates) =>
         set((state) => ({
           windows: {

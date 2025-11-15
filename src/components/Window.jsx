@@ -27,10 +27,13 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       pendingY = newY;
       if (!raf) {
         raf = requestAnimationFrame(() => {
-          setWindows((prev) => ({
-            ...prev,
-            [id]: { ...prev[id], x: pendingX, y: pendingY }
-          }));
+          setWindows((prev) => {
+            if (!prev[id]) return prev;
+            return {
+              ...prev,
+              [id]: { ...prev[id], x: pendingX, y: pendingY }
+            };
+          });
           raf = null;
         });
       }
@@ -39,10 +42,13 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       if (raf) {
         cancelAnimationFrame(raf);
         raf = null;
-        setWindows((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], x: pendingX, y: pendingY }
-        }));
+        setWindows((prev) => {
+          if (!prev[id]) return prev;
+          return {
+            ...prev,
+            [id]: { ...prev[id], x: pendingX, y: pendingY }
+          };
+        });
       }
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -71,10 +77,13 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       pendingH = newHeight;
       if (!raf) {
         raf = requestAnimationFrame(() => {
-          setWindows((prev) => ({
-            ...prev,
-            [id]: { ...prev[id], width: pendingW, height: pendingH }
-          }));
+          setWindows((prev) => {
+            if (!prev[id]) return prev;
+            return {
+              ...prev,
+              [id]: { ...prev[id], width: pendingW, height: pendingH }
+            };
+          });
           raf = null;
         });
       }
@@ -83,10 +92,13 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       if (raf) {
         cancelAnimationFrame(raf);
         raf = null;
-        setWindows((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], width: pendingW, height: pendingH }
-        }));
+        setWindows((prev) => {
+          if (!prev[id]) return prev;
+          return {
+            ...prev,
+            [id]: { ...prev[id], width: pendingW, height: pendingH }
+          };
+        });
       }
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -134,7 +146,10 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
         opacity: windowOpacity
       }}
       className="fixed bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-lg shadow-2xl backdrop-blur-xl"
-      onMouseDown={() => bringToFront(id)}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        bringToFront(id);
+      }}
     >
       <div 
         className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-700 cursor-move rounded-t-lg select-none" 

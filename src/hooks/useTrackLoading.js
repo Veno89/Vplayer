@@ -17,6 +17,7 @@ export function useTrackLoading({
   const [loadedTrackId, setLoadedTrackId] = useState(null);
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
   const lastToastTrackId = useRef(null);
+  const shouldRestorePosition = useRef(true); // Track if we should restore position on next load
 
   // Restore last played track on mount
   useEffect(() => {
@@ -44,9 +45,17 @@ export function useTrackLoading({
           return;
         }
         
-        // Save last played track (position will be saved incrementally during playback)
+        // Save last played track
         localStorage.setItem('vplayer_last_track', track.id);
-        localStorage.setItem('vplayer_last_position', '0');
+        
+        // Check if we should restore position for this track
+        const savedTrackId = localStorage.getItem('vplayer_last_track');
+        const shouldRestore = shouldRestorePosition.current && track.id === savedTrackId;
+        
+        if (!shouldRestore) {
+          // Reset position only if not restoring
+          localStorage.setItem('vplayer_last_position', '0');
+        }
         
         console.log('Loading track:', track.name);
         setLoadingTrackIndex(currentTrack);
@@ -57,16 +66,19 @@ export function useTrackLoading({
           setLoadingTrackIndex(null);
           setDuration(track.duration || 0);
           
-          // Restore last position if this is the restored track
+          // Restore last position if we should
           const savedTrackId = localStorage.getItem('vplayer_last_track');
-          if (track.id === savedTrackId && hasRestoredTrack) {
+          if (shouldRestorePosition.current && track.id === savedTrackId) {
             const savedPosition = localStorage.getItem('vplayer_last_position');
             if (savedPosition) {
               const position = parseFloat(savedPosition);
               if (position > 0 && position < track.duration) {
+                console.log(`Restoring position: ${position}s for track ${track.name}`);
                 await audio.seek(position);
               }
             }
+            // Mark that we've restored, so subsequent track changes don't restore
+            shouldRestorePosition.current = false;
           }
           
           // Auto-play if playing state is true
