@@ -43,6 +43,9 @@ const VPlayerInner = () => {
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
   // Mini player state
   const [miniPlayerMode, setMiniPlayerMode] = React.useState(false);
+  // Track if we're dragging tracks
+  const [isDraggingTracks, setIsDraggingTracks] = React.useState(false);
+  const [dragData, setDragData] = React.useState(null);
 
   // Player state
   const {
@@ -94,8 +97,6 @@ const VPlayerInner = () => {
 
   // Window management
   const { windows, setWindows, setMaxZIndex, bringToFront, toggleWindow } = useWindowManagement();
-  const [isDraggingTracks, setIsDraggingTracks] = React.useState(false);
-  const [dragData, setDragData] = React.useState(null);
 
   // Audio hook (Tauri)
   const audio = useAudio({
@@ -331,11 +332,13 @@ const VPlayerInner = () => {
 
   // Drag & Drop handlers
   const handleDrop = useCallback(async (e) => {
+    console.log('VPlayer handleDrop called!');
     e.preventDefault();
     
     // Check if internal drag - dispatch to active playlist
     const internalData = e.dataTransfer.getData('application/json');
     if (internalData) {
+      console.log('Internal data found, dispatching global event');
       window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
         detail: { data: internalData }
       }));
@@ -367,6 +370,7 @@ const VPlayerInner = () => {
   }, [addFolder, toast]);
 
   const handleDragOver = useCallback((e) => {
+    console.log('VPlayer handleDragOver called');
     const types = Array.from(e.dataTransfer.types);
     if (types.includes('application/json')) {
       // Internal drag - allow drop on root, will dispatch to playlist
@@ -377,6 +381,48 @@ const VPlayerInner = () => {
     
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  // Handle library drag start/end
+  const handleLibraryDragStart = useCallback((data) => {
+    console.log('Library drag started with data:', data);
+    setIsDraggingTracks(true);
+    setDragData(data);
+  }, []);
+
+  const handleLibraryDragEnd = useCallback(() => {
+    console.log('Library drag ended');
+    setIsDraggingTracks(false);
+    setDragData(null);
+  }, []);
+
+  // Add global drag/drop listeners at document level to catch events
+  useEffect(() => {
+    const handleGlobalDragOver = (e) => {
+      e.preventDefault();
+      const types = Array.from(e.dataTransfer.types);
+      if (types.includes('application/json')) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+
+    const handleGlobalDrop = (e) => {
+      const internalData = e.dataTransfer.getData('application/json');
+      if (internalData) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
+          detail: { data: internalData }
+        }));
+      }
+    };
+
+    document.addEventListener('dragover', handleGlobalDragOver);
+    document.addEventListener('drop', handleGlobalDrop);
+
+    return () => {
+      document.removeEventListener('dragover', handleGlobalDragOver);
+      document.removeEventListener('drop', handleGlobalDrop);
+    };
   }, []);
 
   // Memoize window configurations to prevent unnecessary re-renders
@@ -455,14 +501,8 @@ const VPlayerInner = () => {
           advancedFilters={advancedFilters}
           setAdvancedFilters={setAdvancedFilters}
           onOpenDuplicates={() => setDuplicatesWindowOpen(true)}
-          onTrackDragStart={(data) => {
-            setIsDraggingTracks(true);
-            setDragData(data);
-          }}
-          onTrackDragEnd={() => {
-            setIsDraggingTracks(false);
-            setDragData(null);
-          }}
+          onTrackDragStart={handleLibraryDragStart}
+          onTrackDragEnd={handleLibraryDragEnd}
         />
       ),
     },
@@ -584,7 +624,7 @@ const VPlayerInner = () => {
     searchQuery, setSearchQuery, sortBy, setSortBy, sortOrder, setSortOrder,
     equalizer.eqBands, equalizer.setEqBands, windows, colorScheme,
     setColorScheme, colorSchemes, debugVisible, setDebugVisible, loadingTrackIndex,
-    layouts, currentLayout, applyLayout
+    layouts, currentLayout, applyLayout, handleLibraryDragStart, handleLibraryDragEnd
   ]);
 
   return (
@@ -667,6 +707,7 @@ const VPlayerInner = () => {
             <div>Tracks: {filteredTracks.length} / {tracks.length}</div>
             <div>Scanning: {isScanning ? `${scanProgress}% (${scanCurrent}/${scanTotal})` : 'No'}</div>
             <div>LoadedTrackId: {trackLoading.loadedTrackId ? 'Yes' : 'No'}</div>
+            <div>Dragging: {isDraggingTracks ? 'Yes' : 'No'}</div>
             {searchQuery && <div>Search: "{searchQuery}"</div>}
           </div>
         )}
@@ -691,50 +732,6 @@ const VPlayerInner = () => {
             </ErrorBoundary>
           )
         ))}
-        
-        {/* Drag Overlay - appears when dragging tracks */}
-        {isDraggingTracks && (
-          <div
-            className="fixed inset-0 z-[9999] bg-blue-500/10 backdrop-blur-[1px] pointer-events-auto"
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-            }}
-            onDrop={async (e) => {
-              e.preventDefault();
-              if (dragData) {
-                // Add to current playlist
-                const playlists = JSON.parse(localStorage.getItem('playlists') || '[]');
-                const currentPlaylistId = localStorage.getItem('currentPlaylist');
-                
-                if (!currentPlaylistId) {
-                  alert('Please select or create a playlist first');
-                  return;
-                }
-                
-                try {
-                  const { invoke } = await import('@tauri-apps/api/core');
-                  for (const track of dragData) {
-                    await invoke('add_track_to_playlist', { 
-                      playlistId: parseInt(currentPlaylistId), 
-                      trackId: track.id 
-                    });
-                  }
-                  // Trigger playlist reload
-                  window.dispatchEvent(new CustomEvent('playlist-changed'));
-                } catch (err) {
-                  console.error('Failed to add tracks:', err);
-                  alert('Failed to add tracks to playlist');
-                }
-              }
-            }}
-          >
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-center">
-              <div className="text-2xl mb-2">📂➡️📝</div>
-              <div className="text-sm">Drop to add to current playlist</div>
-            </div>
-          </div>
-        )}
         
         {/* Duplicates Window */}
         <DuplicatesWindow

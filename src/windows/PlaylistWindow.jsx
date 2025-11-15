@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, GripVertical } from 'lucide-react';
 import { FixedSizeList as ListVirtual } from 'react-window';
 import { formatDuration } from '../utils/formatters';
@@ -111,8 +111,34 @@ export function PlaylistWindow({
   const [viewMode, setViewMode] = useState('library'); // 'library' or 'playlist'
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const containerRef = useRef(null);
   
   const playlists = usePlaylists();
+  
+  // Listen for global track drop events from VPlayer
+  useEffect(() => {
+    const handleGlobalDrop = (e) => {
+      if (!e.detail?.data) return;
+      
+      try {
+        const tracks = JSON.parse(e.detail.data);
+        handleExternalDrop({ 
+          preventDefault: () => {}, 
+          stopPropagation: () => {},
+          dataTransfer: { getData: () => e.detail.data }
+        });
+      } catch (err) {
+        console.error('Failed to handle global drop:', err);
+      }
+    };
+    
+    window.addEventListener('vplayer-track-drop', handleGlobalDrop);
+    
+    return () => {
+      window.removeEventListener('vplayer-track-drop', handleGlobalDrop);
+    };
+  }, [viewMode, playlists.currentPlaylist]);
   
   // Determine which tracks to display
   const displayTracks = viewMode === 'playlist' && playlists.currentPlaylist 
@@ -158,7 +184,58 @@ export function PlaylistWindow({
     setDragOverIndex(null);
   };
 
-  // Memoize itemData to prevent recreating on every render (must be before any conditional returns)
+  // Handle external track drops
+  const handleExternalDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    
+    console.log('Drop event on PlaylistWindow');
+    
+    const data = e.dataTransfer.getData('application/json');
+    if (!data) {
+      console.log('No data in drop');
+      return;
+    }
+    
+    try {
+      const tracks = JSON.parse(data);
+      console.log('Tracks to add:', tracks);
+      
+      if (viewMode === 'library') {
+        // If in library view, prompt to select/create playlist
+        if (!playlists.playlists || playlists.playlists.length === 0) {
+          alert('Please create a playlist first');
+          setShowNewPlaylistDialog(true);
+          return;
+        }
+        
+        // Auto-select first playlist if none selected
+        if (!playlists.currentPlaylist && playlists.playlists.length > 0) {
+          await playlists.setCurrentPlaylist(playlists.playlists[0].id);
+          setViewMode('playlist');
+        }
+      }
+      
+      if (!playlists.currentPlaylist) {
+        alert('Please select or create a playlist first');
+        return;
+      }
+      
+      await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
+      console.log('Tracks added successfully');
+      
+      // If we were in library view, switch to playlist view to show the added tracks
+      if (viewMode === 'library') {
+        setViewMode('playlist');
+      }
+    } catch (err) {
+      console.error('Drop failed:', err);
+      alert('Failed to add tracks to playlist');
+    }
+  };
+
+  // Memoize itemData to prevent recreating on every render
   const itemData = useMemo(() => ({ 
     tracks: displayTracks, 
     currentTrack, 
@@ -219,9 +296,14 @@ export function PlaylistWindow({
     if (!newPlaylistName.trim()) return;
     
     try {
-      await playlists.createPlaylist(newPlaylistName);
+      const newPlaylist = await playlists.createPlaylist(newPlaylistName);
       setNewPlaylistName('');
       setShowNewPlaylistDialog(false);
+      // Auto-select the new playlist
+      if (newPlaylist && newPlaylist.id) {
+        await playlists.setCurrentPlaylist(newPlaylist.id);
+        setViewMode('playlist');
+      }
     } catch (err) {
       alert('Failed to create playlist');
     }
@@ -246,7 +328,7 @@ export function PlaylistWindow({
   };
 
   // Close context menu on outside click
-  React.useEffect(() => {
+  useEffect(() => {
     if (contextMenu) {
       const handler = () => closeContextMenu();
       document.addEventListener('click', handler);
@@ -254,32 +336,70 @@ export function PlaylistWindow({
     }
   }, [contextMenu]);
 
-  // Listen for global track drops
-  React.useEffect(() => {
-    const handler = async (e) => {
-      if (!e.detail?.data) return;
-      
-      try {
-        const tracks = JSON.parse(e.detail.data);
-        if (!playlists.currentPlaylist) {
-          alert('Please select or create a playlist first');
-          return;
-        }
-        await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
-        console.log('Tracks added via global drop');
-      } catch (err) {
-        console.error('Failed to add tracks:', err);
+  // Add drag event listeners to the container AND window element
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      console.log('containerRef is null, cannot attach listeners');
+      return;
+    }
+
+    console.log('Attaching drag listeners to PlaylistWindow container');
+
+    // Find the parent Window wrapper (the fixed positioned div)
+    const windowWrapper = container.closest('.fixed');
+    if (windowWrapper) {
+      console.log('Found Window wrapper, attaching listeners there too');
+    }
+
+    const handleDragEnter = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(true);
+      console.log('Drag entered playlist window', e.dataTransfer.types);
+    };
+
+    const handleDragLeave = (e) => {
+      // Only set to false if we're leaving the container entirely
+      const target = windowWrapper || container;
+      if (!target.contains(e.relatedTarget)) {
+        setIsDraggingOver(false);
+        console.log('Drag left playlist window');
       }
     };
+
+    const handleDragOverContainer = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+      console.log('Drag over playlist window');
+    };
+
+    // Attach to both container and window wrapper
+    const targets = windowWrapper ? [container, windowWrapper] : [container];
     
-    window.addEventListener('vplayer-track-drop', handler);
-    return () => window.removeEventListener('vplayer-track-drop', handler);
-  }, [playlists]);
+    targets.forEach(target => {
+      target.addEventListener('dragenter', handleDragEnter, { capture: true });
+      target.addEventListener('dragleave', handleDragLeave, { capture: true });
+      target.addEventListener('dragover', handleDragOverContainer, { capture: true });
+      target.addEventListener('drop', handleExternalDrop, { capture: true });
+    });
+
+    return () => {
+      console.log('Removing drag listeners from PlaylistWindow container');
+      targets.forEach(target => {
+        target.removeEventListener('dragenter', handleDragEnter, { capture: true });
+        target.removeEventListener('dragleave', handleDragLeave, { capture: true });
+        target.removeEventListener('dragover', handleDragOverContainer, { capture: true });
+        target.removeEventListener('drop', handleExternalDrop, { capture: true });
+      });
+    };
+  }, [viewMode, playlists.currentPlaylist]);
 
   // Empty state
   if (displayTracks.length === 0) {
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full" ref={containerRef}>
         {/* Playlist Selector */}
         <div className="flex items-center gap-2 p-3 border-b border-slate-700">
           <button
@@ -316,15 +436,21 @@ export function PlaylistWindow({
           </button>
         </div>
         
-        {/* Empty State */}
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
+        {/* Empty State with Drop Zone */}
+        <div 
+          className={`flex-1 flex flex-col items-center justify-center text-center p-4 transition-colors ${
+            isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''
+          }`}
+        >
           <List className="w-12 h-12 text-slate-600 mb-3" />
           <p className="text-slate-400 text-sm mb-2">
-            {viewMode === 'playlist' ? 'No tracks in this playlist' : 'No music in library'}
+            {isDraggingOver 
+              ? 'Drop tracks here to add them'
+              : viewMode === 'playlist' ? 'No tracks in this playlist' : 'No music in library'}
           </p>
           <p className="text-slate-500 text-xs">
             {viewMode === 'playlist' 
-              ? 'Add tracks from your library to this playlist' 
+              ? 'Drag tracks from your library to this playlist' 
               : 'Add folders to your library to see tracks here'}
           </p>
         </div>
@@ -369,43 +495,11 @@ export function PlaylistWindow({
 
   return (
     <div 
-      className="flex flex-col h-full gap-3"
+      ref={containerRef}
+      className={`flex flex-col h-full gap-3 ${
+        isDraggingOver ? 'bg-blue-500/5 border-2 border-dashed border-blue-500' : ''
+      }`}
       style={{ pointerEvents: 'auto' }}
-      onDragEnter={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('Drag entered playlist');
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'copy';
-        console.log('Drag over playlist');
-      }}
-      onDrop={async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('Drop on playlist!');
-        
-        const data = e.dataTransfer.getData('application/json');
-        if (!data) {
-          console.log('No data in drop');
-          return;
-        }
-        
-        try {
-          const tracks = JSON.parse(data);
-          console.log('Tracks to add:', tracks);
-          if (!playlists.currentPlaylist) {
-            alert('Please select or create a playlist first');
-            return;
-          }
-          await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
-          console.log('Tracks added successfully');
-        } catch (err) {
-          console.error('Drop failed:', err);
-        }
-      }}
     >
       {/* Playlist Selector */}
       <div className="flex items-center gap-2 px-3">
@@ -487,6 +581,15 @@ export function PlaylistWindow({
           {Row}
         </ListVirtual>
       </div>
+
+      {/* Drop Indicator Overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 bg-blue-500/10 pointer-events-none flex items-center justify-center">
+          <div className="text-blue-400 text-lg font-semibold">
+            Drop to add to {viewMode === 'playlist' ? 'playlist' : 'library'}
+          </div>
+        </div>
+      )}
 
       {/* New Playlist Dialog */}
       {showNewPlaylistDialog && (

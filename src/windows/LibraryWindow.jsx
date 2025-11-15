@@ -319,7 +319,7 @@ export function LibraryWindow({
                         if (e.target.closest('[draggable="true"]')) return;
                         setExpandedFolder(isExpanded ? null : folder.id);
                       }}
-                      className="flex-1 min-w-0"
+                      className="flex-1 min-w-0 cursor-pointer"
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <div
@@ -332,8 +332,11 @@ export function LibraryWindow({
                               artist: t.artist,
                               album: t.album
                             }));
+                            
+                            // Set data FIRST
                             e.dataTransfer.setData('application/json', JSON.stringify(folderTracksData));
                             e.dataTransfer.effectAllowed = 'copy';
+                            
                             if (onTrackDragStart) onTrackDragStart(folderTracksData);
                           }}
                           onDragEnd={(e) => {
@@ -389,7 +392,6 @@ export function LibraryWindow({
                         key={track.id}
                         draggable
                         onDragStart={(e) => {
-                          console.log('Track drag start handler called');
                           const trackData = [{
                             id: track.id,
                             path: track.path,
@@ -397,13 +399,14 @@ export function LibraryWindow({
                             artist: track.artist,
                             album: track.album
                           }];
+                          
+                          // Set data FIRST
                           e.dataTransfer.setData('application/json', JSON.stringify(trackData));
                           e.dataTransfer.effectAllowed = 'copy';
-                          console.log('Calling onTrackDragStart with:', trackData);
+                          
                           if (onTrackDragStart) onTrackDragStart(trackData);
                         }}
                         onDragEnd={(e) => {
-                          console.log('Track drag end handler called');
                           if (onTrackDragEnd) onTrackDragEnd();
                         }}
                         className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800/50 cursor-move transition-colors border-b border-slate-800 last:border-0"
