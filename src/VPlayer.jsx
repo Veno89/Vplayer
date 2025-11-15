@@ -97,6 +97,9 @@ const VPlayerInner = () => {
 
   // Window management
   const { windows, setWindows, setMaxZIndex, bringToFront, toggleWindow } = useWindowManagement();
+  
+  // Track which tracks are active for playback (playlist tracks or all library tracks)
+  const [activePlaybackTracks, setActivePlaybackTracks] = React.useState([]);
 
   // Audio hook (Tauri)
   const audio = useAudio({
@@ -131,7 +134,7 @@ const VPlayerInner = () => {
       progress, duration,
       volume, setVolume
     }, 
-    tracks: tracks,
+    tracks: activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks,
     toast,
     crossfade
   });
@@ -332,13 +335,11 @@ const VPlayerInner = () => {
 
   // Drag & Drop handlers
   const handleDrop = useCallback(async (e) => {
-    console.log('VPlayer handleDrop called!');
     e.preventDefault();
     
     // Check if internal drag - dispatch to active playlist
     const internalData = e.dataTransfer.getData('application/json');
     if (internalData) {
-      console.log('Internal data found, dispatching global event');
       window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
         detail: { data: internalData }
       }));
@@ -370,7 +371,6 @@ const VPlayerInner = () => {
   }, [addFolder, toast]);
 
   const handleDragOver = useCallback((e) => {
-    console.log('VPlayer handleDragOver called');
     const types = Array.from(e.dataTransfer.types);
     if (types.includes('application/json')) {
       // Internal drag - allow drop on root, will dispatch to playlist
@@ -471,6 +471,7 @@ const VPlayerInner = () => {
           loadingTrackIndex={loadingTrackIndex}
           removeTrack={removeTrack}
           onRatingChange={handleRatingChange}
+          onActiveTracksChange={setActivePlaybackTracks}
         />
       ),
     },

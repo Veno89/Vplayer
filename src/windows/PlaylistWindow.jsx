@@ -103,7 +103,8 @@ export function PlaylistWindow({
   currentColors, 
   loadingTrackIndex,
   removeTrack,
-  onRatingChange
+  onRatingChange,
+  onActiveTracksChange
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
@@ -120,6 +121,10 @@ export function PlaylistWindow({
   useEffect(() => {
     const handleGlobalDrop = (e) => {
       if (!e.detail?.data) return;
+      
+      // Prevent duplicate handling with a flag
+      if (e.detail.handled) return;
+      e.detail.handled = true;
       
       try {
         const tracks = JSON.parse(e.detail.data);
@@ -144,6 +149,13 @@ export function PlaylistWindow({
   const displayTracks = viewMode === 'playlist' && playlists.currentPlaylist 
     ? playlists.playlistTracks 
     : tracks;
+  
+  // Update active playback tracks whenever displayTracks changes
+  useEffect(() => {
+    if (onActiveTracksChange) {
+      onActiveTracksChange(displayTracks);
+    }
+  }, [displayTracks, onActiveTracksChange]);
 
   // Drag and drop handlers for playlist reordering
   const handleDragStart = (e, index) => {
@@ -190,17 +202,11 @@ export function PlaylistWindow({
     e.stopPropagation();
     setIsDraggingOver(false);
     
-    console.log('Drop event on PlaylistWindow');
-    
     const data = e.dataTransfer.getData('application/json');
-    if (!data) {
-      console.log('No data in drop');
-      return;
-    }
+    if (!data) return;
     
     try {
       const tracks = JSON.parse(data);
-      console.log('Tracks to add:', tracks);
       
       if (viewMode === 'library') {
         // If in library view, prompt to select/create playlist
@@ -223,7 +229,6 @@ export function PlaylistWindow({
       }
       
       await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
-      console.log('Tracks added successfully');
       
       // If we were in library view, switch to playlist view to show the added tracks
       if (viewMode === 'library') {
@@ -335,66 +340,6 @@ export function PlaylistWindow({
       return () => document.removeEventListener('click', handler);
     }
   }, [contextMenu]);
-
-  // Add drag event listeners to the container AND window element
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      console.log('containerRef is null, cannot attach listeners');
-      return;
-    }
-
-    console.log('Attaching drag listeners to PlaylistWindow container');
-
-    // Find the parent Window wrapper (the fixed positioned div)
-    const windowWrapper = container.closest('.fixed');
-    if (windowWrapper) {
-      console.log('Found Window wrapper, attaching listeners there too');
-    }
-
-    const handleDragEnter = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(true);
-      console.log('Drag entered playlist window', e.dataTransfer.types);
-    };
-
-    const handleDragLeave = (e) => {
-      // Only set to false if we're leaving the container entirely
-      const target = windowWrapper || container;
-      if (!target.contains(e.relatedTarget)) {
-        setIsDraggingOver(false);
-        console.log('Drag left playlist window');
-      }
-    };
-
-    const handleDragOverContainer = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = 'copy';
-      console.log('Drag over playlist window');
-    };
-
-    // Attach to both container and window wrapper
-    const targets = windowWrapper ? [container, windowWrapper] : [container];
-    
-    targets.forEach(target => {
-      target.addEventListener('dragenter', handleDragEnter, { capture: true });
-      target.addEventListener('dragleave', handleDragLeave, { capture: true });
-      target.addEventListener('dragover', handleDragOverContainer, { capture: true });
-      target.addEventListener('drop', handleExternalDrop, { capture: true });
-    });
-
-    return () => {
-      console.log('Removing drag listeners from PlaylistWindow container');
-      targets.forEach(target => {
-        target.removeEventListener('dragenter', handleDragEnter, { capture: true });
-        target.removeEventListener('dragleave', handleDragLeave, { capture: true });
-        target.removeEventListener('dragover', handleDragOverContainer, { capture: true });
-        target.removeEventListener('drop', handleExternalDrop, { capture: true });
-      });
-    };
-  }, [viewMode, playlists.currentPlaylist]);
 
   // Empty state
   if (displayTracks.length === 0) {
