@@ -57,7 +57,6 @@ export function LibraryWindow({
   scanTotal,
   scanCurrentFile,
   handleAddFolder,
-  handleRefreshFolders,
   handleRemoveFolder,
   searchQuery,
   setSearchQuery,
@@ -138,19 +137,6 @@ export function LibraryWindow({
           Music Library
         </h3>
         <div className="flex gap-2">
-          <button
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => {
-              e.stopPropagation();
-              handleRefreshFolders();
-            }}
-            disabled={isScanning || libraryFolders.length === 0}
-            className="px-3 py-1 bg-green-700 text-white text-xs rounded hover:bg-green-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-            title="Refresh All Folders (Incremental Scan)"
-          >
-            <RefreshCw className="w-3 h-3" />
-            Refresh
-          </button>
           <button
             onMouseDown={e => e.stopPropagation()}
             onClick={e => {

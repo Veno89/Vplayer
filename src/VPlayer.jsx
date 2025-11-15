@@ -37,8 +37,6 @@ const VPlayerInner = () => {
   // Toast notifications
   const toast = useToast();
   
-  // Duplicates window state
-  const [duplicatesWindowOpen, setDuplicatesWindowOpen] = React.useState(false);
   // Theme editor window state
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
   // Mini player state
@@ -290,20 +288,6 @@ const VPlayerInner = () => {
     }
   }, [addFolder, toast]);
 
-  const handleRefreshFolders = useCallback(async () => {
-    try {
-      const newTracksCount = await refreshFolders();
-      if (newTracksCount > 0) {
-        toast.showSuccess(`Found ${newTracksCount} new or modified track${newTracksCount > 1 ? 's' : ''}`);
-      } else {
-        toast.showInfo('All folders are up to date');
-      }
-    } catch (err) {
-      console.error('Failed to refresh folders:', err);
-      toast.showError('Failed to refresh folders');
-    }
-  }, [refreshFolders, toast]);
-
   const handleRemoveFolder = useCallback(async (folderId, folderPath) => {
     try {
       await removeFolder(folderId, folderPath);
@@ -491,7 +475,6 @@ const VPlayerInner = () => {
           scanTotal={scanTotal}
           scanCurrentFile={scanCurrentFile}
           handleAddFolder={handleAddFolder}
-          handleRefreshFolders={handleRefreshFolders}
           handleRemoveFolder={handleRemoveFolder}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -733,13 +716,6 @@ const VPlayerInner = () => {
             </ErrorBoundary>
           )
         ))}
-        
-        {/* Duplicates Window */}
-        <DuplicatesWindow
-          isOpen={duplicatesWindowOpen}
-          onClose={() => setDuplicatesWindowOpen(false)}
-          onDuplicateRemoved={handleDuplicateRemoved}
-        />
         
         {/* Theme Editor Window */}
         <ThemeEditorWindow

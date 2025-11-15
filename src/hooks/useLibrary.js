@@ -32,13 +32,48 @@ export function useLibrary() {
 
   // Load tracks from database on mount
   useEffect(() => {
-    loadAllTracks();
-    loadAllFolders();
+    const initLibrary = async () => {
+      await loadAllTracks();
+      await loadAllFolders();
+      
+      // Start watching all existing folders
+      try {
+        const dbFolders = await TauriAPI.getAllFolders();
+        for (const [id, path, name, dateAdded] of dbFolders) {
+          try {
+            await invoke('start_folder_watch', { folderPath: path });
+            console.log(`Started watching folder: ${path}`);
+          } catch (err) {
+            console.error(`Failed to start watching ${path}:`, err);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to start folder watches:', err);
+      }
+    };
+    
+    initLibrary();
   }, []);
 
   // Listen for scan events
   useEffect(() => {
     const unlistenPromises = [];
+
+    // Listen for folder changes (file watcher)
+    unlistenPromises.push(
+      listen('folder-changed', async (event) => {
+        console.log('File system change detected:', event.payload);
+        // Trigger incremental scan for all folders
+        try {
+          const newTracksCount = await refreshFolders();
+          if (newTracksCount > 0) {
+            console.log(`Auto-detected ${newTracksCount} new/modified track(s)`);
+          }
+        } catch (err) {
+          console.error('Auto-scan failed:', err);
+        }
+      })
+    );
 
     // Listen for total files count
     unlistenPromises.push(
@@ -164,6 +199,14 @@ export function useLibrary() {
       setLibraryFolders(prev => [...prev, newFolder]);
       await loadAllTracks(); // Reload all tracks from database
       await loadAllFolders(); // Reload folders to get correct data from DB
+      
+      // Start watching this folder for changes
+      try {
+        await invoke('start_folder_watch', { folderPath: selected });
+        console.log(`Started watching folder: ${selected}`);
+      } catch (err) {
+        console.error('Failed to start folder watch:', err);
+      }
     } catch (err) {
       console.error('Failed to add folder:', err);
       setIsScanning(false);
@@ -173,6 +216,14 @@ export function useLibrary() {
 
   const removeFolder = useCallback(async (folderId, folderPath) => {
     try {
+      // Stop watching this folder
+      try {
+        await invoke('stop_folder_watch', { folderPath });
+        console.log(`Stopped watching folder: ${folderPath}`);
+      } catch (err) {
+        console.error('Failed to stop folder watch:', err);
+      }
+      
       await TauriAPI.removeFolder(folderId, folderPath);
       setLibraryFolders(prev => prev.filter(f => f.id !== folderId));
       await loadAllTracks(); // Reload remaining tracks
