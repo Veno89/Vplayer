@@ -134,19 +134,18 @@ export function PlaylistWindow({
   const handleDrop = async (e, dropIndex) => {
     e.preventDefault();
     
+    // Only handle internal reordering
     if (draggedIndex === null || draggedIndex === dropIndex) {
       setDraggedIndex(null);
       setDragOverIndex(null);
       return;
     }
 
-    // Reorder tracks
     const newTracks = [...displayTracks];
     const draggedTrack = newTracks[draggedIndex];
     newTracks.splice(draggedIndex, 1);
     newTracks.splice(dropIndex, 0, draggedTrack);
 
-    // Update positions in database
     const trackPositions = newTracks.map((track, idx) => [track.id, idx]);
     
     try {
@@ -255,6 +254,28 @@ export function PlaylistWindow({
     }
   }, [contextMenu]);
 
+  // Listen for global track drops
+  React.useEffect(() => {
+    const handler = async (e) => {
+      if (!e.detail?.data) return;
+      
+      try {
+        const tracks = JSON.parse(e.detail.data);
+        if (!playlists.currentPlaylist) {
+          alert('Please select or create a playlist first');
+          return;
+        }
+        await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
+        console.log('Tracks added via global drop');
+      } catch (err) {
+        console.error('Failed to add tracks:', err);
+      }
+    };
+    
+    window.addEventListener('vplayer-track-drop', handler);
+    return () => window.removeEventListener('vplayer-track-drop', handler);
+  }, [playlists]);
+
   // Empty state
   if (displayTracks.length === 0) {
     return (
@@ -347,7 +368,45 @@ export function PlaylistWindow({
   const listHeight = Math.min(500, displayTracks.length * itemSize);
 
   return (
-    <div className="flex flex-col h-full gap-3">
+    <div 
+      className="flex flex-col h-full gap-3"
+      style={{ pointerEvents: 'auto' }}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Drag entered playlist');
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        console.log('Drag over playlist');
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Drop on playlist!');
+        
+        const data = e.dataTransfer.getData('application/json');
+        if (!data) {
+          console.log('No data in drop');
+          return;
+        }
+        
+        try {
+          const tracks = JSON.parse(data);
+          console.log('Tracks to add:', tracks);
+          if (!playlists.currentPlaylist) {
+            alert('Please select or create a playlist first');
+            return;
+          }
+          await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
+          console.log('Tracks added successfully');
+        } catch (err) {
+          console.error('Drop failed:', err);
+        }
+      }}
+    >
       {/* Playlist Selector */}
       <div className="flex items-center gap-2 px-3">
         <button

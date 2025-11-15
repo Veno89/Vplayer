@@ -94,7 +94,8 @@ const VPlayerInner = () => {
 
   // Window management
   const { windows, setWindows, setMaxZIndex, bringToFront, toggleWindow } = useWindowManagement();
-
+  const [isDraggingTracks, setIsDraggingTracks] = React.useState(false);
+  const [dragData, setDragData] = React.useState(null);
 
   // Audio hook (Tauri)
   const audio = useAudio({
@@ -106,7 +107,7 @@ const VPlayerInner = () => {
           console.error('Failed to replay:', err);
           toast.showError('Failed to replay track');
         });
-      } else if (repeatMode === 'all' || currentTrack < filteredTracks.length - 1) {
+      } else if (repeatMode === 'all' || currentTrack < tracks.length - 1) {
         playerHook.handleNextTrack();
       } else {
         setPlaying(false);
@@ -129,14 +130,14 @@ const VPlayerInner = () => {
       progress, duration,
       volume, setVolume
     }, 
-    tracks: filteredTracks,
+    tracks: tracks,
     toast,
     crossfade
   });
 
   const trackLoading = useTrackLoading({ 
     audio, 
-    tracks: filteredTracks, 
+    tracks: tracks, 
     currentTrack,
     playing,
     setDuration,
@@ -236,50 +237,44 @@ const VPlayerInner = () => {
 
   // Restore last played track on mount
   useEffect(() => {
-    if (trackLoading.hasRestoredTrack || filteredTracks.length === 0) return;
+    if (trackLoading.hasRestoredTrack || tracks.length === 0) return;
     
     const savedTrackId = localStorage.getItem('vplayer_last_track');
     if (savedTrackId) {
-      const trackIndex = filteredTracks.findIndex(t => t.id === savedTrackId);
+      const trackIndex = tracks.findIndex(t => t.id === savedTrackId);
       if (trackIndex !== -1) {
         setCurrentTrack(trackIndex);
       }
     }
     trackLoading.setHasRestoredTrack(true);
-  }, [filteredTracks, trackLoading, setCurrentTrack]);
+  }, [tracks, trackLoading, setCurrentTrack]);
 
   // Sync playing state with audio
   useEffect(() => {
-    const syncAudio = async () => {
-      if (playing) {
-        if (!audio.isPlaying) {
-          await audio.play().catch(err => {
-            console.error('Failed to play:', err);
-            toast.showError('Failed to play track');
-            setPlaying(false);
-          });
-        }
-      } else {
-        if (audio.isPlaying) {
-          await audio.pause().catch(err => {
-            console.error('Failed to pause:', err);
-            toast.showError('Failed to pause');
-          });
-        }
-      }
-    };
-    syncAudio();
-  }, [playing, audio.isPlaying]);
+    console.log('Playing state changed to:', playing, 'audio.isPlaying:', audio.isPlaying);
+    if (playing) {
+      audio.play().catch(err => {
+        console.error('Failed to play:', err);
+        toast.showError('Failed to play track');
+        setPlaying(false);
+      });
+    } else {
+      audio.pause().catch(err => {
+        console.error('Failed to pause:', err);
+        toast.showError('Failed to pause');
+      });
+    }
+  }, [playing]);
 
   // Track play count when a new track starts playing
   useEffect(() => {
-    if (playing && currentTrack !== null && filteredTracks[currentTrack]) {
-      const track = filteredTracks[currentTrack];
+    if (playing && currentTrack !== null && tracks[currentTrack]) {
+      const track = tracks[currentTrack];
       
       invoke('increment_play_count', { trackId: track.id })
         .catch(err => console.warn('Failed to increment play count:', err));
     }
-  }, [playing, currentTrack, filteredTracks]);
+  }, [playing, currentTrack, tracks]);
 
   const handleAddFolder = useCallback(async () => {
     try {
@@ -310,7 +305,7 @@ const VPlayerInner = () => {
       await removeFolder(folderId, folderPath);
       toast.showSuccess('Folder removed successfully');
       
-      if (currentTrack !== null && filteredTracks[currentTrack]?.folderId === folderId) {
+      if (currentTrack !== null && tracks[currentTrack]?.folderId === folderId) {
         setCurrentTrack(null);
         setPlaying(false);
       }
@@ -318,7 +313,7 @@ const VPlayerInner = () => {
       console.error('Failed to remove folder:', err);
       toast.showError('Failed to remove folder');
     }
-  }, [removeFolder, currentTrack, filteredTracks, setCurrentTrack, setPlaying, toast]);
+  }, [removeFolder, currentTrack, tracks, setCurrentTrack, setPlaying, toast]);
 
   // Handle track rating changes
   const handleRatingChange = useCallback((trackId, newRating) => {
@@ -337,6 +332,15 @@ const VPlayerInner = () => {
   // Drag & Drop handlers
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();
+    
+    // Check if internal drag - dispatch to active playlist
+    const internalData = e.dataTransfer.getData('application/json');
+    if (internalData) {
+      window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
+        detail: { data: internalData }
+      }));
+      return;
+    }
     
     try {
       const files = e.dataTransfer.files;
@@ -363,6 +367,14 @@ const VPlayerInner = () => {
   }, [addFolder, toast]);
 
   const handleDragOver = useCallback((e) => {
+    const types = Array.from(e.dataTransfer.types);
+    if (types.includes('application/json')) {
+      // Internal drag - allow drop on root, will dispatch to playlist
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      return;
+    }
+    
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   }, []);
@@ -376,14 +388,14 @@ const VPlayerInner = () => {
       content: (
         <PlayerWindow
           currentTrack={currentTrack}
-          tracks={filteredTracks}
+          tracks={tracks}
           playing={playing}
           progress={progress}
           duration={duration}
           volume={volume}
           setVolume={playerHook.handleVolumeChange}
           currentColors={currentColors}
-          togglePlay={() => setPlaying(p => !p)}
+          togglePlay={() => { console.log('togglePlay called, current playing:', playing); setPlaying(!playing); }}
           nextTrack={playerHook.handleNextTrack}
           prevTrack={playerHook.handlePrevTrack}
           setShuffle={setShuffle}
@@ -406,7 +418,7 @@ const VPlayerInner = () => {
       icon: List,
       content: (
         <PlaylistWindow
-          tracks={filteredTracks}
+          tracks={tracks}
           currentTrack={currentTrack ?? 0}
           setCurrentTrack={setCurrentTrack}
           currentColors={currentColors}
@@ -443,6 +455,14 @@ const VPlayerInner = () => {
           advancedFilters={advancedFilters}
           setAdvancedFilters={setAdvancedFilters}
           onOpenDuplicates={() => setDuplicatesWindowOpen(true)}
+          onTrackDragStart={(data) => {
+            setIsDraggingTracks(true);
+            setDragData(data);
+          }}
+          onTrackDragEnd={() => {
+            setIsDraggingTracks(false);
+            setDragData(null);
+          }}
         />
       ),
     },
@@ -579,7 +599,7 @@ const VPlayerInner = () => {
         <div className="fixed top-4 right-4 z-[100]">
           <MiniPlayerWindow
             currentTrack={currentTrack}
-            tracks={filteredTracks}
+            tracks={tracks}
             playing={playing}
             progress={progress}
             duration={duration}
@@ -671,6 +691,50 @@ const VPlayerInner = () => {
             </ErrorBoundary>
           )
         ))}
+        
+        {/* Drag Overlay - appears when dragging tracks */}
+        {isDraggingTracks && (
+          <div
+            className="fixed inset-0 z-[9999] bg-blue-500/10 backdrop-blur-[1px] pointer-events-auto"
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+            }}
+            onDrop={async (e) => {
+              e.preventDefault();
+              if (dragData) {
+                // Add to current playlist
+                const playlists = JSON.parse(localStorage.getItem('playlists') || '[]');
+                const currentPlaylistId = localStorage.getItem('currentPlaylist');
+                
+                if (!currentPlaylistId) {
+                  alert('Please select or create a playlist first');
+                  return;
+                }
+                
+                try {
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  for (const track of dragData) {
+                    await invoke('add_track_to_playlist', { 
+                      playlistId: parseInt(currentPlaylistId), 
+                      trackId: track.id 
+                    });
+                  }
+                  // Trigger playlist reload
+                  window.dispatchEvent(new CustomEvent('playlist-changed'));
+                } catch (err) {
+                  console.error('Failed to add tracks:', err);
+                  alert('Failed to add tracks to playlist');
+                }
+              }
+            }}
+          >
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-center">
+              <div className="text-2xl mb-2">📂➡️📝</div>
+              <div className="text-sm">Drop to add to current playlist</div>
+            </div>
+          </div>
+        )}
         
         {/* Duplicates Window */}
         <DuplicatesWindow

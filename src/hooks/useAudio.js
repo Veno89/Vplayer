@@ -141,10 +141,12 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   }, [audioBackendError]);
 
   const pause = useCallback(async () => {
-    if (audioBackendError) return; // Silently fail
+    if (audioBackendError) return;
     
     try {
+      console.log('Calling pause_audio command');
       await invoke('pause_audio');
+      console.log('Pause command completed, setting isPlaying to false');
       setIsPlaying(false);
     } catch (err) {
       console.error('Failed to pause:', err);

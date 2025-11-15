@@ -88,6 +88,20 @@ export function usePlaylists() {
     }
   }, [currentPlaylist, loadPlaylistTracks]);
 
+  const addTracksToPlaylist = useCallback(async (playlistId, trackIds) => {
+    try {
+      for (const trackId of trackIds) {
+        await invoke('add_track_to_playlist', { playlistId, trackId });
+      }
+      if (currentPlaylist === playlistId) {
+        await loadPlaylistTracks(playlistId);
+      }
+    } catch (err) {
+      console.error('Failed to add tracks to playlist:', err);
+      throw err;
+    }
+  }, [currentPlaylist, loadPlaylistTracks]);
+
   const removeTrackFromPlaylist = useCallback(async (playlistId, trackId) => {
     try {
       await invoke('remove_track_from_playlist', { playlistId, trackId });
@@ -132,6 +146,7 @@ export function usePlaylists() {
     deletePlaylist,
     renamePlaylist,
     addTrackToPlaylist,
+    addTracksToPlaylist,
     removeTrackFromPlaylist,
     reorderPlaylistTracks,
     loadPlaylists,

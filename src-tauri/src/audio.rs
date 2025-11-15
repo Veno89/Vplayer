@@ -275,7 +275,7 @@ impl AudioPlayer {
     
     pub fn is_playing(&self) -> bool {
         let sink = self.sink.lock().unwrap();
-        !sink.is_paused()
+        !sink.is_paused() && !sink.empty()
     }
     
     pub fn is_finished(&self) -> bool {

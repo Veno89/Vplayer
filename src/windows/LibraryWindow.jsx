@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { FolderOpen, Search, RefreshCw, Trash2, X, Loader, AlertCircle, FileQuestion, Copy } from 'lucide-react';
+import { FolderOpen, Search, RefreshCw, Trash2, X, Loader, AlertCircle, FileQuestion, Copy, ChevronDown, ChevronRight, Music, GripVertical } from 'lucide-react';
 import { AdvancedSearch } from '../components/AdvancedSearch';
 import { invoke } from '@tauri-apps/api/core';
+import { formatDuration } from '../utils/formatters';
+import { StarRating } from '../components/StarRating';
 
 export function LibraryWindow({
   libraryFolders,
@@ -25,6 +27,8 @@ export function LibraryWindow({
   advancedFilters,
   setAdvancedFilters,
   onOpenDuplicates,
+  onTrackDragStart,
+  onTrackDragEnd,
 }) {
   const [removingFolder, setRemovingFolder] = useState(null);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
@@ -32,6 +36,16 @@ export function LibraryWindow({
   const [showMissingFiles, setShowMissingFiles] = useState(false);
   const [checkingMissing, setCheckingMissing] = useState(false);
   const [isRefreshingFolders, setIsRefreshingFolders] = useState(false);
+  const [expandedFolder, setExpandedFolder] = useState(null);
+
+  // Memoize folder tracks calculations to prevent lag
+  const folderTracksMap = React.useMemo(() => {
+    const map = new Map();
+    libraryFolders.forEach(folder => {
+      map.set(folder.id, tracks.filter(t => t.path.startsWith(folder.path)));
+    });
+    return map;
+  }, [libraryFolders, tracks]);
 
   // Check for missing files
   const handleCheckMissingFiles = async () => {
@@ -75,7 +89,7 @@ export function LibraryWindow({
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-3 h-full">
       {/* Header with Actions */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-white font-semibold flex items-center gap-2">
@@ -221,7 +235,7 @@ export function LibraryWindow({
         )}
 
         {/* Sort Controls */}
-        <div className="flex gap-2 text-xs">
+        <div className="flex gap-2 text-xs" onMouseDown={e => e.stopPropagation()}>
           <span className="text-slate-400">Sort:</span>
           {['title', 'artist', 'album', 'dateAdded'].map(field => (
             <button
@@ -288,70 +302,124 @@ export function LibraryWindow({
           </div>
         ) : (
           libraryFolders.map(folder => {
-            const folderTracks = tracks.filter(t => t.path.startsWith(folder.path));
+            const folderTracks = folderTracksMap.get(folder.id) || [];
             const isRemoving = removingFolder === folder.id;
+            const isExpanded = expandedFolder === folder.id;
 
             return (
               <div
                 key={folder.id}
-                draggable={!isScanning && !isRemoving}
-                onDragStart={(e) => {
-                  // Set folder tracks as drag data
-                  const folderTracksData = folderTracks.map(t => ({
-                    id: t.id,
-                    path: t.path,
-                    title: t.title || t.name,
-                    artist: t.artist,
-                    album: t.album
-                  }));
-                  e.dataTransfer.setData('application/json', JSON.stringify(folderTracksData));
-                  e.dataTransfer.effectAllowed = 'copy';
-                }}
-                onMouseDown={(e) => {
-                  // Only for dragging, don't stop propagation
-                  if (e.button !== 0) return; // Only left click
-                }}
-                onClick={(e) => {
-                  if (e.target.closest('button')) return; // Don't trigger if clicking remove button
-                  // Filter to show only this folder's tracks
-                  setAdvancedFilters({ ...advancedFilters, folderId: folder.id.toString() });
-                }}
-                className="bg-slate-800/50 border border-slate-700 rounded p-3 hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Click to view tracks, drag to add to playlist"
+                className="bg-slate-800/50 border border-slate-700 rounded overflow-hidden"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <FolderOpen className={`w-4 h-4 ${currentColors.accent} flex-shrink-0`} />
-                      <h4 className="text-white text-sm font-medium truncate" title={folder.name}>
-                        {folder.name}
-                      </h4>
+                <div className="p-3 hover:bg-slate-800 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div 
+                      onClick={(e) => {
+                        if (e.target.closest('button')) return;
+                        if (e.target.closest('[draggable="true"]')) return;
+                        setExpandedFolder(isExpanded ? null : folder.id);
+                      }}
+                      className="flex-1 min-w-0"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div
+                          draggable={!isScanning && !isRemoving}
+                          onDragStart={(e) => {
+                            const folderTracksData = folderTracks.map(t => ({
+                              id: t.id,
+                              path: t.path,
+                              title: t.title || t.name,
+                              artist: t.artist,
+                              album: t.album
+                            }));
+                            e.dataTransfer.setData('application/json', JSON.stringify(folderTracksData));
+                            e.dataTransfer.effectAllowed = 'copy';
+                            if (onTrackDragStart) onTrackDragStart(folderTracksData);
+                          }}
+                          onDragEnd={(e) => {
+                            if (onTrackDragEnd) onTrackDragEnd();
+                          }}
+                          className="cursor-move p-1 hover:bg-slate-700/50 rounded"
+                          title="Drag to add all tracks to playlist"
+                        >
+                          <GripVertical className="w-4 h-4 text-slate-500" />
+                        </div>
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        )}
+                        <FolderOpen className={`w-4 h-4 ${currentColors.accent} flex-shrink-0`} />
+                        <h4 className="text-white text-sm font-medium truncate" title={folder.name}>
+                          {folder.name}
+                        </h4>
+                      </div>
+                      <div className="text-xs text-slate-500 truncate mb-1 ml-8" title={folder.path}>
+                        {folder.path}
+                      </div>
+                      <div className="flex gap-4 text-xs text-slate-400 ml-8">
+                        <span>{folderTracks.length} tracks</span>
+                        <span>Added {new Date(folder.dateAdded).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500 truncate mb-1" title={folder.path}>
-                      {folder.path}
-                    </div>
-                    <div className="flex gap-4 text-xs text-slate-400">
-                      <span>{folderTracks.length} tracks</span>
-                      <span>Added {new Date(folder.dateAdded).toLocaleDateString()}</span>
-                    </div>
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleRemove(folder.id, folder.path, folder.name);
+                      }}
+                      disabled={isScanning || isRemoving}
+                      className="p-1.5 bg-red-700/20 hover:bg-red-700/40 text-red-400 rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                      title="Remove Folder"
+                    >
+                      {isRemoving ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleRemove(folder.id, folder.path, folder.name);
-                    }}
-                    disabled={isScanning || isRemoving}
-                    className="p-1.5 bg-red-700/20 hover:bg-red-700/40 text-red-400 rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                    title="Remove Folder"
-                  >
-                    {isRemoving ? (
-                      <Loader className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
                 </div>
+                
+                {/* Expanded Track List */}
+                {isExpanded && folderTracks.length > 0 && (
+                  <div className="border-t border-slate-700 bg-slate-900/50 max-h-64 overflow-y-auto">
+                    {folderTracks.map((track, idx) => (
+                      <div
+                        key={track.id}
+                        draggable
+                        onDragStart={(e) => {
+                          console.log('Track drag start handler called');
+                          const trackData = [{
+                            id: track.id,
+                            path: track.path,
+                            title: track.title || track.name,
+                            artist: track.artist,
+                            album: track.album
+                          }];
+                          e.dataTransfer.setData('application/json', JSON.stringify(trackData));
+                          e.dataTransfer.effectAllowed = 'copy';
+                          console.log('Calling onTrackDragStart with:', trackData);
+                          if (onTrackDragStart) onTrackDragStart(trackData);
+                        }}
+                        onDragEnd={(e) => {
+                          console.log('Track drag end handler called');
+                          if (onTrackDragEnd) onTrackDragEnd();
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800/50 cursor-move transition-colors border-b border-slate-800 last:border-0"
+                        title="Drag to add to playlist"
+                      >
+                        <Music className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                        <span className="flex-1 truncate text-white">{track.title || track.name}</span>
+                        <span className="w-24 truncate text-slate-400">{track.artist || 'Unknown'}</span>
+                        <span className="w-20 truncate text-slate-500">{track.album || ''}</span>
+                        <span className="w-10 text-right text-slate-500">
+                          {track.duration ? formatDuration(track.duration) : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })

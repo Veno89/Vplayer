@@ -176,7 +176,10 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           </button>
         </div>
       </div>
-      <div className={`p-4 overflow-auto ${className}`} style={{ height: 'calc(100% - 40px)' }}>
+      <div 
+        className={`p-4 overflow-auto ${className}`} 
+        style={{ height: 'calc(100% - 40px)' }}
+      >
         <ErrorBoundary fallbackMessage={`Error in ${title} window`}>
           {children}
         </ErrorBoundary>
