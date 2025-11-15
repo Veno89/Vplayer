@@ -4,6 +4,47 @@ import { AdvancedSearch } from '../components/AdvancedSearch';
 import { invoke } from '@tauri-apps/api/core';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from '../components/StarRating';
+import { FixedSizeList } from 'react-window';
+
+// Virtual list row component for track rendering
+const VirtualTrackRow = ({ index, style, data }) => {
+  const { tracks, onTrackDragStart, onTrackDragEnd } = data;
+  const track = tracks[index];
+  
+  return (
+    <div
+      style={style}
+      draggable
+      onDragStart={(e) => {
+        const trackData = [{
+          id: track.id,
+          path: track.path,
+          title: track.title || track.name,
+          artist: track.artist,
+          album: track.album
+        }];
+        
+        e.dataTransfer.setData('application/json', JSON.stringify(trackData));
+        e.dataTransfer.effectAllowed = 'copy';
+        
+        if (onTrackDragStart) onTrackDragStart(trackData);
+      }}
+      onDragEnd={(e) => {
+        if (onTrackDragEnd) onTrackDragEnd();
+      }}
+      className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800/50 cursor-move transition-colors border-b border-slate-800"
+      title="Drag to add to playlist"
+    >
+      <Music className="w-3 h-3 text-slate-500 flex-shrink-0" />
+      <span className="flex-1 truncate text-white">{track.title || track.name}</span>
+      <span className="w-24 truncate text-slate-400">{track.artist || 'Unknown'}</span>
+      <span className="w-20 truncate text-slate-500">{track.album || ''}</span>
+      <span className="w-10 text-right text-slate-500">
+        {track.duration ? formatDuration(track.duration) : ''}
+      </span>
+    </div>
+  );
+};
 
 export function LibraryWindow({
   libraryFolders,
@@ -386,41 +427,17 @@ export function LibraryWindow({
                 
                 {/* Expanded Track List */}
                 {isExpanded && folderTracks.length > 0 && (
-                  <div className="border-t border-slate-700 bg-slate-900/50 max-h-64 overflow-y-auto">
-                    {folderTracks.map((track, idx) => (
-                      <div
-                        key={track.id}
-                        draggable
-                        onDragStart={(e) => {
-                          const trackData = [{
-                            id: track.id,
-                            path: track.path,
-                            title: track.title || track.name,
-                            artist: track.artist,
-                            album: track.album
-                          }];
-                          
-                          // Set data FIRST
-                          e.dataTransfer.setData('application/json', JSON.stringify(trackData));
-                          e.dataTransfer.effectAllowed = 'copy';
-                          
-                          if (onTrackDragStart) onTrackDragStart(trackData);
-                        }}
-                        onDragEnd={(e) => {
-                          if (onTrackDragEnd) onTrackDragEnd();
-                        }}
-                        className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800/50 cursor-move transition-colors border-b border-slate-800 last:border-0"
-                        title="Drag to add to playlist"
-                      >
-                        <Music className="w-3 h-3 text-slate-500 flex-shrink-0" />
-                        <span className="flex-1 truncate text-white">{track.title || track.name}</span>
-                        <span className="w-24 truncate text-slate-400">{track.artist || 'Unknown'}</span>
-                        <span className="w-20 truncate text-slate-500">{track.album || ''}</span>
-                        <span className="w-10 text-right text-slate-500">
-                          {track.duration ? formatDuration(track.duration) : ''}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="border-t border-slate-700 bg-slate-900/50">
+                    <FixedSizeList
+                      height={Math.min(256, folderTracks.length * 36)}
+                      itemCount={folderTracks.length}
+                      itemSize={36}
+                      width="100%"
+                      overscanCount={5}
+                      itemData={{ tracks: folderTracks, onTrackDragStart, onTrackDragEnd }}
+                    >
+                      {VirtualTrackRow}
+                    </FixedSizeList>
                   </div>
                 )}
               </div>
