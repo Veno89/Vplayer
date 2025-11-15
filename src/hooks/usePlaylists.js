@@ -6,6 +6,8 @@ export function usePlaylists() {
   const [currentPlaylist, setCurrentPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasRestoredPlaylist, setHasRestoredPlaylist] = useState(false);
+  const [addingProgress, setAddingProgress] = useState({ current: 0, total: 0, isAdding: false });
 
   const loadPlaylists = useCallback(async () => {
     try {
@@ -17,11 +19,24 @@ export function usePlaylists() {
         createdAt
       }));
       setPlaylists(playlistObjects);
+      
+      // Restore last playlist on first load
+      if (!hasRestoredPlaylist && playlistObjects.length > 0) {
+        const savedPlaylist = localStorage.getItem('vplayer_last_playlist');
+        if (savedPlaylist) {
+          // Check if saved playlist still exists
+          const exists = playlistObjects.some(p => p.id === savedPlaylist);
+          if (exists) {
+            setCurrentPlaylist(savedPlaylist);
+          }
+        }
+        setHasRestoredPlaylist(true);
+      }
     } catch (err) {
       console.error('Failed to load playlists:', err);
       throw err;
     }
-  }, []);
+  }, [hasRestoredPlaylist]);
 
   const loadPlaylistTracks = useCallback(async (playlistId) => {
     if (!playlistId) {
@@ -90,15 +105,21 @@ export function usePlaylists() {
 
   const addTracksToPlaylist = useCallback(async (playlistId, trackIds) => {
     try {
-      for (const trackId of trackIds) {
-        await invoke('add_track_to_playlist', { playlistId, trackId });
+      setAddingProgress({ current: 0, total: trackIds.length, isAdding: true });
+      
+      for (let i = 0; i < trackIds.length; i++) {
+        await invoke('add_track_to_playlist', { playlistId, trackId: trackIds[i] });
+        setAddingProgress({ current: i + 1, total: trackIds.length, isAdding: true });
       }
+      
       if (currentPlaylist === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
     } catch (err) {
       console.error('Failed to add tracks to playlist:', err);
       throw err;
+    } finally {
+      setAddingProgress({ current: 0, total: 0, isAdding: false });
     }
   }, [currentPlaylist, loadPlaylistTracks]);
 
@@ -142,6 +163,7 @@ export function usePlaylists() {
     setCurrentPlaylist,
     playlistTracks,
     isLoading,
+    addingProgress,
     createPlaylist,
     deletePlaylist,
     renamePlaylist,

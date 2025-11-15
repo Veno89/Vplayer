@@ -150,12 +150,19 @@ export function PlaylistWindow({
     ? playlists.playlistTracks 
     : tracks;
   
-  // Update active playback tracks whenever displayTracks changes
+  // Update active tracks when displayTracks changes
   useEffect(() => {
     if (onActiveTracksChange) {
       onActiveTracksChange(displayTracks);
     }
   }, [displayTracks, onActiveTracksChange]);
+
+  // Save current playlist to localStorage when it changes
+  useEffect(() => {
+    if (playlists.currentPlaylist) {
+      localStorage.setItem('vplayer_last_playlist', playlists.currentPlaylist);
+    }
+  }, [playlists.currentPlaylist]);
 
   // Drag and drop handlers for playlist reordering
   const handleDragStart = (e, index) => {
@@ -316,11 +323,22 @@ export function PlaylistWindow({
   
   // Delete playlist
   const handleDeletePlaylist = async (playlistId) => {
-    if (!confirm('Delete this playlist?')) return;
+    const playlist = playlists.playlists.find(p => p.id === playlistId);
+    const isLibrary = playlistId === 'library';
+    const message = isLibrary 
+      ? `Remove "${playlist?.name || 'Library'}" from playlists? This won't delete your music files, only removes the playlist entry.`
+      : 'Delete this playlist?';
+    
+    if (!confirm(message)) return;
     
     try {
       await playlists.deletePlaylist(playlistId);
       setViewMode('library');
+      
+      // Clear saved playlist if we deleted it
+      if (localStorage.getItem('vplayer_last_playlist') === playlistId) {
+        localStorage.removeItem('vplayer_last_playlist');
+      }
     } catch (err) {
       alert('Failed to delete playlist');
     }
@@ -490,6 +508,29 @@ export function PlaylistWindow({
           </button>
         )}
       </div>
+
+      {/* Adding Progress Indicator */}
+      {playlists.addingProgress.isAdding && (
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mx-3 mb-3">
+          <div className="flex items-center gap-3">
+            <Loader className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-blue-300 text-sm font-medium mb-1">
+                Adding tracks to playlist...
+              </div>
+              <div className="text-blue-400 text-xs">
+                {playlists.addingProgress.current} / {playlists.addingProgress.total} tracks
+              </div>
+            </div>
+          </div>
+          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-2">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300 ease-out"
+              style={{ width: `${(playlists.addingProgress.current / playlists.addingProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between px-3">
