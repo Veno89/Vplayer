@@ -15,7 +15,7 @@ import { useCrossfade } from './hooks/useCrossfade';
 import { ToastContainer } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
-  Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles
+  Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles, Copy
 } from 'lucide-react';
 import { PlayerWindow } from './windows/PlayerWindow';
 import { MiniPlayerWindow } from './windows/MiniPlayerWindow';
@@ -484,9 +484,20 @@ const VPlayerInner = () => {
           setSortOrder={setSortOrder}
           advancedFilters={advancedFilters}
           setAdvancedFilters={setAdvancedFilters}
-          onOpenDuplicates={() => setDuplicatesWindowOpen(true)}
+          onOpenDuplicates={() => toggleWindow('duplicates')}
           onTrackDragStart={handleLibraryDragStart}
           onTrackDragEnd={handleLibraryDragEnd}
+        />
+      ),
+    },
+    {
+      id: 'duplicates',
+      title: 'Duplicate Tracks',
+      icon: Copy,
+      content: (
+        <DuplicatesWindow
+          onDuplicateRemoved={handleDuplicateRemoved}
+          currentColors={currentColors}
         />
       ),
     },
