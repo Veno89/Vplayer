@@ -445,7 +445,7 @@ export function PlaylistWindow({
           <button
             onClick={() => handleDeletePlaylist(playlists.currentPlaylist)}
             className="p-1.5 hover:bg-red-900/50 rounded transition-colors"
-            title="DELETE NOW (no confirmation)"
+            title="Delete Playlist"
           >
             <Trash2 className="w-4 h-4 text-red-400" />
           </button>

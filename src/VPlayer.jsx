@@ -677,36 +677,6 @@ const VPlayerInner = () => {
         </div>
       )}
 
-      {/* Debug toggle */}
-      {process.env.NODE_ENV === 'development' && (
-          <button
-            title="Toggle Debug"
-            onClick={() => setDebugVisible(v => !v)}
-            className="fixed bottom-4 right-4 z-[60] bg-slate-800 text-white px-3 py-2 rounded-full shadow-lg hover:bg-slate-700 transition-colors text-xs font-mono"
-          >
-            {debugVisible ? 'Hide' : 'Show'} Debug
-          </button>
-        )}
-
-        {/* Debug panel */}
-        {debugVisible && (
-          <div className="fixed bottom-16 right-4 z-[60] bg-slate-800/95 text-white p-4 rounded-lg shadow-xl max-w-sm text-xs font-mono space-y-1">
-            <div>Track: {currentTrack !== null ? `${currentTrack + 1}/${filteredTracks.length}` : 'None'}</div>
-            <div>Playing: {playing ? 'Yes' : 'No'}</div>
-            <div>Loading: {audio.isLoading ? 'Yes' : 'No'}</div>
-            <div>Progress: {progress.toFixed(1)}s / {duration.toFixed(1)}s</div>
-            <div>Volume: {(volume * 100).toFixed(0)}%</div>
-            <div>Shuffle: {shuffle ? 'On' : 'Off'}</div>
-            <div>Repeat: {repeatMode}</div>
-            <div>Folders: {libraryFolders.length}</div>
-            <div>Tracks: {filteredTracks.length} / {tracks.length}</div>
-            <div>Scanning: {isScanning ? `${scanProgress}% (${scanCurrent}/${scanTotal})` : 'No'}</div>
-            <div>LoadedTrackId: {trackLoading.loadedTrackId ? 'Yes' : 'No'}</div>
-            <div>Dragging: {isDraggingTracks ? 'Yes' : 'No'}</div>
-            {searchQuery && <div>Search: "{searchQuery}"</div>}
-          </div>
-        )}
-
         {/* Render floating windows */}
         {windowConfigs.map(cfg => (
           windows[cfg.id]?.visible && (
