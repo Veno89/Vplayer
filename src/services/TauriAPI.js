@@ -113,6 +113,10 @@ class TauriAPIService {
     return this._invoke('get_all_tracks');
   }
 
+  async getAllFolders() {
+    return this._invoke('get_all_folders');
+  }
+
   async removeTrack(trackId) {
     return this._invoke('remove_track', { trackId });
   }

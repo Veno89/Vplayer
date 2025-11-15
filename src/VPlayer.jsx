@@ -250,19 +250,26 @@ const VPlayerInner = () => {
 
   // Sync playing state with audio
   useEffect(() => {
-    if (playing && !audio.isPlaying) {
-      audio.play().catch(err => {
-        console.error('Failed to play:', err);
-        toast.showError('Failed to play track');
-        setPlaying(false);
-      });
-    } else if (!playing && audio.isPlaying) {
-      audio.pause().catch(err => {
-        console.error('Failed to pause:', err);
-        toast.showError('Failed to pause');
-      });
-    }
-  }, [playing, audio, setPlaying, toast]);
+    const syncAudio = async () => {
+      if (playing) {
+        if (!audio.isPlaying) {
+          await audio.play().catch(err => {
+            console.error('Failed to play:', err);
+            toast.showError('Failed to play track');
+            setPlaying(false);
+          });
+        }
+      } else {
+        if (audio.isPlaying) {
+          await audio.pause().catch(err => {
+            console.error('Failed to pause:', err);
+            toast.showError('Failed to pause');
+          });
+        }
+      }
+    };
+    syncAudio();
+  }, [playing, audio.isPlaying]);
 
   // Track play count when a new track starts playing
   useEffect(() => {

@@ -33,6 +33,7 @@ export function useLibrary() {
   // Load tracks from database on mount
   useEffect(() => {
     loadAllTracks();
+    loadAllFolders();
   }, []);
 
   // Listen for scan events
@@ -122,6 +123,22 @@ export function useLibrary() {
     }
   };
 
+  const loadAllFolders = async () => {
+    try {
+      const dbFolders = await TauriAPI.getAllFolders();
+      // Transform from database format: (id, path, name, dateAdded)
+      const folders = dbFolders.map(([id, path, name, dateAdded]) => ({
+        id,
+        path,
+        name,
+        dateAdded
+      }));
+      setLibraryFolders(folders);
+    } catch (err) {
+      console.error('Failed to load folders:', err);
+    }
+  };
+
   const addFolder = useCallback(async () => {
     try {
       const selected = await TauriAPI.selectFolder();
@@ -146,6 +163,7 @@ export function useLibrary() {
 
       setLibraryFolders(prev => [...prev, newFolder]);
       await loadAllTracks(); // Reload all tracks from database
+      await loadAllFolders(); // Reload folders to get correct data from DB
     } catch (err) {
       console.error('Failed to add folder:', err);
       setIsScanning(false);
@@ -158,6 +176,7 @@ export function useLibrary() {
       await TauriAPI.removeFolder(folderId, folderPath);
       setLibraryFolders(prev => prev.filter(f => f.id !== folderId));
       await loadAllTracks(); // Reload remaining tracks
+      await loadAllFolders(); // Reload folders
     } catch (err) {
       console.error('Failed to remove folder:', err);
       throw err;

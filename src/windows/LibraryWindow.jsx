@@ -227,7 +227,10 @@ export function LibraryWindow({
             <button
               key={field}
               onMouseDown={e => e.stopPropagation()}
-              onClick={() => handleSortClick(field)}
+              onClick={e => {
+                e.stopPropagation();
+                handleSortClick(field);
+              }}
               className={`px-2 py-1 rounded transition-colors ${
                 sortBy === field
                   ? `${currentColors.primary} text-white`
@@ -291,7 +294,30 @@ export function LibraryWindow({
             return (
               <div
                 key={folder.id}
-                className="bg-slate-800/50 border border-slate-700 rounded p-3 hover:bg-slate-800 transition-colors"
+                draggable={!isScanning && !isRemoving}
+                onDragStart={(e) => {
+                  // Set folder tracks as drag data
+                  const folderTracksData = folderTracks.map(t => ({
+                    id: t.id,
+                    path: t.path,
+                    title: t.title || t.name,
+                    artist: t.artist,
+                    album: t.album
+                  }));
+                  e.dataTransfer.setData('application/json', JSON.stringify(folderTracksData));
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
+                onMouseDown={(e) => {
+                  // Only for dragging, don't stop propagation
+                  if (e.button !== 0) return; // Only left click
+                }}
+                onClick={(e) => {
+                  if (e.target.closest('button')) return; // Don't trigger if clicking remove button
+                  // Filter to show only this folder's tracks
+                  setAdvancedFilters({ ...advancedFilters, folderId: folder.id.toString() });
+                }}
+                className="bg-slate-800/50 border border-slate-700 rounded p-3 hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Click to view tracks, drag to add to playlist"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">

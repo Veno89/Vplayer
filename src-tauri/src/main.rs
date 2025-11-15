@@ -191,6 +191,11 @@ fn get_all_tracks(state: tauri::State<AppState>) -> Result<Vec<Track>, String> {
 }
 
 #[tauri::command]
+fn get_all_folders(state: tauri::State<AppState>) -> Result<Vec<(String, String, String, i64)>, String> {
+    state.db.get_all_folders().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn remove_folder(folder_id: String, folder_path: String, state: tauri::State<AppState>) -> Result<(), String> {
     state.db.remove_tracks_by_folder(&folder_path).map_err(|e| e.to_string())?;
     state.db.remove_folder(&folder_id).map_err(|e| e.to_string())?;
@@ -804,6 +809,7 @@ fn main() {
             scan_folder,
             scan_folder_incremental,
             get_all_tracks,
+            get_all_folders,
             remove_folder,
             create_playlist,
             get_all_playlists,
