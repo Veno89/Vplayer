@@ -3,13 +3,37 @@ import { SEEK_THRESHOLD_SECONDS } from '../utils/constants';
 
 /**
  * Unified player hook combining playback controls and volume management
+ * 
+ * Handles:
+ * - Track navigation (next/previous)
+ * - Seeking within tracks
+ * - Volume control (up/down/mute)
+ * - Track preloading for seamless transitions
+ * - Crossfade support between tracks
+ * 
+ * @param {Object} params - Hook parameters
+ * @param {Object} params.audio - Audio service for playback operations
+ * @param {Object} params.player - Player state from store
+ * @param {Array} params.tracks - Current track list
+ * @param {Object} params.toast - Toast notification service
+ * @param {Object} params.crossfade - Crossfade service (optional)
+ * 
+ * @returns {Object} Player control functions
+ * @returns {Function} returns.handleNextTrack - Skip to next track
+ * @returns {Function} returns.handlePrevTrack - Go to previous track or restart
+ * @returns {Function} returns.handleSeek - Seek to position (0-100%)
+ * @returns {Function} returns.handleVolumeChange - Set volume (0-1)
+ * @returns {Function} returns.handleVolumeUp - Increase volume by step
+ * @returns {Function} returns.handleVolumeDown - Decrease volume by step
+ * @returns {Function} returns.handleToggleMute - Toggle mute state
  */
 export function usePlayer({ 
   audio, 
   player, 
   tracks,
   toast,
-  crossfade
+  crossfade,
+  store
 }) {
   const { 
     currentTrack, setCurrentTrack,
@@ -65,8 +89,31 @@ export function usePlayer({
     }
   }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack]);
 
-  // Helper to get next track index
+  /**
+   * Calculate the next track index based on playback mode
+   * Prioritizes queue over shuffle/normal playback
+   * 
+   * @param {number} current - Current track index
+   * @param {number} totalTracks - Total number of tracks
+   * @param {boolean} isShuffled - Whether shuffle is enabled
+   * @param {string} repeat - Repeat mode ('off', 'all', 'one')
+   * @returns {number|null} Next track index, or null if no next track
+   */
   const getNextTrackIndex = (current, totalTracks, isShuffled, repeat) => {
+    // Check queue first - queue always takes priority
+    if (store && store.queue && store.queue.length > 0) {
+      const nextQueueTrack = store.peekNextInQueue();
+      if (nextQueueTrack) {
+        // Find the track in the tracks array
+        const queueTrackIndex = tracks.findIndex(t => t.id === nextQueueTrack.id);
+        if (queueTrackIndex !== -1) {
+          store.nextInQueue(); // Advance queue
+          return queueTrackIndex;
+        }
+      }
+    }
+    
+    // No queue or queue exhausted - use normal playback logic
     if (isShuffled) {
       let nextIdx;
       do {
@@ -84,7 +131,11 @@ export function usePlayer({
     }
   };
 
-  // Playback controls
+  /**
+   * Skip to the next track
+   * Respects shuffle and repeat modes
+   * Cancels any active crossfade
+   */
   const handleNextTrack = useCallback(() => {
     if (!tracks.length) return;
     
@@ -99,6 +150,11 @@ export function usePlayer({
     }
   }, [currentTrack, tracks, shuffle, repeatMode, setCurrentTrack, crossfade]);
 
+  /**
+   * Go to previous track or restart current track
+   * If progress > threshold (3s), restarts current track
+   * Otherwise goes to previous track
+   */
   const handlePrevTrack = useCallback(() => {
     if (!tracks.length) return;
     
@@ -131,17 +187,40 @@ export function usePlayer({
     }
   }, [currentTrack, tracks, shuffle, repeatMode, progress, audio, setCurrentTrack, toast, crossfade]);
 
+  /**
+   * Seek to a position in the current track
+   * @param {number} percent - Position as percentage (0-100)
+   */
+  const seekTimeoutRef = useRef(null);
+  const lastSeekTimeRef = useRef(0);
   const handleSeek = useCallback((percent) => {
     if (duration > 0) {
       const time = (percent / 100) * duration;
-      audio.seek(time).catch(err => {
-        console.error('Failed to seek:', err);
-        toast.showWarning('Seeking may not be supported for this file format');
-      });
+      const now = Date.now();
+      
+      // Clear any pending seek
+      if (seekTimeoutRef.current) {
+        clearTimeout(seekTimeoutRef.current);
+      }
+      
+      // Throttle backend seeks to max once per 100ms
+      const timeSinceLastSeek = now - lastSeekTimeRef.current;
+      const delay = timeSinceLastSeek < 100 ? 100 - timeSinceLastSeek : 0;
+      
+      seekTimeoutRef.current = setTimeout(() => {
+        lastSeekTimeRef.current = Date.now();
+        audio.seek(time).catch(err => {
+          console.error('Failed to seek:', err);
+          toast.showWarning('Seeking may not be supported for this file format');
+        });
+      }, delay);
     }
   }, [duration, audio, toast]);
 
-  // Volume controls
+  /**
+   * Set volume to specific level
+   * @param {number} newVolume - Volume level (0-1)
+   */
   const handleVolumeChange = useCallback((newVolume) => {
     setVolume(newVolume);
     audio.changeVolume(newVolume).catch(err => {
@@ -150,16 +229,28 @@ export function usePlayer({
     });
   }, [audio, setVolume, toast]);
 
+  /**
+   * Increase volume by step
+   * @param {number} step - Amount to increase (default 0.05)
+   */
   const handleVolumeUp = useCallback((step = 0.05) => {
     const newVolume = Math.min(1, volume + step);
     handleVolumeChange(newVolume);
   }, [volume, handleVolumeChange]);
 
+  /**
+   * Decrease volume by step
+   * @param {number} step - Amount to decrease (default 0.05)
+   */
   const handleVolumeDown = useCallback((step = 0.05) => {
     const newVolume = Math.max(0, volume - step);
     handleVolumeChange(newVolume);
   }, [volume, handleVolumeChange]);
 
+  /**
+   * Toggle mute state
+   * Mutes to 0, unmutes to 0.7
+   */
   const handleToggleMute = useCallback(() => {
     const newVolume = volume > 0 ? 0 : 0.7;
     handleVolumeChange(newVolume);

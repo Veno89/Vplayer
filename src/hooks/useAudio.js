@@ -1,15 +1,50 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { AUDIO_RETRY_CONFIG, STORAGE_KEYS } from '../utils/constants';
+import { useErrorHandler } from '../services/ErrorHandler';
+import { useToast } from './useToast';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+/**
+ * Audio playback hook
+ * 
+ * Manages the audio engine with retry logic and error handling.
+ * Handles:
+ * - Track loading with automatic retries
+ * - Play/pause control
+ * - Volume management
+ * - Progress tracking via polling
+ * - Error recovery
+ * 
+ * @param {Object} params - Hook parameters
+ * @param {Function} params.onEnded - Callback when track finishes
+ * @param {Function} params.onTimeUpdate - Callback for progress updates
+ * @param {number} params.initialVolume - Initial volume level (0-1)
+ * 
+ * @returns {Object} Audio control interface
+ * @returns {boolean} returns.isPlaying - Whether audio is playing
+ * @returns {boolean} returns.isLoading - Whether track is loading
+ * @returns {number} returns.progress - Current position in seconds
+ * @returns {number} returns.duration - Track duration in seconds
+ * @returns {number} returns.volume - Current volume (0-1)
+ * @returns {Function} returns.loadTrack - Load a track by path
+ * @returns {Function} returns.play - Start playback
+ * @returns {Function} returns.pause - Pause playback
+ * @returns {Function} returns.seek - Seek to position
+ * @returns {Function} returns.changeVolume - Change volume level
+ * @returns {string|null} returns.audioBackendError - Error message if backend unavailable
+ */
 export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [audioBackendError, setAudioBackendError] = useState(null);
+  
+  // Error handling
+  const toast = useToast();
+  const errorHandler = useErrorHandler(toast);
   
   // Load volume from localStorage or use initialVolume
   const savedVolume = localStorage.getItem(STORAGE_KEYS.PLAYER_STATE);
@@ -28,7 +63,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
         setAudioBackendError(null);
       } catch (err) {
         setAudioBackendError(`Audio system unavailable: ${err}`);
-        console.error('Audio backend initialization failed:', err);
+        errorHandler.handle(err, 'Audio Backend Initialization');
       }
     };
     
@@ -168,7 +203,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   }, [audioBackendError]);
 
   const changeVolume = useCallback(async (newVolume) => {
-    if (audioBackendError) return; // Silently fail
+    if (audioBackendError) {
+      errorHandler.logOnly('Cannot change volume - audio backend unavailable', 'Audio Volume');
+      return;
+    }
     
     try {
       const clampedVolume = Math.max(0, Math.min(1, newVolume));
@@ -176,22 +214,22 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
       setVolumeState(clampedVolume);
       localStorage.setItem('vplayer_volume', clampedVolume.toString());
     } catch (err) {
-      console.error('Failed to set volume:', err);
+      errorHandler.handle(err, 'Audio Volume');
       throw err;
     }
-  }, [audioBackendError]);
+  }, [audioBackendError, errorHandler]);
 
   const seek = useCallback(async (position) => {
     if (audioBackendError) return; // Silently fail
     
+    // Update UI immediately for instant feedback
+    setProgress(position);
+    
     try {
       await invoke('seek_to', { position });
-      setProgress(position);
     } catch (err) {
       console.error('Failed to seek:', err);
-      // Don't throw - seeking might not be supported for all formats
-      // Just update UI position optimistically
-      setProgress(position);
+      // Progress already updated optimistically above
     }
   }, [audioBackendError]);
 

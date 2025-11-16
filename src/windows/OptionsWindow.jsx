@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Palette, Volume2, Info, HardDrive, Loader, Layout, Image, Eye } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
 export function OptionsWindow({
@@ -197,8 +197,9 @@ export function OptionsWindow({
                           }]
                         });
                         if (selected) {
-                          // Convert file path to data URL for display
-                          setBackgroundImage(selected);
+                          // Convert file path to Tauri asset URL
+                          const assetUrl = convertFileSrc(selected);
+                          setBackgroundImage(assetUrl);
                         }
                       } catch (err) {
                         console.error('Failed to select image:', err);

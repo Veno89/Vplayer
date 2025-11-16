@@ -1,100 +1,11 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, GripVertical } from 'lucide-react';
-import { FixedSizeList as ListVirtual } from 'react-window';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowDownToLine } from 'lucide-react';
+import { TrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
-
-// Enhanced Row component with drag-and-drop support for playlists
-const Row = React.memo(({ data, index, style }) => {
-  const { 
-    tracks, 
-    currentTrack, 
-    onSelect, 
-    currentColors, 
-    loadingTrackIndex, 
-    onShowMenu, 
-    isDraggable,
-    onDragStart,
-    onDragOver,
-    onDrop,
-    draggedIndex
-  } = data;
-  const track = tracks[index];
-  const isActive = index === currentTrack;
-  const isLoading = loadingTrackIndex === index;
-  const isDragging = draggedIndex === index;
-
-  if (!track) return null;
-
-  return (
-    <div
-      style={style}
-      draggable={isDraggable}
-      onDragStart={(e) => isDraggable && onDragStart?.(e, index)}
-      onDragOver={(e) => isDraggable && onDragOver?.(e, index)}
-      onDrop={(e) => isDraggable && onDrop?.(e, index)}
-      className={`flex items-center px-3 py-2 text-sm cursor-pointer select-none transition-colors group ${
-        isActive 
-          ? `${currentColors.accent} bg-slate-800/80 font-semibold` 
-          : 'hover:bg-slate-700/60 text-slate-300'
-      } ${isLoading ? 'opacity-50' : ''} ${isDragging ? 'opacity-40' : ''}`}
-      onClick={() => onSelect(index)}
-      title={`${track.title} - ${track.artist}`}
-    >
-      {/* Drag Handle - only show in playlist view */}
-      {isDraggable && (
-        <div className="w-6 flex items-center justify-center text-slate-500 cursor-grab active:cursor-grabbing">
-          <GripVertical className="w-4 h-4" />
-        </div>
-      )}
-
-      {/* Track Number */}
-      <span className="w-10 text-center text-slate-500 text-xs">
-        {isLoading ? (
-          <Loader className="w-3 h-3 animate-spin mx-auto" />
-        ) : (
-          index + 1
-        )}
-      </span>
-
-      {/* Title */}
-      <span className="flex-1 truncate font-medium" title={track.title}>
-        {track.title}
-      </span>
-
-      {/* Artist */}
-      <span className="w-40 truncate text-slate-400" title={track.artist}>
-        {track.artist}
-      </span>
-
-      {/* Album */}
-      <span className="w-40 truncate text-slate-500 hidden lg:block" title={track.album}>
-        {track.album}
-      </span>
-
-      {/* Duration */}
-      <span className="w-16 text-right text-slate-400">
-        {track.duration ? formatDuration(track.duration) : '0:00'}
-      </span>
-
-      {/* Actions */}
-      <div className="w-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onShowMenu?.(index, e);
-          }}
-          className="p-1 hover:bg-slate-600 rounded transition-colors"
-          title="More options"
-        >
-          <MoreVertical className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
-  );
-});
-
-Row.displayName = 'Row';
+import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
+import { useStore } from '../store/useStore';
 
 export function PlaylistWindow({ 
   tracks, 
@@ -112,9 +23,14 @@ export function PlaylistWindow({
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef(null);
+  const trackListRef = useRef(null);
   
   const playlists = usePlaylists();
+  const addToQueue = useStore(state => state.addToQueue);
+  const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
+  const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
   
   // Listen for global track drop events from VPlayer
   useEffect(() => {
@@ -144,13 +60,65 @@ export function PlaylistWindow({
     };
   }, [playlists.currentPlaylist]);
   
-  // Debug: Log when adding progress changes
-  useEffect(() => {
-    console.log('Adding progress changed:', playlists.addingProgress);
-  }, [playlists.addingProgress]);
+  // Fuzzy search filter
+  const displayTracks = useMemo(() => {
+    const tracks = playlists.playlistTracks;
+    if (!searchQuery.trim()) return tracks;
+
+    const query = searchQuery.toLowerCase();
+    return tracks.filter(track => {
+      const searchableText = [
+        track.title,
+        track.artist,
+        track.album,
+        track.genre
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      // Fuzzy match: check if all characters in query appear in order
+      let queryIndex = 0;
+      for (let i = 0; i < searchableText.length && queryIndex < query.length; i++) {
+        if (searchableText[i] === query[queryIndex]) {
+          queryIndex++;
+        }
+      }
+      return queryIndex === query.length;
+    });
+  }, [playlists.playlistTracks, searchQuery]);
+
+  // Handle track selection - map filtered index to original index
+  const handleTrackSelect = useCallback((filteredIndex) => {
+    const selectedTrack = displayTracks[filteredIndex];
+    if (!selectedTrack) return;
+    
+    // Find the original index in the full tracks array
+    const originalIndex = tracks.findIndex(t => t.id === selectedTrack.id);
+    if (originalIndex !== -1) {
+      setCurrentTrack(originalIndex);
+    }
+  }, [displayTracks, tracks, setCurrentTrack]);
+
+  // Map current track index to filtered display index
+  const displayCurrentTrack = useMemo(() => {
+    if (currentTrack === null || currentTrack === undefined) return null;
+    const currentTrackObj = tracks[currentTrack];
+    if (!currentTrackObj) return null;
+    
+    return displayTracks.findIndex(t => t.id === currentTrackObj.id);
+  }, [currentTrack, tracks, displayTracks]);
   
-  // Always show playlist tracks (no library view)
-  const displayTracks = playlists.playlistTracks;
+  // Auto-scroll to current track when it changes
+  useEffect(() => {
+    if (playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0 && trackListRef.current) {
+      trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
+    }
+  }, [displayCurrentTrack, playlistAutoScroll]);
+  
+  // Manual scroll to current track
+  const scrollToCurrentTrack = useCallback(() => {
+    if (displayCurrentTrack !== null && displayCurrentTrack >= 0 && trackListRef.current) {
+      trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
+    }
+  }, [displayCurrentTrack]);
   
   // Update active tracks when displayTracks changes
   useEffect(() => {
@@ -244,11 +212,12 @@ export function PlaylistWindow({
     draggedIndex,
     onShowMenu: (index, e) => {
       e.preventDefault();
-      const rect = e.currentTarget.getBoundingClientRect();
+      e.stopPropagation();
       setContextMenu({
         index,
-        x: rect.left,
-        y: rect.bottom + 5
+        track: displayTracks[index],
+        x: e.clientX || e.pageX,
+        y: e.clientY || e.pageY
       });
     }
   }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, playlists.currentPlaylist, draggedIndex]);
@@ -325,7 +294,7 @@ export function PlaylistWindow({
   }, [contextMenu]);
 
   // Empty state
-  if (displayTracks.length === 0) {
+  if (playlists.playlistTracks.length === 0 && !searchQuery) {
     return (
       <div className="flex flex-col h-full" ref={containerRef}>
         {/* Playlist Selector */}
@@ -483,9 +452,61 @@ export function PlaylistWindow({
             ? playlists.playlists.find(p => p.id === playlists.currentPlaylist)?.name || 'Playlist'
             : 'Select a Playlist'}
         </h3>
-        <span className="text-slate-400 text-xs">
-          {displayTracks.length} track{displayTracks.length !== 1 ? 's' : ''}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 text-xs">
+            {displayTracks.length} track{displayTracks.length !== 1 ? 's' : ''}
+            {searchQuery && playlists.playlistTracks.length !== displayTracks.length && (
+              <span className={`ml-1 ${currentColors.accent}`}>
+                (filtered from {playlists.playlistTracks.length})
+              </span>
+            )}
+          </span>
+          {/* Auto-scroll toggle */}
+          <button
+            onClick={() => setPlaylistAutoScroll(!playlistAutoScroll)}
+            className={`p-1.5 rounded transition-colors ${
+              playlistAutoScroll 
+                ? `${currentColors.accent} bg-slate-800` 
+                : 'text-slate-400 hover:bg-slate-700'
+            }`}
+            title={playlistAutoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
+          >
+            <ArrowDown className="w-4 h-4" />
+          </button>
+          {/* Manual scroll to current track button (only when auto-scroll is off) */}
+          {!playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0 && (
+            <button
+              onClick={scrollToCurrentTrack}
+              className="p-1.5 text-slate-400 hover:bg-slate-700 rounded transition-colors"
+              title="Jump to current track"
+            >
+              <ArrowDownToLine className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="px-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search tracks (fuzzy search: try 'jbwm' for 'Just Be What Moves')..."
+            className="w-full bg-slate-800/50 border border-slate-700 rounded pl-10 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
+              title="Clear search"
+            >
+              <X className="w-4 h-4 text-slate-400" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Column Headers */}
@@ -499,16 +520,46 @@ export function PlaylistWindow({
       </div>
 
       {/* Virtualized Track List */}
-      <div className="flex-1 overflow-hidden">
-        <ListVirtual
-          height={listHeight}
-          itemCount={displayTracks.length}
-          itemSize={itemSize}
-          width="100%"
-          itemData={itemData}
-        >
-          {Row}
-        </ListVirtual>
+      <div className="flex-1 overflow-hidden relative">
+        {displayTracks.length === 0 && searchQuery ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <Search className="w-12 h-12 mb-3 opacity-50" />
+            <p className="text-lg font-medium">No results found</p>
+            <p className="text-sm text-slate-500">Try a different search term</p>
+          </div>
+        ) : displayTracks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <List className="w-12 h-12 mb-3 opacity-50" />
+            <p className="text-lg font-medium">No tracks in this playlist</p>
+            <p className="text-sm text-slate-500">Drag tracks here to add them</p>
+          </div>
+        ) : (
+          <TrackList
+            ref={trackListRef}
+            tracks={displayTracks}
+            currentTrack={displayCurrentTrack}
+            onSelect={handleTrackSelect}
+            currentColors={currentColors}
+            loadingTrackIndex={loadingTrackIndex}
+            onShowMenu={(index, e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setContextMenu({
+                index,
+                track: displayTracks[index],
+                x: e.clientX || e.pageX,
+                y: e.clientY || e.pageY
+              });
+            }}
+            isDraggable={!!playlists.currentPlaylist}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            draggedIndex={draggedIndex}
+            height={listHeight}
+            itemSize={itemSize}
+          />
+        )}
       </div>
 
       {/* Drop Indicator Overlay */}
@@ -552,30 +603,42 @@ export function PlaylistWindow({
         </div>
       )}
 
-      {/* Context Menu */}
-      {contextMenu && (
-        <div
-          className="fixed bg-slate-800 border border-slate-700 rounded shadow-xl py-1 z-50 min-w-[150px]"
-          style={{
-            left: contextMenu.x,
-            top: contextMenu.y
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          <button
-            onClick={() => setCurrentTrack(contextMenu.index)}
-            className="w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700 transition-colors"
-          >
-            Play Now
-          </button>
-          <button
-            onClick={() => handleRemoveTrack(contextMenu.index)}
-            className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-slate-700 transition-colors flex items-center gap-2"
-          >
-            <Trash2 className="w-3 h-3" />
-            Remove from Playlist
-          </button>
-        </div>
+      {/* Context Menu - Use Portal to render outside overflow container */}
+      {contextMenu && contextMenu.track && createPortal(
+        <ContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              items={getTrackContextMenuItems({
+                track: contextMenu.track,
+                onPlay: () => {
+                  handleTrackSelect(contextMenu.index);
+                },
+                onAddToQueue: () => {
+                  addToQueue(contextMenu.track, 'end');
+                },
+                onAddToPlaylist: () => {
+                  // TODO: Show playlist selection dialog
+                  console.log('Add to playlist:', contextMenu.track);
+                },
+                onRemove: () => {
+                  handleRemoveTrack(contextMenu.index);
+                },
+                onEditTags: () => {
+                  // TODO: Open tag editor
+                  console.log('Edit tags:', contextMenu.track);
+                },
+                onShowInfo: () => {
+                  alert(`Track: ${contextMenu.track.title}\nArtist: ${contextMenu.track.artist}\nAlbum: ${contextMenu.track.album}\nPath: ${contextMenu.track.path}`);
+                },
+                onSetRating: () => {
+                  // TODO: Show rating dialog
+                  console.log('Set rating:', contextMenu.track);
+                },
+                currentTrack: currentTrack
+              })}
+              onClose={closeContextMenu}
+            />,
+        document.body
       )}
 
       {/* Footer with stats */}

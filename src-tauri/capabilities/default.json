@@ -7,6 +7,8 @@
   ],
   "permissions": [
     "core:default",
+    "core:path:default",
+    "core:image:default",
     "dialog:allow-open",
     "dialog:allow-confirm",
     "fs:allow-read-dir",

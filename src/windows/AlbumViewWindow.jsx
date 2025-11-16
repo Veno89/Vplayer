@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Music, Play, Disc } from 'lucide-react';
+import { SimpleTrackList } from '../components/TrackList';
+import { formatDuration } from '../utils/formatters';
 
 export function AlbumViewWindow({ tracks, currentColors, setCurrentTrack }) {
   const [selectedAlbum, setSelectedAlbum] = useState(null);
@@ -94,32 +96,16 @@ export function AlbumViewWindow({ tracks, currentColors, setCurrentTrack }) {
         </div>
 
         {/* Track List */}
-        <div className="flex-1 overflow-auto space-y-1">
-          {selectedAlbum.tracks.map((track, idx) => (
-            <div
-              key={idx}
-              onClick={() => handleTrackClick(track)}
-              onMouseDown={e => e.stopPropagation()}
-              className="flex items-center gap-3 p-2 rounded hover:bg-slate-800/50 cursor-pointer transition-colors group"
-            >
-              <div className="w-8 text-center">
-                <span className="text-slate-500 text-sm group-hover:hidden">
-                  {idx + 1}
-                </span>
-                <Play className={`w-4 h-4 ${currentColors.accent} hidden group-hover:block mx-auto`} />
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="text-white text-sm truncate">
-                  {track.title || track.name || 'Unknown'}
-                </div>
-              </div>
-              
-              <div className="text-slate-500 text-sm">
-                {formatDuration(track.duration || 0)}
-              </div>
-            </div>
-          ))}
+        <div className="flex-1 overflow-auto">
+          <SimpleTrackList
+            tracks={selectedAlbum.tracks}
+            currentTrack={-1}
+            onSelect={handleTrackClick}
+            currentColors={currentColors}
+            showArtist={false}
+            showAlbum={false}
+            showRating={false}
+          />
         </div>
       </div>
     );

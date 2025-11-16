@@ -3,9 +3,20 @@ use log::info;
 use crate::scanner::Track;
 use std::path::Path;
 use std::sync::Mutex;
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const CACHE_TTL_SECS: u64 = 300; // 5 minutes
+
+#[derive(Clone)]
+struct CachedQuery {
+    data: Vec<Track>,
+    timestamp: u64,
+}
 
 pub struct Database {
     pub conn: Mutex<Connection>,
+    query_cache: Mutex<HashMap<String, CachedQuery>>,
 }
 
 impl Database {
@@ -56,6 +67,22 @@ impl Database {
         // Migration: Add album_art column for storing album art
         let _ = conn.execute(
             "ALTER TABLE tracks ADD COLUMN album_art BLOB",
+            [],
+        );
+        
+        // Migration: Add ReplayGain columns
+        let _ = conn.execute(
+            "ALTER TABLE tracks ADD COLUMN track_gain REAL",
+            [],
+        );
+        
+        let _ = conn.execute(
+            "ALTER TABLE tracks ADD COLUMN track_peak REAL",
+            [],
+        );
+        
+        let _ = conn.execute(
+            "ALTER TABLE tracks ADD COLUMN loudness REAL",
             [],
         );
         
@@ -138,10 +165,42 @@ impl Database {
         );
         
         info!("Database initialized successfully");
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self { 
+            conn: Mutex::new(conn),
+            query_cache: Mutex::new(HashMap::new()),
+        })
+    }
+    
+    fn invalidate_cache(&self) {
+        if let Ok(mut cache) = self.query_cache.lock() {
+            cache.clear();
+        }
+    }
+    
+    fn get_cached_tracks(&self, cache_key: &str) -> Option<Vec<Track>> {
+        let cache = self.query_cache.lock().ok()?;
+        let cached = cache.get(cache_key)?;
+        
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+        if now - cached.timestamp < CACHE_TTL_SECS {
+            Some(cached.data.clone())
+        } else {
+            None
+        }
+    }
+    
+    fn set_cached_tracks(&self, cache_key: String, tracks: Vec<Track>) {
+        if let Ok(mut cache) = self.query_cache.lock() {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            cache.insert(cache_key, CachedQuery { data: tracks, timestamp });
+        }
     }
     
     pub fn add_track(&self, track: &Track) -> Result<()> {
+        self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, duration, date_added, play_count, last_played, rating)
@@ -161,6 +220,13 @@ impl Database {
     }
     
     pub fn get_all_tracks(&self) -> Result<Vec<Track>> {
+        let cache_key = "all_tracks";
+        
+        if let Some(cached) = self.get_cached_tracks(cache_key) {
+            info!("Returning cached tracks ({} tracks)", cached.len());
+            return Ok(cached);
+        }
+        
         info!("Fetching all tracks from database");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -182,11 +248,13 @@ impl Database {
         })?
         .collect::<Result<Vec<_>>>()?;
         
+        self.set_cached_tracks(cache_key.to_string(), tracks.clone());
         Ok(tracks)
     }
     
     // Track statistics
     pub fn increment_play_count(&self, track_id: &str) -> Result<()> {
+        self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -268,6 +336,7 @@ impl Database {
     }
     
     pub fn remove_tracks_by_folder(&self, folder_path: &str) -> Result<usize> {
+        self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
         let count = conn.execute(
             "DELETE FROM tracks WHERE path LIKE ?1",
@@ -277,6 +346,7 @@ impl Database {
     }
     
     pub fn add_folder(&self, folder_id: &str, folder_path: &str, folder_name: &str, date_added: i64) -> Result<()> {
+        self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO folders (id, path, name, date_added) VALUES (?1, ?2, ?3, ?4)",
@@ -306,6 +376,7 @@ impl Database {
     }
     
     pub fn remove_folder(&self, folder_id: &str) -> Result<()> {
+        self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "DELETE FROM folders WHERE id = ?1",

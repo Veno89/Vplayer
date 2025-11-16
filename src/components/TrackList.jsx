@@ -48,6 +48,25 @@ const TrackRow = React.memo(({ data, index, style }) => {
       onDragStart={(e) => isDraggable && onDragStart?.(e, index)}
       onDragOver={(e) => isDraggable && onDragOver?.(e, index)}
       onDrop={(e) => isDraggable && onDrop?.(e, index)}
+      onContextMenu={(e) => {
+        if (onShowMenu) {
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const menuEvent = {
+            ...e,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            pageX: e.pageX,
+            pageY: e.pageY,
+            currentTarget: e.currentTarget,
+            target: e.target,
+            preventDefault: () => e.preventDefault(),
+            stopPropagation: () => e.stopPropagation()
+          };
+          onShowMenu(index, menuEvent);
+        }
+      }}
       className={`flex items-center px-3 py-2 text-sm cursor-pointer select-none transition-colors group ${
         isActive 
           ? `${currentColors.accent} bg-slate-800/80 font-semibold` 
@@ -117,7 +136,20 @@ const TrackRow = React.memo(({ data, index, style }) => {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onShowMenu(index, e);
+              e.preventDefault();
+              const rect = e.currentTarget.getBoundingClientRect();
+              const menuEvent = {
+                ...e,
+                clientX: rect.left,
+                clientY: rect.bottom + 5,
+                pageX: rect.left,
+                pageY: rect.bottom + 5,
+                currentTarget: e.currentTarget,
+                target: e.target,
+                preventDefault: () => e.preventDefault(),
+                stopPropagation: () => e.stopPropagation()
+              };
+              onShowMenu(index, menuEvent);
             }}
             className="p-1 hover:bg-slate-600 rounded transition-colors"
             title="More options"
@@ -152,7 +184,7 @@ TrackRow.displayName = 'TrackRow';
 /**
  * Virtualized track list component
  */
-export function TrackList({
+export const TrackList = React.forwardRef(function TrackList({
   tracks,
   currentTrack,
   onSelect,
@@ -172,7 +204,7 @@ export function TrackList({
   showDuration = true,
   height = 400,
   itemSize = 40
-}) {
+}, ref) {
   const itemData = {
     tracks,
     currentTrack,
@@ -195,6 +227,7 @@ export function TrackList({
 
   return (
     <ListVirtual
+      ref={ref}
       height={height}
       itemCount={tracks.length}
       itemSize={itemSize}
@@ -204,7 +237,7 @@ export function TrackList({
       {TrackRow}
     </ListVirtual>
   );
-}
+});
 
 /**
  * Simple non-virtualized track list for small lists

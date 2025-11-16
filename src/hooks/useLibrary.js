@@ -5,8 +5,44 @@ import { listen } from '@tauri-apps/api/event';
 import { useDebounce } from './useDebounce';
 import { SEARCH_DEBOUNCE_MS, EVENTS } from '../utils/constants';
 import { TauriAPI } from '../services/TauriAPI';
+import { useErrorHandler } from '../services/ErrorHandler';
+import { useToast } from './useToast';
+import { useStore } from '../store/useStore';
 
+/**
+ * Library management hook
+ * 
+ * Manages the music library including:
+ * - Track collection and metadata
+ * - Folder scanning and watching
+ * - Search and filtering
+ * - Sorting
+ * - Advanced filters (genre, year, rating, duration)
+ * 
+ * @returns {Object} Library management interface
+ * @returns {Array} returns.tracks - All library tracks
+ * @returns {Array} returns.filteredTracks - Filtered and sorted tracks
+ * @returns {Array} returns.libraryFolders - Watched folders
+ * @returns {boolean} returns.isScanning - Whether scan is in progress
+ * @returns {Object} returns.scanProgress - Scan progress info
+ * @returns {string} returns.searchQuery - Current search query
+ * @returns {Function} returns.setSearchQuery - Update search query
+ * @returns {Object} returns.advancedFilters - Current advanced filters
+ * @returns {Function} returns.setAdvancedFilters - Update advanced filters
+ * @returns {Function} returns.addFolder - Add folder to library
+ * @returns {Function} returns.removeFolder - Remove folder from library
+ * @returns {Function} returns.updateTrackMetadata - Update track metadata
+ * @returns {Function} returns.updateTrackRating - Update track rating
+ * @returns {Function} returns.getArtists - Get unique artists
+ * @returns {Function} returns.getAlbums - Get unique albums
+ * @returns {Function} returns.getGenres - Get unique genres
+ */
 export function useLibrary() {
+  const toast = useToast();
+  const errorHandler = useErrorHandler(toast);
+  const autoScanOnStartup = useStore(state => state.autoScanOnStartup);
+  const watchFolderChanges = useStore(state => state.watchFolderChanges);
+  
   const [tracks, setTracks] = useState([]);
   const [libraryFolders, setLibraryFolders] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -19,11 +55,17 @@ export function useLibrary() {
   const [sortOrder, setSortOrder] = useState('asc');
   const [advancedFilters, setAdvancedFilters] = useState({
     genre: '',
+    artist: '',
+    album: '',
     yearFrom: '',
     yearTo: '',
     minRating: 0,
     durationFrom: '',
     durationTo: '',
+    playCountMin: '',
+    playCountMax: '',
+    format: '',
+    bitrateMin: '',
     folderId: '' // Filter by specific folder
   });
 
@@ -36,24 +78,32 @@ export function useLibrary() {
       await loadAllTracks();
       await loadAllFolders();
       
-      // Start watching all existing folders
-      try {
-        const dbFolders = await TauriAPI.getAllFolders();
-        for (const [id, path, name, dateAdded] of dbFolders) {
-          try {
-            await invoke('start_folder_watch', { folderPath: path });
-            console.log(`Started watching folder: ${path}`);
-          } catch (err) {
-            console.error(`Failed to start watching ${path}:`, err);
+      // Start watching all existing folders if enabled
+      if (watchFolderChanges) {
+        try {
+          const dbFolders = await TauriAPI.getAllFolders();
+          for (const [id, path, name, dateAdded] of dbFolders) {
+            try {
+              await invoke('start_folder_watch', { folderPath: path });
+              console.log(`Started watching folder: ${path}`);
+            } catch (err) {
+              console.error(`Failed to start watching ${path}:`, err);
+            }
           }
+        } catch (err) {
+          console.error('Failed to start folder watches:', err);
         }
-      } catch (err) {
-        console.error('Failed to start folder watches:', err);
+      }
+
+      // Auto-scan on startup if enabled
+      if (autoScanOnStartup && libraryFolders.length > 0) {
+        console.log('Auto-scanning library on startup...');
+        await refreshFolders();
       }
     };
     
     initLibrary();
-  }, []);
+  }, [autoScanOnStartup, watchFolderChanges]);
 
   // Listen for scan events
   useEffect(() => {
@@ -154,7 +204,7 @@ export function useLibrary() {
       const dbTracks = await TauriAPI.getAllTracks();
       setTracks(dbTracks);
     } catch (err) {
-      console.error('Failed to load tracks:', err);
+      errorHandler.handle(err, 'Library - Load Tracks');
     }
   };
 
@@ -170,7 +220,7 @@ export function useLibrary() {
       }));
       setLibraryFolders(folders);
     } catch (err) {
-      console.error('Failed to load folders:', err);
+      errorHandler.handle(err, 'Library - Load Folders');
     }
   };
 
@@ -294,6 +344,20 @@ export function useLibrary() {
       );
     }
 
+    if (advancedFilters.artist) {
+      const artistQuery = advancedFilters.artist.toLowerCase();
+      filtered = filtered.filter(track =>
+        (track.artist || '').toLowerCase().includes(artistQuery)
+      );
+    }
+
+    if (advancedFilters.album) {
+      const albumQuery = advancedFilters.album.toLowerCase();
+      filtered = filtered.filter(track =>
+        (track.album || '').toLowerCase().includes(albumQuery)
+      );
+    }
+
     if (advancedFilters.yearFrom) {
       const yearFrom = parseInt(advancedFilters.yearFrom);
       filtered = filtered.filter(track => {
@@ -327,6 +391,35 @@ export function useLibrary() {
       const durationTo = parseFloat(advancedFilters.durationTo) * 60; // Convert to seconds
       filtered = filtered.filter(track => 
         (track.duration || 0) <= durationTo
+      );
+    }
+
+    if (advancedFilters.playCountMin) {
+      const playCountMin = parseInt(advancedFilters.playCountMin);
+      filtered = filtered.filter(track =>
+        (track.play_count || 0) >= playCountMin
+      );
+    }
+
+    if (advancedFilters.playCountMax) {
+      const playCountMax = parseInt(advancedFilters.playCountMax);
+      filtered = filtered.filter(track =>
+        (track.play_count || 0) <= playCountMax
+      );
+    }
+
+    if (advancedFilters.format) {
+      const formatQuery = advancedFilters.format.toLowerCase();
+      filtered = filtered.filter(track => {
+        const ext = (track.path || '').split('.').pop()?.toLowerCase();
+        return ext === formatQuery;
+      });
+    }
+
+    if (advancedFilters.bitrateMin) {
+      const bitrateMin = parseInt(advancedFilters.bitrateMin);
+      filtered = filtered.filter(track =>
+        (track.bitrate || 0) >= bitrateMin * 1000 // Convert kbps to bps
       );
     }
 

@@ -1,13 +1,15 @@
-use rodio::{Decoder, OutputStream, Sink, Source, DeviceTrait};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source, DeviceTrait};
 use rodio::cpal::traits::HostTrait;
 use rodio::cpal::SampleFormat;
+use rodio::mixer::Mixer;
 use std::fs::File;
 use std::io::BufReader;
-use log::{info, error};
+use log::{info, error, warn};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use serde::Serialize;
 use crate::error::{AppError, AppResult};
+use crate::effects::EffectsConfig;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AudioDevice {
@@ -27,6 +29,9 @@ pub struct AudioPlayer {
     // For gapless playback
     preload_sink: Arc<Mutex<Option<Sink>>>,
     preload_path: Arc<Mutex<Option<String>>>,
+    // Audio effects
+    effects_config: Arc<Mutex<EffectsConfig>>,
+    effects_enabled: Arc<Mutex<bool>>,
 }
 
 // Manually implement Send and Sync for AudioPlayer
@@ -38,13 +43,9 @@ impl AudioPlayer {
         info!("Initializing audio player with high-quality settings");
         
         // Try to create output with optimal settings for quality
-        let (stream, stream_handle) = Self::create_high_quality_output()?;
+        let (stream, mixer) = Self::create_high_quality_output()?;
         
-        let sink = Sink::try_new(&stream_handle)
-            .map_err(|e| {
-                error!("Failed to create sink: {}", e);
-                AppError::Audio(format!("Failed to create sink: {}", e))
-            })?;
+        let sink = Sink::connect_new(&mixer);
         
         info!("Audio player initialized successfully");
         Ok(Self {
@@ -58,10 +59,12 @@ impl AudioPlayer {
             total_duration: Arc::new(Mutex::new(Duration::ZERO)),
             preload_sink: Arc::new(Mutex::new(None)),
             preload_path: Arc::new(Mutex::new(None)),
+            effects_config: Arc::new(Mutex::new(EffectsConfig::default())),
+            effects_enabled: Arc::new(Mutex::new(false)),
         })
     }
     
-    fn create_high_quality_output() -> AppResult<(OutputStream, rodio::OutputStreamHandle)> {
+    fn create_high_quality_output() -> AppResult<(OutputStream, Arc<Mixer>)> {
         let host = rodio::cpal::default_host();
         let device = host.default_output_device()
             .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
@@ -91,13 +94,12 @@ impl AudioPlayer {
               config_with_rate.channels(),
               config_with_rate.sample_format());
         
-        // Create output stream with optimized config
-        OutputStream::try_from_device_config(&device, config_with_rate)
-            .or_else(|e| {
-                error!("Failed to create audio output with optimal settings, trying default: {}", e);
-                OutputStream::try_default()
-            })
-            .map_err(|e| AppError::Audio(format!("Failed to create audio output: {}", e)))
+        // Create output stream
+        let stream = OutputStreamBuilder::open_default_stream()
+            .map_err(|e| AppError::Audio(format!("Failed to create audio output: {}", e)))?;
+        let mixer = Arc::new(stream.mixer().clone());
+        
+        Ok((stream, mixer))
     }
     
     pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
@@ -222,28 +224,30 @@ impl AudioPlayer {
         let sink = self.sink.lock().unwrap();
         
         // Try to seek - rodio 0.19 supports this
-        sink.try_seek(Duration::from_secs_f64(position))
-            .map_err(|e| {
-                error!("Seek failed: {}", e);
-                AppError::Audio(format!("Seek failed: {}", e))
-            })?;
-        
-        // Update timing: reset start time and adjust offset
-        let was_paused = sink.is_paused();
-        
-        // Reset timing state
-        *self.start_time.lock().unwrap() = Some(Instant::now());
-        *self.seek_offset.lock().unwrap() = Duration::from_secs_f64(position);
-        *self.paused_duration.lock().unwrap() = Duration::ZERO;
-        
-        // If paused, mark pause start
-        if was_paused {
-            *self.pause_start.lock().unwrap() = Some(Instant::now());
-        } else {
-            *self.pause_start.lock().unwrap() = None;
+        match sink.try_seek(Duration::from_secs_f64(position)) {
+            Ok(_) => {
+                // Update timing: reset start time and adjust offset
+                let was_paused = sink.is_paused();
+                
+                // Reset timing state
+                *self.start_time.lock().unwrap() = Some(Instant::now());
+                *self.seek_offset.lock().unwrap() = Duration::from_secs_f64(position);
+                *self.paused_duration.lock().unwrap() = Duration::ZERO;
+                
+                // If paused, mark pause start
+                if was_paused {
+                    *self.pause_start.lock().unwrap() = Some(Instant::now());
+                } else {
+                    *self.pause_start.lock().unwrap() = None;
+                }
+                
+                Ok(())
+            },
+            Err(e) => {
+                warn!("Seek not supported for this file: {:?}", e);
+                Err(AppError::Audio("This file format doesn't support seeking".to_string()))
+            }
         }
-        
-        Ok(())
     }
     
     pub fn get_position(&self) -> f64 {
@@ -313,11 +317,11 @@ impl AudioPlayer {
         let current_path = self.current_path.lock().unwrap().clone();
         
         // Create new stream and sink with the selected device
-        let (_new_stream, new_stream_handle) = OutputStream::try_from_device(&device)
+        let _new_stream = OutputStreamBuilder::open_default_stream()
             .map_err(|e| AppError::Audio(format!("Failed to create output stream: {}", e)))?;
+        let new_mixer = _new_stream.mixer().clone();
         
-        let new_sink = Sink::try_new(&new_stream_handle)
-            .map_err(|e| AppError::Audio(format!("Failed to create sink: {}", e)))?;
+        let new_sink = Sink::connect_new(&new_mixer);
         
         new_sink.set_volume(current_volume);
         
@@ -360,11 +364,11 @@ impl AudioPlayer {
         let device = host.default_output_device()
             .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
         
-        let (_stream, stream_handle) = OutputStream::try_from_device(&device)
+        let _stream = OutputStreamBuilder::open_default_stream()
             .map_err(|e| AppError::Audio(format!("Failed to create stream: {}", e)))?;
+        let mixer = _stream.mixer().clone();
         
-        let new_sink = Sink::try_new(&stream_handle)
-            .map_err(|e| AppError::Audio(format!("Failed to create preload sink: {}", e)))?;
+        let new_sink = Sink::connect_new(&mixer);
         
         // Copy volume from current sink
         let current_volume = {
@@ -427,5 +431,25 @@ impl AudioPlayer {
     
     pub fn has_preloaded(&self) -> bool {
         self.preload_sink.lock().unwrap().is_some()
+    }
+    
+    /// Set audio effects configuration
+    pub fn set_effects(&self, config: EffectsConfig) {
+        *self.effects_config.lock().unwrap() = config;
+    }
+    
+    /// Get current effects configuration
+    pub fn get_effects(&self) -> EffectsConfig {
+        self.effects_config.lock().unwrap().clone()
+    }
+    
+    /// Enable or disable audio effects
+    pub fn set_effects_enabled(&self, enabled: bool) {
+        *self.effects_enabled.lock().unwrap() = enabled;
+    }
+    
+    /// Check if effects are enabled
+    pub fn is_effects_enabled(&self) -> bool {
+        *self.effects_enabled.lock().unwrap()
     }
 }

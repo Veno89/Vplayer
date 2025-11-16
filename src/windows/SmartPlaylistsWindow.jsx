@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Sparkles, Play, Calendar, TrendingUp, Music } from 'lucide-react';
+import { SimpleTrackList } from '../components/TrackList';
+import { formatDuration } from '../utils/formatters';
 
 export function SmartPlaylistsWindow({ tracks, currentColors, setCurrentTrack }) {
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -155,41 +157,20 @@ export function SmartPlaylistsWindow({ tracks, currentColors, setCurrentTrack })
         </div>
 
         {/* Track List */}
-        <div className="flex-1 overflow-auto space-y-1">
+        <div className="flex-1 overflow-auto">
           {playlistTracks.length === 0 ? (
             <div className="text-center text-slate-500 py-8">
               No tracks match this playlist criteria
             </div>
           ) : (
-            playlistTracks.map((track, idx) => (
-              <div
-                key={idx}
-                onClick={() => handleTrackClick(track)}
-                onMouseDown={e => e.stopPropagation()}
-                className="flex items-center gap-3 p-2 rounded hover:bg-slate-800/50 cursor-pointer transition-colors group"
-              >
-                <div className="w-8 text-center">
-                  <span className="text-slate-500 text-sm group-hover:hidden">
-                    {idx + 1}
-                  </span>
-                  <Play className={`w-4 h-4 ${currentColors.accent} hidden group-hover:block mx-auto`} />
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="text-white text-sm truncate">
-                    {track.title || track.name || 'Unknown'}
-                  </div>
-                  <div className="text-slate-500 text-xs truncate">
-                    {track.artist || 'Unknown Artist'}
-                    {track.play_count > 0 && ` • ${track.play_count} plays`}
-                  </div>
-                </div>
-                
-                <div className="text-slate-500 text-sm">
-                  {formatDuration(track.duration || 0)}
-                </div>
-              </div>
-            ))
+            <SimpleTrackList
+              tracks={playlistTracks}
+              currentTrack={-1}
+              onSelect={handleTrackClick}
+              currentColors={currentColors}
+              showAlbum={false}
+              showRating={false}
+            />
           )}
         </div>
       </div>

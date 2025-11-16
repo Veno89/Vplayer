@@ -143,16 +143,25 @@ export function PlayerWindow({
       {/* Progress Bar */}
       <div>
         <div 
-          className={`w-full bg-slate-800 rounded-full h-2 overflow-hidden transition-all ${
-            isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:h-3'
+          className={`relative w-full bg-slate-700/50 rounded-full h-2 transition-all ${
+            isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:h-3 group'
           }`}
           onClick={isDisabled ? undefined : handleProgressClick}
           title={`${formatTime(progress)} / ${formatTime(duration)}`}
         >
           <div 
-            className={`h-full bg-gradient-to-r ${currentColors.primary} transition-all`}
+            className={`h-full bg-gradient-to-r ${currentColors.primary} rounded-full transition-all relative`}
             style={{ width: `${progressPercent}%` }}
-          />
+          >
+            {/* Progress handle indicator - always visible when there's progress */}
+            {progressPercent > 0 && (
+              <div 
+                className={`absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg transition-opacity ${
+                  progressPercent > 2 ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            )}
+          </div>
         </div>
         <div className="flex justify-between text-xs text-slate-400 mt-1">
           <span>{formatTime(progress)}</span>

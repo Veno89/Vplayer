@@ -32,7 +32,7 @@ export function ContextMenu({ x, y, items, onClose }) {
   return (
     <div
       ref={menuRef}
-      className="fixed z-[200] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl py-2 min-w-[200px]"
+      className="fixed z-[10000] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl py-2 min-w-[200px]"
       style={{ 
         left: `${x}px`, 
         top: `${y}px`,

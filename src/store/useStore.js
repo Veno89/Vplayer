@@ -91,6 +91,32 @@ export const useStore = create(
       windowOpacity: 0.95,
       fontSize: 14,
 
+      // Playback Settings
+      gaplessPlayback: true,
+      autoPlayOnStartup: false,
+      resumeLastTrack: true,
+      skipSilence: false,
+      replayGainMode: 'off', // 'off', 'track', 'album'
+      replayGainPreamp: 0, // dB
+
+      // Library Settings
+      autoScanOnStartup: true,
+      watchFolderChanges: true,
+      excludedFormats: [],
+      duplicateSensitivity: 'medium', // 'low', 'medium', 'high'
+
+      // Behavior Settings
+      minimizeToTray: true,
+      closeToTray: false,
+      startMinimized: false,
+      rememberWindowPositions: true,
+      playlistAutoScroll: true, // Auto-scroll to current track in playlist
+
+      // Performance Settings
+      cacheSizeLimit: 500, // MB
+      maxConcurrentScans: 4,
+      thumbnailQuality: 'high', // 'low', 'medium', 'high'
+
       // Queue State
       queue: [],
       queueIndex: 0,
@@ -232,6 +258,32 @@ export const useStore = create(
       setWindowOpacity: (opacity) => set({ windowOpacity: opacity }),
       setFontSize: (size) => set({ fontSize: size }),
 
+      // Playback Settings Actions
+      setGaplessPlayback: (enabled) => set({ gaplessPlayback: enabled }),
+      setAutoPlayOnStartup: (enabled) => set({ autoPlayOnStartup: enabled }),
+      setResumeLastTrack: (enabled) => set({ resumeLastTrack: enabled }),
+      setSkipSilence: (enabled) => set({ skipSilence: enabled }),
+      setReplayGainMode: (mode) => set({ replayGainMode: mode }),
+      setReplayGainPreamp: (preamp) => set({ replayGainPreamp: preamp }),
+
+      // Library Settings Actions
+      setAutoScanOnStartup: (enabled) => set({ autoScanOnStartup: enabled }),
+      setWatchFolderChanges: (enabled) => set({ watchFolderChanges: enabled }),
+      setExcludedFormats: (formats) => set({ excludedFormats: formats }),
+      setDuplicateSensitivity: (sensitivity) => set({ duplicateSensitivity: sensitivity }),
+
+      // Behavior Settings Actions
+      setMinimizeToTray: (enabled) => set({ minimizeToTray: enabled }),
+      setCloseToTray: (enabled) => set({ closeToTray: enabled }),
+      setStartMinimized: (enabled) => set({ startMinimized: enabled }),
+      setRememberWindowPositions: (enabled) => set({ rememberWindowPositions: enabled }),
+      setPlaylistAutoScroll: (enabled) => set({ playlistAutoScroll: enabled }),
+
+      // Performance Settings Actions
+      setCacheSizeLimit: (limit) => set({ cacheSizeLimit: limit }),
+      setMaxConcurrentScans: (max) => set({ maxConcurrentScans: max }),
+      setThumbnailQuality: (quality) => set({ thumbnailQuality: quality }),
+
       // Queue Actions
       addToQueue: (tracks, position = 'end') => {
         const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
@@ -354,6 +406,30 @@ export const useStore = create(
         backgroundOpacity: state.backgroundOpacity,
         windowOpacity: state.windowOpacity,
         fontSize: state.fontSize,
+        // Playback Settings
+        gaplessPlayback: state.gaplessPlayback,
+        autoPlayOnStartup: state.autoPlayOnStartup,
+        resumeLastTrack: state.resumeLastTrack,
+        skipSilence: state.skipSilence,
+        replayGainMode: state.replayGainMode,
+        replayGainPreamp: state.replayGainPreamp,
+        crossfadeEnabled: state.crossfadeEnabled,
+        crossfadeDuration: state.crossfadeDuration,
+        // Library Settings
+        autoScanOnStartup: state.autoScanOnStartup,
+        watchFolderChanges: state.watchFolderChanges,
+        excludedFormats: state.excludedFormats,
+        duplicateSensitivity: state.duplicateSensitivity,
+        // Behavior Settings
+        minimizeToTray: state.minimizeToTray,
+        closeToTray: state.closeToTray,
+        startMinimized: state.startMinimized,
+        rememberWindowPositions: state.rememberWindowPositions,
+        playlistAutoScroll: state.playlistAutoScroll,
+        // Performance Settings
+        cacheSizeLimit: state.cacheSizeLimit,
+        maxConcurrentScans: state.maxConcurrentScans,
+        thumbnailQuality: state.thumbnailQuality,
         // Queue
         queue: state.queue,
         queueHistory: state.queueHistory.slice(-50)

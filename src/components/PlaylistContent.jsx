@@ -1,7 +1,6 @@
 import React from 'react';
 import { List } from 'lucide-react';
-import { FixedSizeList as ListVirtual } from 'react-window';
-import { Row } from './Row';
+import { TrackList } from './TrackList';
 
 export const PlaylistContent = React.memo(({ tracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange }) => {
   if (tracks.length === 0) {
@@ -14,20 +13,17 @@ export const PlaylistContent = React.memo(({ tracks, currentTrack, setCurrentTra
     );
   }
 
-  // Don't memoize - just create inline
-  const itemData = { tracks, currentTrack, onSelect: setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange };
-  const itemSize = 64;
-  const listHeight = Math.min(tracks.length * itemSize, 400);
-
   return (
-    <ListVirtual
-      height={listHeight}
-      itemCount={tracks.length}
-      itemSize={itemSize}
-      width={"100%"}
-      itemData={itemData}
-    >
-      {Row}
-    </ListVirtual>
+    <TrackList
+      tracks={tracks}
+      currentTrack={currentTrack}
+      onSelect={setCurrentTrack}
+      currentColors={currentColors}
+      loadingTrackIndex={loadingTrackIndex}
+      onRatingChange={onRatingChange}
+      showRating={true}
+      height={Math.min(tracks.length * 64, 400)}
+      itemSize={64}
+    />
   );
 });

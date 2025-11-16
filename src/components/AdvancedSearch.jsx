@@ -17,11 +17,17 @@ export function AdvancedSearch({
   const [localFilters, setLocalFilters] = useState({
     query: filters.query || '',
     genre: filters.genre || '',
+    artist: filters.artist || '',
+    album: filters.album || '',
     yearFrom: filters.yearFrom || '',
     yearTo: filters.yearTo || '',
     minRating: filters.minRating || 0,
     durationFrom: filters.durationFrom || '',
     durationTo: filters.durationTo || '',
+    playCountMin: filters.playCountMin || '',
+    playCountMax: filters.playCountMax || '',
+    format: filters.format || '',
+    bitrateMin: filters.bitrateMin || '',
     ...filters
   });
 
@@ -37,11 +43,17 @@ export function AdvancedSearch({
     const emptyFilters = {
       query: '',
       genre: '',
+      artist: '',
+      album: '',
       yearFrom: '',
       yearTo: '',
       minRating: 0,
       durationFrom: '',
-      durationTo: ''
+      durationTo: '',
+      playCountMin: '',
+      playCountMax: '',
+      format: '',
+      bitrateMin: ''
     };
     setLocalFilters(emptyFilters);
     if (onFiltersChange) {
@@ -51,11 +63,17 @@ export function AdvancedSearch({
 
   const hasActiveFilters = 
     localFilters.genre || 
+    localFilters.artist ||
+    localFilters.album ||
     localFilters.yearFrom || 
     localFilters.yearTo || 
     localFilters.minRating > 0 || 
     localFilters.durationFrom || 
-    localFilters.durationTo;
+    localFilters.durationTo ||
+    localFilters.playCountMin ||
+    localFilters.playCountMax ||
+    localFilters.format ||
+    localFilters.bitrateMin;
 
   return (
     <div className="space-y-3">
@@ -104,7 +122,7 @@ export function AdvancedSearch({
       {/* Advanced Filters */}
       {showAdvanced && (
         <div className="grid grid-cols-2 gap-3 p-3 bg-slate-800/50 rounded border border-slate-700">
-          {/* Genre Filter */}
+          {/* Genre */}
           <div className="col-span-2">
             <label className="text-xs text-slate-400 mb-1 block">Genre</label>
             <input
@@ -113,6 +131,32 @@ export function AdvancedSearch({
               onChange={(e) => handleChange('genre', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="e.g., Rock, Jazz, Classical..."
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Artist */}
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Artist</label>
+            <input
+              type="text"
+              value={localFilters.artist}
+              onChange={(e) => handleChange('artist', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="Artist name..."
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Album */}
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Album</label>
+            <input
+              type="text"
+              value={localFilters.album}
+              onChange={(e) => handleChange('album', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="Album name..."
               className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
             />
           </div>
@@ -189,6 +233,66 @@ export function AdvancedSearch({
               placeholder="10"
               min="0"
               step="0.5"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Play Count Range */}
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Min Play Count</label>
+            <input
+              type="number"
+              value={localFilters.playCountMin}
+              onChange={(e) => handleChange('playCountMin', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="0"
+              min="0"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Max Play Count</label>
+            <input
+              type="number"
+              value={localFilters.playCountMax}
+              onChange={(e) => handleChange('playCountMax', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="∞"
+              min="0"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Audio Format */}
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Format</label>
+            <select
+              value={localFilters.format}
+              onChange={(e) => handleChange('format', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">Any</option>
+              <option value="mp3">MP3</option>
+              <option value="flac">FLAC</option>
+              <option value="wav">WAV</option>
+              <option value="ogg">OGG</option>
+              <option value="m4a">M4A/AAC</option>
+              <option value="opus">OPUS</option>
+            </select>
+          </div>
+
+          {/* Minimum Bitrate */}
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Min Bitrate (kbps)</label>
+            <input
+              type="number"
+              value={localFilters.bitrateMin}
+              onChange={(e) => handleChange('bitrateMin', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="128"
+              min="0"
+              step="32"
               className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
             />
           </div>

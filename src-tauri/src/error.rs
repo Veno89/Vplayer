@@ -10,6 +10,9 @@ pub enum AppError {
     Decode(String),
     NotFound(String),
     InvalidState(String),
+    Security(String),
+    PermissionDenied(String),
+    Validation(String),
 }
 
 impl fmt::Display for AppError {
@@ -22,6 +25,9 @@ impl fmt::Display for AppError {
             AppError::Decode(msg) => write!(f, "Decode error: {}", msg),
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::InvalidState(msg) => write!(f, "Invalid state: {}", msg),
+            AppError::Security(msg) => write!(f, "Security error: {}", msg),
+            AppError::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
+            AppError::Validation(msg) => write!(f, "Validation error: {}", msg),
         }
     }
 }
@@ -82,6 +88,9 @@ impl<T> ErrorContext<T> for AppResult<T> {
             AppError::Decode(_) => AppError::Decode(format!("{}: {}", message, err)),
             AppError::NotFound(_) => AppError::NotFound(format!("{}: {}", message, err)),
             AppError::InvalidState(_) => AppError::InvalidState(format!("{}: {}", message, err)),
+            AppError::Security(_) => AppError::Security(format!("{}: {}", message, err)),
+            AppError::PermissionDenied(_) => AppError::PermissionDenied(format!("{}: {}", message, err)),
+            AppError::Validation(_) => AppError::Validation(format!("{}: {}", message, err)),
             AppError::Io(e) => AppError::Io(e),
         })
     }

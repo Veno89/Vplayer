@@ -10,22 +10,32 @@ mod error;
 mod watcher;
 mod playlist_io;
 mod smart_playlists;
-
+mod validation;
+mod lyrics;
+mod replaygain;
+mod effects;
+mod visualizer;
 use audio::{AudioPlayer, AudioDevice};
 use scanner::{Scanner, Track};
 use database::Database;
 use watcher::FolderWatcher;
 use playlist_io::PlaylistIO;
 use smart_playlists::SmartPlaylist;
+use lyrics::Lrc;
+use replaygain::{ReplayGainData, analyze_track, store_replaygain, get_replaygain};
+use effects::EffectsConfig;
+use visualizer::{Visualizer, VisualizerData, VisualizerMode};
 use std::sync::Arc;
 use tauri::{Manager, Window, Emitter, AppHandle};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
+use tauri::menu::{Menu, MenuItem};
 use log::{info, warn};
 
 struct AppState {
     player: Arc<AudioPlayer>,
     db: Arc<database::Database>,
     watcher: Arc<Mutex<FolderWatcher>>,
+    visualizer: Arc<Mutex<Visualizer>>,
 }
 
 use std::sync::Mutex;
@@ -673,6 +683,186 @@ fn vacuum_database(state: tauri::State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/**
+ * Load lyrics from an LRC file for a given track.
+ * Returns the parsed LRC data including lines and metadata.
+ */
+#[tauri::command]
+fn load_lyrics(track_path: String) -> Result<Lrc, String> {
+    // Try .lrc file with same name as track
+    let lrc_path = std::path::Path::new(&track_path)
+        .with_extension("lrc");
+    
+    if lrc_path.exists() {
+        Lrc::from_file(&lrc_path)
+            .map_err(|e| format!("Failed to load lyrics: {}", e))
+    } else {
+        Err("No lyrics file found".to_string())
+    }
+}
+
+/**
+ * Get the current lyric line for a given timestamp.
+ * Returns the lyric line that should be displayed at the specified time.
+ */
+#[tauri::command]
+fn get_lyric_at_time(track_path: String, time: f64) -> Result<Option<(f64, String)>, String> {
+    let lrc_path = std::path::Path::new(&track_path)
+        .with_extension("lrc");
+    
+    if !lrc_path.exists() {
+        return Ok(None);
+    }
+    
+    let lrc = Lrc::from_file(&lrc_path)
+        .map_err(|e| format!("Failed to load lyrics: {}", e))?;
+    
+    Ok(lrc.get_lyric_at(time).map(|line| (line.timestamp, line.text.clone())))
+}
+
+/**
+ * Set audio effects configuration
+ */
+#[tauri::command]
+fn set_audio_effects(config: EffectsConfig, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.player.set_effects(config);
+    Ok(())
+}
+
+/**
+ * Get current audio effects configuration
+ */
+#[tauri::command]
+fn get_audio_effects(state: tauri::State<'_, AppState>) -> Result<EffectsConfig, String> {
+    Ok(state.player.get_effects())
+}
+
+/**
+ * Enable or disable audio effects
+ */
+#[tauri::command]
+fn set_effects_enabled(enabled: bool, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.player.set_effects_enabled(enabled);
+    Ok(())
+}
+
+/**
+ * Check if audio effects are enabled
+ */
+#[tauri::command]
+fn is_effects_enabled(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.player.is_effects_enabled())
+}
+
+/**
+ * Process audio samples for visualization
+ */
+#[tauri::command]
+fn get_visualizer_data(samples: Vec<f32>, delta_time: f32, state: tauri::State<'_, AppState>) -> Result<VisualizerData, String> {
+    let mut vis = state.visualizer.lock().unwrap();
+    Ok(vis.process(&samples, delta_time))
+}
+
+/**
+ * Set visualizer mode
+ */
+#[tauri::command]
+fn set_visualizer_mode(mode: VisualizerMode, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut vis = state.visualizer.lock().unwrap();
+    vis.set_mode(mode);
+    Ok(())
+}
+
+/**
+ * Set beat detection sensitivity
+ */
+#[tauri::command]
+fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut vis = state.visualizer.lock().unwrap();
+    vis.set_beat_sensitivity(sensitivity);
+    Ok(())
+}
+
+/**
+ * Analyze track for ReplayGain data and store in database
+ */
+#[tauri::command]
+fn analyze_replaygain(track_path: String, state: tauri::State<'_, AppState>) -> Result<ReplayGainData, String> {
+    info!("Analyzing ReplayGain for: {}", track_path);
+    
+    let data = analyze_track(&track_path)?;
+    store_replaygain(&state.db.conn, &track_path, &data)?;
+    
+    Ok(data)
+}
+
+/**
+ * Get ReplayGain data for a track
+ */
+#[tauri::command]
+fn get_track_replaygain(track_path: String, state: tauri::State<'_, AppState>) -> Result<Option<ReplayGainData>, String> {
+    get_replaygain(&state.db.conn, &track_path)
+}
+
+/**
+ * Clear album art cache
+ */
+#[tauri::command]
+fn clear_album_art_cache(app: AppHandle) -> Result<(), String> {
+    let cache_dir = app.path().app_cache_dir()
+        .map_err(|e| format!("Failed to get cache dir: {}", e))?
+        .join("album_art");
+    
+    if cache_dir.exists() {
+        std::fs::remove_dir_all(&cache_dir)
+            .map_err(|e| format!("Failed to clear cache: {}", e))?;
+        std::fs::create_dir_all(&cache_dir)
+            .map_err(|e| format!("Failed to recreate cache dir: {}", e))?;
+    }
+    Ok(())
+}
+
+/**
+ * Get cache size in bytes
+ */
+#[tauri::command]
+fn get_cache_size(app: AppHandle) -> Result<u64, String> {
+    let cache_dir = app.path().app_cache_dir()
+        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+    
+    fn dir_size(path: &std::path::Path) -> std::io::Result<u64> {
+        let mut size = 0;
+        if path.is_dir() {
+            for entry in std::fs::read_dir(path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    size += dir_size(&path)?;
+                } else {
+                    size += entry.metadata()?.len();
+                }
+            }
+        }
+        Ok(size)
+    }
+    
+    dir_size(&cache_dir).map_err(|e| format!("Failed to calculate size: {}", e))
+}
+
+/**
+ * Get database size in bytes
+ */
+#[tauri::command]
+fn get_database_size(app: AppHandle) -> Result<u64, String> {
+    let db_path = app.path().app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("vplayer.db");
+    
+    std::fs::metadata(db_path)
+        .map(|m| m.len())
+        .map_err(|e| format!("Failed to get database size: {}", e))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -701,10 +891,14 @@ fn main() {
             let watcher = FolderWatcher::new()
                 .map_err(|e| format!("Failed to initialize folder watcher: {}", e))?;
             
+            // Initialize visualizer
+            let visualizer = Visualizer::new(44100, 64);
+            
             app.manage(AppState {
                 player: Arc::new(player),
                 db: Arc::new(db),
                 watcher: Arc::new(Mutex::new(watcher)),
+                visualizer: Arc::new(Mutex::new(visualizer)),
             });
             
             // Register global shortcuts
@@ -770,12 +964,33 @@ fn main() {
             
             // Setup system tray
             let app_handle = app.handle().clone();
+            
+            // Build tray menu
+            let show_item = MenuItem::with_id(app, "show", "Show Player", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("VPlayer")
+                .menu(&menu)
+                .on_menu_event(move |app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
                 .on_tray_icon_event(move |_tray, event| {
-                    if let TrayIconEvent::Click { button, .. } = event {
-                        if button == tauri::tray::MouseButton::Left {
+                    if let TrayIconEvent::Click { button, button_state, .. } = event {
+                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
                             // Show/hide main window on left click
                             if let Some(window) = app_handle.get_webview_window("main") {
                                 if window.is_visible().unwrap_or(false) {
@@ -848,6 +1063,20 @@ fn main() {
             execute_smart_playlist,
             get_performance_stats,
             vacuum_database,
+            load_lyrics,
+            get_lyric_at_time,
+            analyze_replaygain,
+            get_track_replaygain,
+            set_audio_effects,
+            get_audio_effects,
+            set_effects_enabled,
+            is_effects_enabled,
+            get_visualizer_data,
+            set_visualizer_mode,
+            set_beat_sensitivity,
+            clear_album_art_cache,
+            get_cache_size,
+            get_database_size,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

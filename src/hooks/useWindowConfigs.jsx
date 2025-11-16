@@ -1,15 +1,17 @@
 import React from 'react';
-import { Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles } from 'lucide-react';
+import { Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles, FileText, Keyboard } from 'lucide-react';
 import { PlayerWindow } from '../windows/PlayerWindow';
 import { PlaylistWindow } from '../windows/PlaylistWindow';
 import { LibraryWindow } from '../windows/LibraryWindow';
 import { EqualizerWindow } from '../windows/EqualizerWindow';
 import { VisualizerWindow } from '../windows/VisualizerWindow';
-import { OptionsWindow } from '../windows/OptionsWindow';
+import { OptionsWindowEnhanced as OptionsWindow } from '../windows/OptionsWindowEnhanced';
 import { QueueWindow } from '../windows/QueueWindow';
 import { HistoryWindow } from '../windows/HistoryWindow';
 import { AlbumViewWindow } from '../windows/AlbumViewWindow';
 import { SmartPlaylistsWindow } from '../windows/SmartPlaylistsWindow';
+import LyricsWindow from '../windows/LyricsWindow';
+import ShortcutsWindow from '../windows/ShortcutsWindow';
 
 /**
  * Hook to generate window configurations
@@ -266,6 +268,28 @@ export function useWindowConfigs({
           tracks={tracks}
           currentColors={currentColors}
           setCurrentTrack={setCurrentTrack}
+        />
+      ),
+    },
+    {
+      id: 'lyrics',
+      title: 'Lyrics',
+      icon: FileText,
+      content: (
+        <LyricsWindow
+          id="lyrics"
+          onClose={() => toggleWindow('lyrics')}
+        />
+      ),
+    },
+    {
+      id: 'shortcuts',
+      title: 'Keyboard Shortcuts',
+      icon: Keyboard,
+      content: (
+        <ShortcutsWindow
+          id="shortcuts"
+          onClose={() => toggleWindow('shortcuts')}
         />
       ),
     },

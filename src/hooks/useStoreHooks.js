@@ -106,6 +106,14 @@ export function useUIState() {
   const fontSize = useStore((state) => state.fontSize);
   const setFontSize = useStore((state) => state.setFontSize);
 
+  // Playback settings
+  const gaplessPlayback = useStore((state) => state.gaplessPlayback);
+  const autoPlayOnStartup = useStore((state) => state.autoPlayOnStartup);
+  const resumeLastTrack = useStore((state) => state.resumeLastTrack);
+  
+  // Library settings
+  const autoScanOnStartup = useStore((state) => state.autoScanOnStartup);
+
   return {
     colorScheme,
     setColorScheme,
@@ -129,7 +137,11 @@ export function useUIState() {
     windowOpacity,
     setWindowOpacity,
     fontSize,
-    setFontSize
+    setFontSize,
+    gaplessPlayback,
+    autoPlayOnStartup,
+    resumeLastTrack,
+    autoScanOnStartup
   };
 }
 
