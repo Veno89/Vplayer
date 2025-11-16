@@ -67,6 +67,8 @@ export function OptionsWindowEnhanced({
   const setStartMinimized = useStore(state => state.setStartMinimized);
   const rememberWindowPositions = useStore(state => state.rememberWindowPositions);
   const setRememberWindowPositions = useStore(state => state.setRememberWindowPositions);
+  const autoResizeWindow = useStore(state => state.autoResizeWindow);
+  const setAutoResizeWindow = useStore(state => state.setAutoResizeWindow);
 
   const cacheSizeLimit = useStore(state => state.cacheSizeLimit);
   const setCacheSizeLimit = useStore(state => state.setCacheSizeLimit);
@@ -672,6 +674,12 @@ export function OptionsWindowEnhanced({
               description="Save and restore window layouts"
               checked={rememberWindowPositions}
               onChange={setRememberWindowPositions}
+            />
+            <SettingToggle
+              label="Auto-Resize Main Window"
+              description="Automatically resize main window to fit all visible windows"
+              checked={autoResizeWindow}
+              onChange={setAutoResizeWindow}
             />
 
             <div className="pt-4 border-t border-slate-700">

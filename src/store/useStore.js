@@ -111,6 +111,7 @@ export const useStore = create(
       startMinimized: false,
       rememberWindowPositions: true,
       playlistAutoScroll: true, // Auto-scroll to current track in playlist
+      autoResizeWindow: true, // Auto-resize main window to fit visible windows
 
       // Performance Settings
       cacheSizeLimit: 500, // MB
@@ -126,12 +127,22 @@ export const useStore = create(
       setCurrentTrack: (track) => {
         set({ currentTrack: track, progress: 0 });
       },
-      setPlaying: (playing) => set({ playing }),
+      setPlaying: (playingOrUpdater) => 
+        set((state) => ({
+          playing: typeof playingOrUpdater === 'function' 
+            ? playingOrUpdater(state.playing) 
+            : playingOrUpdater
+        })),
       setProgress: (progress) => set({ progress }),
       setDuration: (duration) => set({ duration }),
       setLoadingTrackIndex: (index) => set({ loadingTrackIndex: index }),
       setVolume: (volume) => set({ volume }),
-      setShuffle: (shuffle) => set({ shuffle }),
+      setShuffle: (shuffleOrUpdater) =>
+        set((state) => ({
+          shuffle: typeof shuffleOrUpdater === 'function'
+            ? shuffleOrUpdater(state.shuffle)
+            : shuffleOrUpdater
+        })),
       setRepeatMode: (mode) => set({ repeatMode: mode }),
 
       // UI Actions
@@ -278,6 +289,7 @@ export const useStore = create(
       setStartMinimized: (enabled) => set({ startMinimized: enabled }),
       setRememberWindowPositions: (enabled) => set({ rememberWindowPositions: enabled }),
       setPlaylistAutoScroll: (enabled) => set({ playlistAutoScroll: enabled }),
+      setAutoResizeWindow: (enabled) => set({ autoResizeWindow: enabled }),
 
       // Performance Settings Actions
       setCacheSizeLimit: (limit) => set({ cacheSizeLimit: limit }),
@@ -426,6 +438,7 @@ export const useStore = create(
         startMinimized: state.startMinimized,
         rememberWindowPositions: state.rememberWindowPositions,
         playlistAutoScroll: state.playlistAutoScroll,
+        autoResizeWindow: state.autoResizeWindow,
         // Performance Settings
         cacheSizeLimit: state.cacheSizeLimit,
         maxConcurrentScans: state.maxConcurrentScans,

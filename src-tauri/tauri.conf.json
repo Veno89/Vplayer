@@ -27,10 +27,6 @@
         "enable": true,
         "scope": ["**"]
       }
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "tooltip": "VPlayer"
     }
   },
   "bundle": {

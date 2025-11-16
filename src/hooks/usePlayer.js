@@ -100,6 +100,8 @@ export function usePlayer({
    * @returns {number|null} Next track index, or null if no next track
    */
   const getNextTrackIndex = (current, totalTracks, isShuffled, repeat) => {
+    console.log('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', totalTracks);
+    
     // Check queue first - queue always takes priority
     if (store && store.queue && store.queue.length > 0) {
       const nextQueueTrack = store.peekNextInQueue();
@@ -108,6 +110,7 @@ export function usePlayer({
         const queueTrackIndex = tracks.findIndex(t => t.id === nextQueueTrack.id);
         if (queueTrackIndex !== -1) {
           store.nextInQueue(); // Advance queue
+          console.log('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
           return queueTrackIndex;
         }
       }
@@ -119,14 +122,18 @@ export function usePlayer({
       do {
         nextIdx = Math.floor(Math.random() * totalTracks);
       } while (nextIdx === current && totalTracks > 1);
+      console.log('[getNextTrackIndex] Shuffled to:', nextIdx);
       return nextIdx;
     } else {
       const nextIdx = current + 1;
       if (nextIdx < totalTracks) {
+        console.log('[getNextTrackIndex] Sequential to:', nextIdx);
         return nextIdx;
       } else if (repeat === 'all') {
+        console.log('[getNextTrackIndex] Repeat all, going to 0');
         return 0;
       }
+      console.log('[getNextTrackIndex] No next track');
       return null;
     }
   };

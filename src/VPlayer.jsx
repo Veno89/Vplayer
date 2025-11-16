@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { AudioContextProvider } from './context/AudioContextProvider';
 import { usePlayerState, useUIState, useWindowManagement } from './hooks/useStoreHooks';
@@ -9,6 +9,7 @@ import { useToast } from './hooks/useToast';
 import { usePlayer as usePlayerHook } from './hooks/usePlayer';
 import { useTrackLoading } from './hooks/useTrackLoading';
 import { useEqualizer } from './hooks/useEqualizer';
+import { useAutoResize } from './hooks/useAutoResize';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useCrossfade } from './hooks/useCrossfade';
 import { useDragDrop } from './hooks/useDragDrop';
@@ -25,6 +26,7 @@ const VPlayerInner = () => {
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
   const [miniPlayerMode, setMiniPlayerMode] = React.useState(false);
   const [activePlaybackTracks, setActivePlaybackTracks] = React.useState([]);
+  const prevPlayingRef = useRef(null);
 
   const { currentTrack, setCurrentTrack, playing, setPlaying, progress, setProgress,
     duration, setDuration, volume, setVolume, shuffle, setShuffle, repeatMode, 
@@ -81,6 +83,9 @@ const VPlayerInner = () => {
     audio, tracks, currentTrack, playing, setDuration, setLoadingTrackIndex,
     progress, toast, removeTrack, setCurrentTrack, handleNextTrack: playerHook.handleNextTrack
   });
+
+  const autoResizeWindow = useStore((state) => state.autoResizeWindow);
+  useAutoResize(windows, autoResizeWindow);
 
   useGlobalShortcuts({ setPlaying, playerHook, audio, volume });
 
@@ -151,13 +156,25 @@ const VPlayerInner = () => {
   }, [tracks, trackLoading, setCurrentTrack, resumeLastTrack, autoPlayOnStartup, setPlaying]);
 
   useEffect(() => {
-    if (playing) {
+    // Skip the initial mount
+    if (prevPlayingRef.current === null) {
+      prevPlayingRef.current = playing;
+      return;
+    }
+    
+    // Only trigger audio commands when playing state actually changes
+    if (prevPlayingRef.current === playing) return;
+    
+    const wasPlaying = prevPlayingRef.current;
+    prevPlayingRef.current = playing;
+    
+    if (playing && !wasPlaying) {
       audio.play().catch(err => {
         console.error('Failed to play:', err);
         toast.showError('Failed to play track');
         setPlaying(false);
       });
-    } else {
+    } else if (!playing && wasPlaying) {
       audio.pause().catch(err => {
         console.error('Failed to pause:', err);
         toast.showError('Failed to pause');
