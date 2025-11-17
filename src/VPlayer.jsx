@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { AudioContextProvider } from './context/AudioContextProvider';
 import { usePlayerState, useUIState, useWindowManagement } from './hooks/useStoreHooks';
 import { useStore } from './store/useStore';
@@ -45,7 +46,7 @@ const VPlayerInner = () => {
     setWindowOpacity, fontSize, setFontSize, gaplessPlayback, autoPlayOnStartup,
     resumeLastTrack, autoScanOnStartup } = useUIState();
 
-  const { windows, setWindows, bringToFront, toggleWindow } = useWindowManagement();
+  const { windows, setWindows, bringToFront, toggleWindow, updateWindow } = useWindowManagement();
 
   const audio = useAudio({
     initialVolume: volume,
@@ -84,8 +85,38 @@ const VPlayerInner = () => {
     progress, toast, removeTrack, setCurrentTrack, handleNextTrack: playerHook.handleNextTrack
   });
 
+  // Get auto-resize setting and hook
   const autoResizeWindow = useStore((state) => state.autoResizeWindow);
-  useAutoResize(windows, autoResizeWindow);
+  const { recalculateSize, isReady } = useAutoResize(windows, autoResizeWindow);
+
+  // Manual resize trigger for debugging
+  useEffect(() => {
+    if (autoResizeWindow && isReady) {
+      // Add keyboard shortcut for manual resize (Ctrl+R)
+      const handleKeyPress = (e) => {
+        if (e.ctrlKey && e.key === 'r') {
+          console.log('Manual resize triggered');
+          recalculateSize();
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyPress);
+      return () => window.removeEventListener('keydown', handleKeyPress);
+    }
+  }, [autoResizeWindow, isReady, recalculateSize]);
+
+  // Force resize after everything is loaded
+  useEffect(() => {
+    if (autoResizeWindow && windows && isReady) {
+      // Extra safety: resize after a longer delay on first mount
+      const timer = setTimeout(() => {
+        console.log('⏰ Late initialization resize check');
+        recalculateSize();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [autoResizeWindow, windows, isReady, recalculateSize]);
 
   useGlobalShortcuts({ setPlaying, playerHook, audio, volume });
 
@@ -98,12 +129,46 @@ const VPlayerInner = () => {
       volumeDown: () => playerHook.handleVolumeChange(Math.max(0, volume - VOLUME_STEP)),
     },
     ui: {
-      toggleWindow,
+      toggleWindow: (id) => {
+        toggleWindow(id);
+        if (autoResizeWindow) {
+          setTimeout(() => recalculateSize(), 200);
+        }
+      },
       focusSearch: () => document.querySelector('input[type="text"][placeholder*="Search"]')?.focus(),
     },
   });
 
   const dragDrop = useDragDrop({ addFolder, toast });
+
+  // Enhanced window manipulation functions that trigger resize
+  const setWindowsWithResize = useCallback((windowsOrUpdater) => {
+    setWindows(windowsOrUpdater);
+    if (autoResizeWindow) {
+      setTimeout(() => recalculateSize(), 200);
+    }
+  }, [setWindows, autoResizeWindow, recalculateSize]);
+
+  const updateWindowWithResize = useCallback((id, updates) => {
+    updateWindow(id, updates);
+    if (autoResizeWindow) {
+      setTimeout(() => recalculateSize(), 200);
+    }
+  }, [updateWindow, autoResizeWindow, recalculateSize]);
+
+  const toggleWindowWithResize = useCallback((windowId) => {
+    toggleWindow(windowId);
+    if (autoResizeWindow) {
+      setTimeout(() => recalculateSize(), 200);
+    }
+  }, [toggleWindow, autoResizeWindow, recalculateSize]);
+
+  const applyLayoutWithResize = useCallback((layoutName) => {
+    applyLayout(layoutName);
+    if (autoResizeWindow) {
+      setTimeout(() => recalculateSize(), 300);
+    }
+  }, [applyLayout, autoResizeWindow, recalculateSize]);
 
   useEffect(() => {
     audio.changeVolume(volume).catch(err => console.error('Failed to set initial volume:', err));
@@ -113,13 +178,11 @@ const VPlayerInner = () => {
   useEffect(() => {
     if (backgroundImage && backgroundImage.startsWith('file://')) {
       try {
-        // Extract the file path and convert it
         const filePath = decodeURIComponent(backgroundImage.replace('file:///', ''));
         const assetUrl = convertFileSrc(filePath);
         setBackgroundImage(assetUrl);
       } catch (err) {
         console.error('Failed to convert background image URL:', err);
-        // Clear invalid URL
         setBackgroundImage(null);
       }
     }
@@ -144,7 +207,6 @@ const VPlayerInner = () => {
         if (trackIndex !== -1) {
           setCurrentTrack(trackIndex);
           
-          // Auto-play if enabled
           if (autoPlayOnStartup) {
             setTimeout(() => setPlaying(true), 500);
           }
@@ -156,13 +218,11 @@ const VPlayerInner = () => {
   }, [tracks, trackLoading, setCurrentTrack, resumeLastTrack, autoPlayOnStartup, setPlaying]);
 
   useEffect(() => {
-    // Skip the initial mount
     if (prevPlayingRef.current === null) {
       prevPlayingRef.current = playing;
       return;
     }
     
-    // Only trigger audio commands when playing state actually changes
     if (prevPlayingRef.current === playing) return;
     
     const wasPlaying = prevPlayingRef.current;
@@ -220,13 +280,13 @@ const VPlayerInner = () => {
   const windowConfigs = useWindowConfigs({
     currentTrack, tracks, filteredTracks, playing, progress, duration, volume,
     currentColors, shuffle, repeatMode, audio, playerHook, setPlaying,
-    setShuffle, setRepeatMode, toggleWindow, setCurrentTrack, removeTrack,
+    setShuffle, setRepeatMode, toggleWindow: toggleWindowWithResize, setCurrentTrack, removeTrack,
     libraryFolders, isScanning, scanProgress, scanCurrent, scanTotal,
     scanCurrentFile, handleAddFolder, handleRemoveFolder, searchQuery,
     setSearchQuery, sortBy, setSortBy, sortOrder, setSortOrder, advancedFilters,
     setAdvancedFilters, equalizer, windows, colorScheme, setColorScheme,
     colorSchemes, debugVisible, setDebugVisible, loadingTrackIndex, layouts,
-    currentLayout, applyLayout, handleLibraryDragStart: dragDrop.handleLibraryDragStart,
+    currentLayout, applyLayout: applyLayoutWithResize, handleLibraryDragStart: dragDrop.handleLibraryDragStart,
     handleLibraryDragEnd: dragDrop.handleLibraryDragEnd, handleRatingChange,
     handleDuplicateRemoved, setActivePlaybackTracks, crossfade, setThemeEditorOpen,
     backgroundImage, setBackgroundImage, backgroundBlur, setBackgroundBlur,
@@ -272,9 +332,10 @@ const VPlayerInner = () => {
             windows={windows}
             currentColors={currentColors}
             bringToFront={bringToFront}
-            setWindows={setWindows}
-            toggleWindow={toggleWindow}
+            setWindows={setWindowsWithResize}
+            toggleWindow={toggleWindowWithResize}
             windowOpacity={windowOpacity}
+            updateWindow={updateWindowWithResize}
           />
           <ThemeEditorWindow
             isOpen={themeEditorOpen}

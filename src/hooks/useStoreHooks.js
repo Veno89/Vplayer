@@ -7,6 +7,7 @@ import { useStore } from '../store/useStore';
 export function useWindowManagement() {
   const windows = useStore((state) => state.windows);
   const setWindows = useStore((state) => state.setWindows);
+  const updateWindow = useStore((state) => state.updateWindow);
   const setMaxZIndex = useStore((state) => state.setMaxZIndex);
   const bringToFront = useStore((state) => state.bringToFront);
   const toggleWindow = useStore((state) => state.toggleWindow);
@@ -14,6 +15,7 @@ export function useWindowManagement() {
   return {
     windows,
     setWindows,
+    updateWindow,
     setMaxZIndex,
     bringToFront,
     toggleWindow
