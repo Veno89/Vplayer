@@ -1,18 +1,56 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { Sliders, RotateCcw } from 'lucide-react';
-import { useAudioContextAPI } from '../context/AudioContextProvider';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function EqualizerWindow({ eqBands, setEqBands, currentColors, currentPreset, applyPreset, resetEQ, presets }) {
-  const { isInitialized, setEQBand, resetEQ: resetEQContext } = useAudioContextAPI();
+  const updateTimeoutRef = useRef(null);
 
-  // Update filter gains when bands change
+  // Convert UI bands (0-100) to backend format (-12 to +12 dB)
+  const convertBandsToBackend = useCallback((bands) => {
+    return bands.map(band => ((band.value - 50) / 50) * 12);
+  }, []);
+
+  // Send EQ settings to backend (debounced)
+  const updateBackendEQ = useCallback((bands) => {
+    // Clear any pending update
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+    
+    // Debounce the backend update to avoid too many calls while dragging
+    updateTimeoutRef.current = setTimeout(async () => {
+      try {
+        const eqGains = convertBandsToBackend(bands);
+        await TauriAPI.setAudioEffects({
+          pitch_shift: 0.0,
+          tempo: 1.0,
+          reverb_mix: 0.0,
+          reverb_room_size: 0.5,
+          bass_boost: 0.0,
+          echo_delay: 0.3,
+          echo_feedback: 0.3,
+          echo_mix: 0.0,
+          eq_bands: eqGains,
+        });
+      } catch (err) {
+        console.error('Failed to update EQ:', err);
+      }
+    }, 50);
+  }, [convertBandsToBackend]);
+
+  // Update backend when bands change
   useEffect(() => {
-    if (!isInitialized) return;
+    updateBackendEQ(eqBands);
+  }, [eqBands, updateBackendEQ]);
 
-    eqBands.forEach((band, index) => {
-      setEQBand(index, band.value);
-    });
-  }, [eqBands, isInitialized, setEQBand]);
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Handle band change
   const handleBandChange = (index, value) => {
@@ -24,9 +62,6 @@ export function EqualizerWindow({ eqBands, setEqBands, currentColors, currentPre
   // Reset to flat
   const handleReset = () => {
     resetEQ();
-    if (resetEQContext) {
-      resetEQContext();
-    }
   };
 
   return (
@@ -109,13 +144,6 @@ export function EqualizerWindow({ eqBands, setEqBands, currentColors, currentPre
 
       {/* Visual indicator */}
       <div className="h-1 bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500 rounded-full opacity-30" />
-      
-      {/* Info */}
-      {!isInitialized && (
-        <div className="text-xs text-slate-500 text-center">
-          Start playback to activate equalizer
-        </div>
-      )}
     </div>
   );
 }

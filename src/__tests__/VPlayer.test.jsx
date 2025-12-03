@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import App from '../App'
 
 describe('VPlayer UI', () => {
@@ -7,13 +7,16 @@ describe('VPlayer UI', () => {
     localStorage.clear();
   });
 
-  it('renders main player and can open options', () => {
+  it('renders main player and can open options', async () => {
     render(<App />);
     // Settings button has aria-label="Open Settings"
     const settingsBtn = screen.getByRole('button', { name: /open settings/i });
     expect(settingsBtn).toBeInTheDocument();
     // click should not throw and should keep app rendered
     fireEvent.click(settingsBtn);
-    expect(screen.getByText(/Window Visibility/i)).toBeInTheDocument();
+    // Wait for the options modal to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Window Visibility/i)).toBeInTheDocument();
+    });
   });
 });

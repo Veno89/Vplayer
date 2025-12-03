@@ -1,7 +1,6 @@
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source, DeviceTrait};
-use rodio::source::SeekError;
 use rodio::cpal::traits::HostTrait;
-use rodio::cpal::{SampleFormat, FromSample};
+use rodio::cpal::SampleFormat;
 use rodio::mixer::Mixer;
 use std::fs::File;
 use std::io::BufReader;
@@ -10,60 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use serde::Serialize;
 use crate::error::{AppError, AppResult};
-use crate::effects::{EffectsConfig, EffectsProcessor};
-
-/// EffectsSource wraps a Source and applies audio effects (EQ, etc.) to each sample
-struct EffectsSource<I>
-where
-    I: Source,
-    f32: FromSample<I::Item>,
-{
-    input: I,
-    processor: Arc<Mutex<EffectsProcessor>>,
-}
-
-impl<I> Iterator for EffectsSource<I>
-where
-    I: Source,
-    f32: FromSample<I::Item>,
-{
-    type Item = f32;
-
-    fn next(&mut self) -> Option<f32> {
-        self.input.next().map(|sample| {
-            let mut processor = self.processor.lock().unwrap();
-            // Convert sample to f32, process, then return
-            let sample_f32: f32 = f32::from_sample_(sample);
-            processor.process(sample_f32)
-        })
-    }
-}
-
-impl<I> Source for EffectsSource<I>
-where
-    I: Source,
-    f32: FromSample<I::Item>,
-{
-    fn current_span_len(&self) -> Option<usize> {
-        self.input.current_span_len()
-    }
-
-    fn channels(&self) -> u16 {
-        self.input.channels()
-    }
-
-    fn sample_rate(&self) -> u32 {
-        self.input.sample_rate()
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        self.input.total_duration()
-    }
-
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.input.try_seek(pos)
-    }
-}
+use crate::effects::EffectsConfig;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AudioDevice {
@@ -83,8 +29,8 @@ pub struct AudioPlayer {
     // For gapless playback
     preload_sink: Arc<Mutex<Option<Sink>>>,
     preload_path: Arc<Mutex<Option<String>>>,
-    // Audio effects processor
-    effects_processor: Arc<Mutex<EffectsProcessor>>,
+    // Audio effects
+    effects_config: Arc<Mutex<EffectsConfig>>,
     effects_enabled: Arc<Mutex<bool>>,
 }
 
@@ -113,8 +59,8 @@ impl AudioPlayer {
             total_duration: Arc::new(Mutex::new(Duration::ZERO)),
             preload_sink: Arc::new(Mutex::new(None)),
             preload_path: Arc::new(Mutex::new(None)),
-            effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(44100, EffectsConfig::default()))),
-            effects_enabled: Arc::new(Mutex::new(true)),
+            effects_config: Arc::new(Mutex::new(EffectsConfig::default())),
+            effects_enabled: Arc::new(Mutex::new(false)),
         })
     }
     
@@ -212,15 +158,9 @@ impl AudioPlayer {
         
         info!("Audio file loaded successfully, duration: {:?}", duration);
         
-        // Wrap source with effects processor for EQ
-        let effects_source = EffectsSource {
-            input: source,
-            processor: self.effects_processor.clone(),
-        };
-        
         let sink = self.sink.lock().unwrap();
         sink.clear();
-        sink.append(effects_source);
+        sink.append(source);
         sink.pause();
         
         *self.current_path.lock().unwrap() = Some(path);
@@ -495,12 +435,12 @@ impl AudioPlayer {
     
     /// Set audio effects configuration
     pub fn set_effects(&self, config: EffectsConfig) {
-        self.effects_processor.lock().unwrap().update_config(config);
+        *self.effects_config.lock().unwrap() = config;
     }
     
     /// Get current effects configuration
     pub fn get_effects(&self) -> EffectsConfig {
-        self.effects_processor.lock().unwrap().get_config()
+        self.effects_config.lock().unwrap().clone()
     }
     
     /// Enable or disable audio effects

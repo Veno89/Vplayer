@@ -165,6 +165,24 @@ class TauriAPIService {
     return this._invoke('has_preloaded');
   }
 
+  // ========== Audio Effects Commands ==========
+
+  async setAudioEffects(config) {
+    return this._invoke('set_audio_effects', { config });
+  }
+
+  async getAudioEffects() {
+    return this._invoke('get_audio_effects');
+  }
+
+  async setEffectsEnabled(enabled) {
+    return this._invoke('set_effects_enabled', { enabled });
+  }
+
+  async isEffectsEnabled() {
+    return this._invoke('is_effects_enabled');
+  }
+
   // ========== Tag Editor Commands ==========
 
   async updateTrackTags(trackId, trackPath, tags) {

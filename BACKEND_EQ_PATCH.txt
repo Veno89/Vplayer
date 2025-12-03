@@ -1,0 +1,87 @@
+// Add this after line 12 (after the imports):
+use crate::effects::{EffectsConfig, EffectsProcessor};
+
+// Add this before the AudioDevice struct (around line 14):
+// EffectsSource wraps a Source and applies audio effects to each sample
+struct EffectsSource<I>
+where
+    I: Source<Item = i16> + Send,
+{
+    input: I,
+    processor: Arc<Mutex<EffectsProcessor>>,
+}
+
+impl<I> Iterator for EffectsSource<I>
+where
+    I: Source<Item = i16> + Send,
+{
+    type Item = i16;
+
+    fn next(&mut self) -> Option<i16> {
+        self.input.next().map(|sample| {
+            let mut processor = self.processor.lock().unwrap();
+            // Convert i16 to f32, process, then convert back
+            let sample_f32 = sample as f32 / 32768.0;
+            let processed = processor.process(sample_f32);
+            (processed * 32768.0).clamp(-32768.0, 32767.0) as i16
+        })
+    }
+}
+
+impl<I> Source for EffectsSource<I>
+where
+    I: Source<Item = i16> + Send,
+{
+    fn current_frame_len(&self) -> Option<usize> {
+        self.input.current_frame_len()
+    }
+
+    fn channels(&self) -> u16 {
+        self.input.channels()
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.input.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.input.total_duration()
+    }
+}
+
+// In AudioPlayer struct (line 33), REPLACE:
+//     effects_config: Arc<Mutex<EffectsConfig>>,
+// WITH:
+//     effects_processor: Arc<Mutex<EffectsProcessor>>,
+
+// In AudioPlayer::new() (line 62), REPLACE:
+//             effects_config: Arc::new(Mutex::new(EffectsConfig::default())),
+// WITH:
+//             effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(44100, EffectsConfig::default()))),
+
+// In load() method (lines 161-164), REPLACE:
+//         let sink = self.sink.lock().unwrap();
+//         sink.clear();
+//         sink.append(source);
+//         sink.pause();
+// WITH:
+//         // Wrap source with effects processor
+//         let effects_source = EffectsSource {
+//             input: source.convert_samples(),
+//             processor: self.effects_processor.clone(),
+//         };
+//         
+//         let sink = self.sink.lock().unwrap();
+//         sink.clear();
+//         sink.append(effects_source);
+//         sink.pause();
+
+// In set_effects() method (line 438), REPLACE:
+//         *self.effects_config.lock().unwrap() = config;
+// WITH:
+//         self.effects_processor.lock().unwrap().update_config(config);
+
+// In get_effects() method (line 443), REPLACE:
+//         self.effects_config.lock().unwrap().clone()
+// WITH:
+//         self.effects_processor.lock().unwrap().get_config()

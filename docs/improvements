@@ -1,0 +1,171 @@
+Code Architecture Improvements
+1. State Management Issues
+Your store is getting bloated with too many concerns. Consider splitting it:
+// Separate stores for different domains
+createPlayerStore()  // playback state
+createUIStore()      // windows, themes
+createLibraryStore() // tracks, folders
+createQueueStore()   // queue management
+
+2. Memory Leaks & Performance
+
+PlaylistWindow.jsx (line 90-110): You're creating itemData on every render. Move more logic to useMemo
+Auto-resize hook runs too many calculations. Debounce more aggressively
+TrackList virtualization could be optimized - consider react-window's VariableSizeList for better performance with different row heights
+
+3. Error Handling
+Your error handling is inconsistent. Create a global error boundary:
+// Wrap entire app
+<ErrorBoundary fallback={<GlobalErrorScreen />}>
+  <VPlayer />
+</ErrorBoundary>
+
+4. Type Safety
+No TypeScript = lots of runtime bugs waiting to happen. At minimum, add JSDoc types:
+/**
+ * @param {Object} props
+ * @param {Track[]} props.tracks
+ * @param {number} props.currentTrack
+ */
+
+ 5. Duplicate Code
+
+Multiple components have similar drag-drop logic - extract to useDragDropTrack hook
+Toast notifications repeated everywhere - already have useToast, use it consistently
+Format duration appears in multiple files - you have it in utils, use it everywhere
+
+Feature Improvements
+1. Missing Critical Features
+A. Keyboard Navigation in Lists
+// Add to TrackList.jsx
+const handleKeyDown = (e) => {
+  if (e.key === 'ArrowDown') selectNext();
+  if (e.key === 'ArrowUp') selectPrev();
+  if (e.key === 'Enter') playSelected();
+};
+
+B. Bulk Operations
+
+Multi-select tracks (Ctrl+Click, Shift+Click)
+Bulk add to playlist
+Bulk delete
+Bulk tag editing (you have single track editor only)
+
+C. Search History
+Users often search for the same things. Add recent searches dropdown.
+D. Play Queue Improvements
+
+Save/load queue state
+"Play Next" vs "Add to End"
+Show where tracks came from (playlist name, etc)
+
+2. UX Enhancements
+A. Library Window needs folder stats:
+// Show in LibraryWindow
+- Total size in GB
+- File format breakdown (45% FLAC, 30% MP3, etc)
+- Missing/broken files count
+
+B. Progress Bar (PlayerWindow.jsx):
+
+Add thumbnail preview on hover
+Show time at hover position
+Click to seek is good, but add drag support
+
+C. Volume Control:
+
+Add scroll wheel support on volume slider
+Add volume memory per-track (optional setting)
+
+D. Playlist Management:
+
+Playlist folders/categories
+Smart playlist editing (currently read-only)
+Playlist import from M3U/M3U8 files
+Drag playlist to reorder in tabs
+
+3. Audio Improvements
+A. ReplayGain is in settings but not implemented in audio backend
+B. Audio Effects (beyond EQ):
+// Add to audio hook
+- Stereo widening
+- Bass boost (separate from EQ)
+- Compressor/Limiter
+C. Format-Specific Handling:
+Your Rust backend should expose more metadata:
+
+FLAC: Show bit depth (16/24 bit)
+MP3: Show encoder info
+Show codec details
+
+4. Smart Features
+A. Library Health:
+// Add monitoring window
+- Tracks with missing tags
+- Low bitrate files
+- Duplicate scan improvements (current one is basic)
+
+B. Statistics Enhancements:
+// In LibraryStatsWindow
+- Listening trends over time (graph)
+- Most played artists/albums (not just tracks)
+- Play count by hour/day/week
+- Skip rate tracking
+
+Performance Optimizations
+1. Database Queries
+Your get_all_tracks loads everything. Add pagination:
+// In Rust backend
+pub fn get_tracks_paginated(offset: usize, limit: usize) -> Vec<Track>
+```
+
+### 2. **Album Art Caching**
+Current implementation caches but doesn't cleanup. Add:
+- LRU cache with size limits
+- Periodic cleanup of old cache
+- Resize images before caching (you're storing full-size)
+
+### 3. **Scanning Performance**
+- Use `rayon` for parallel file scanning in Rust
+- Show more detailed progress (current file path is good, add files/sec)
+- Incremental updates to UI (batch changes)
+
+### 4. **Window Rendering**
+Every window re-renders when any window moves. Fix with React.memo and careful prop passing.
+
+## Bug Fixes Needed
+
+1. **Auto-resize** (useAutoResize.js): Calculates on every window state change, causing jank
+2. **Drag-drop** between windows sometimes drops events (mentioned in history)
+3. **Search** in PlaylistWindow filters but doesn't update currentTrack index mapping properly
+4. **Memory** - No cleanup of removed tracks from store
+5. **Crossfade** logic exists but isn't connected to actual audio fading
+
+## Code Quality Issues
+
+1. **Inconsistent naming**: `handleAddFolder` vs `addFolder` vs `onAddFolder`
+2. **Magic numbers**: Extract constants (e.g., `itemSize = 48` in multiple places)
+3. **console.logs everywhere**: Use a proper logging system
+4. **No tests**: Critical paths like playback, queue management need tests
+
+## Quick Wins (High Impact, Low Effort)
+
+1. **Add album view in PlaylistWindow** - you have AlbumViewWindow but it's separate
+2. **Implement "Play Next"** in context menus - infrastructure exists
+3. **Add BPM detection** - use a library, show in track info
+4. **Keyboard shortcuts window** - you have ShortcutsWindow stub but it's not functional
+5. **Restore window positions** - setting exists but not implemented
+6. **Lyrics sync** - you have LyricsWindow but no actual .lrc parsing
+
+## Architecture Suggestion
+
+Consider this structure:
+```
+src/
+  domains/
+    player/     - playback logic
+    library/    - scanning, tracks
+    playlist/   - playlist management
+    ui/         - themes, windows
+  shared/       - common components
+  services/     - API, audio

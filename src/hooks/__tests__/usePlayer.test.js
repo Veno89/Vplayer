@@ -177,7 +177,7 @@ describe('usePlayer', () => {
   });
 
   describe('handleSeek', () => {
-    it('should seek to correct position based on percentage', () => {
+    it('should seek to correct position based on percentage', async () => {
       const tracks = [{ id: '1', title: 'Track 1' }];
 
       mockPlayer.duration = 100; // 100 seconds
@@ -196,7 +196,10 @@ describe('usePlayer', () => {
         result.current.handleSeek(50); // 50%
       });
 
-      expect(mockAudio.seek).toHaveBeenCalledWith(50); // 50 seconds
+      // Wait for the throttled seek to complete
+      await vi.waitFor(() => {
+        expect(mockAudio.seek).toHaveBeenCalledWith(50); // 50 seconds
+      });
     });
   });
 

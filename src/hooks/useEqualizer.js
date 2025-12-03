@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { EQ_PRESETS, STORAGE_KEYS } from '../utils/constants';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function useEqualizer() {
   // Load saved EQ from localStorage or use flat preset
@@ -28,6 +29,40 @@ export function useEqualizer() {
   );
 
   const [currentPreset, setCurrentPreset] = useState('CUSTOM');
+  const initialSyncDone = useRef(false);
+
+  // Convert UI bands (0-100) to backend format (-12 to +12 dB)
+  const convertBandsToBackend = useCallback((bands) => {
+    return bands.map(band => ((band.value - 50) / 50) * 12);
+  }, []);
+
+  // Sync EQ settings with backend
+  const syncWithBackend = useCallback(async (bands) => {
+    try {
+      const eqGains = convertBandsToBackend(bands);
+      await TauriAPI.setAudioEffects({
+        pitch_shift: 0.0,
+        tempo: 1.0,
+        reverb_mix: 0.0,
+        reverb_room_size: 0.5,
+        bass_boost: 0.0,
+        echo_delay: 0.3,
+        echo_feedback: 0.3,
+        echo_mix: 0.0,
+        eq_bands: eqGains,
+      });
+    } catch (err) {
+      console.error('Failed to sync EQ with backend:', err);
+    }
+  }, [convertBandsToBackend]);
+
+  // Sync with backend on initial mount
+  useEffect(() => {
+    if (!initialSyncDone.current) {
+      initialSyncDone.current = true;
+      syncWithBackend(eqBands);
+    }
+  }, [eqBands, syncWithBackend]);
 
   // Save EQ to localStorage whenever it changes
   useEffect(() => {

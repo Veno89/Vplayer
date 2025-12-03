@@ -5,6 +5,7 @@ use std::f32::consts::PI;
  * Audio DSP effects module
  * 
  * Provides real-time audio effects processing including:
+ * - 10-band Equalizer
  * - Pitch shifting
  * - Tempo/speed control
  * - Reverb
@@ -23,6 +24,7 @@ pub struct EffectsConfig {
     pub echo_delay: f32,       // Echo delay in seconds
     pub echo_feedback: f32,    // Echo feedback (0.0 to 0.9)
     pub echo_mix: f32,         // Echo wet/dry mix (0.0 to 1.0)
+    pub eq_bands: [f32; 10],   // 10-band EQ gains in dB (-12.0 to +12.0)
 }
 
 impl Default for EffectsConfig {
@@ -36,7 +38,149 @@ impl Default for EffectsConfig {
             echo_delay: 0.3,
             echo_feedback: 0.3,
             echo_mix: 0.0,
+            eq_bands: [0.0; 10],
         }
+    }
+}
+
+/// Biquad filter implementation for EQ
+#[derive(Clone)]
+pub struct BiquadFilter {
+    a0: f32, a1: f32, a2: f32,
+    b1: f32, b2: f32,
+    z1: f32, z2: f32,
+}
+
+impl BiquadFilter {
+    pub fn new() -> Self {
+        Self {
+            a0: 1.0, a1: 0.0, a2: 0.0,
+            b1: 0.0, b2: 0.0,
+            z1: 0.0, z2: 0.0,
+        }
+    }
+
+    pub fn set_peaking(&mut self, sample_rate: u32, freq: f32, q: f32, gain_db: f32) {
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+        let a = 10_f32.powf(gain_db / 40.0); // TODO: Check if this should be 20 or 40 for peaking
+
+        let cos_w0 = w0.cos();
+
+        let b0 = 1.0 + alpha * a;
+        let b1 = -2.0 * cos_w0;
+        let b2 = 1.0 - alpha * a;
+        let a0 = 1.0 + alpha / a;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha / a;
+
+        self.a0 = b0 / a0;
+        self.a1 = b1 / a0;
+        self.a2 = b2 / a0;
+        self.b1 = a1 / a0;
+        self.b2 = a2 / a0;
+    }
+
+    pub fn set_lowshelf(&mut self, sample_rate: u32, freq: f32, q: f32, gain_db: f32) {
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let a = 10_f32.powf(gain_db / 40.0);
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+        let sqrt_a = a.sqrt();
+
+        let b0 = a * ((a + 1.0) - (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha);
+        let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0);
+        let b2 = a * ((a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha);
+        let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha;
+        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0);
+        let a2 = (a + 1.0) + (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
+
+        self.a0 = b0 / a0;
+        self.a1 = b1 / a0;
+        self.a2 = b2 / a0;
+        self.b1 = a1 / a0;
+        self.b2 = a2 / a0;
+    }
+
+    pub fn set_highshelf(&mut self, sample_rate: u32, freq: f32, q: f32, gain_db: f32) {
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let a = 10_f32.powf(gain_db / 40.0);
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+        let sqrt_a = a.sqrt();
+
+        let b0 = a * ((a + 1.0) + (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha);
+        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0);
+        let b2 = a * ((a + 1.0) + (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha);
+        let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha;
+        let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cos_w0);
+        let a2 = (a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
+
+        self.a0 = b0 / a0;
+        self.a1 = b1 / a0;
+        self.a2 = b2 / a0;
+        self.b1 = a1 / a0;
+        self.b2 = a2 / a0;
+    }
+
+    pub fn process(&mut self, input: f32) -> f32 {
+        let output = self.a0 * input + self.a1 * self.z1 + self.a2 * self.z2
+            - self.b1 * self.z1 - self.b2 * self.z2;
+        
+        self.z2 = self.z1;
+        self.z1 = input;
+        
+        output
+    }
+}
+
+/// 10-band Equalizer
+pub struct Equalizer {
+    filters: Vec<BiquadFilter>,
+    frequencies: [f32; 10],
+    sample_rate: u32,
+}
+
+impl Equalizer {
+    pub fn new(sample_rate: u32) -> Self {
+        let frequencies = [60.0, 170.0, 310.0, 600.0, 1000.0, 3000.0, 6000.0, 12000.0, 14000.0, 16000.0];
+        let mut filters = Vec::with_capacity(10);
+        
+        for _ in 0..10 {
+            filters.push(BiquadFilter::new());
+        }
+
+        let mut eq = Self {
+            filters,
+            frequencies,
+            sample_rate,
+        };
+        
+        // Initialize with 0 gain
+        eq.update_gains(&[0.0; 10]);
+        eq
+    }
+
+    pub fn update_gains(&mut self, gains: &[f32; 10]) {
+        for (i, &gain) in gains.iter().enumerate() {
+            let freq = self.frequencies[i];
+            
+            if i == 0 {
+                self.filters[i].set_lowshelf(self.sample_rate, freq, 0.707, gain);
+            } else if i == 9 {
+                self.filters[i].set_highshelf(self.sample_rate, freq, 0.707, gain);
+            } else {
+                self.filters[i].set_peaking(self.sample_rate, freq, 1.41, gain);
+            }
+        }
+    }
+
+    pub fn process(&mut self, input: f32) -> f32 {
+        let mut output = input;
+        for filter in &mut self.filters {
+            output = filter.process(output);
+        }
+        output
     }
 }
 
@@ -236,6 +380,7 @@ pub struct EffectsProcessor {
     reverb: Reverb,
     echo: Echo,
     bass_boost: BassBoost,
+    equalizer: Equalizer,
     sample_rate: u32,
 }
 
@@ -245,6 +390,7 @@ impl EffectsProcessor {
             reverb: Reverb::new(sample_rate, config.reverb_room_size),
             echo: Echo::new(sample_rate, config.echo_delay, config.echo_feedback),
             bass_boost: BassBoost::new(sample_rate, config.bass_boost),
+            equalizer: Equalizer::new(sample_rate),
             config,
             sample_rate,
         }
@@ -255,12 +401,20 @@ impl EffectsProcessor {
         self.echo.set_delay(self.sample_rate, config.echo_delay);
         self.echo.set_feedback(config.echo_feedback);
         self.bass_boost.set_boost(self.sample_rate, config.bass_boost);
+        self.equalizer.update_gains(&config.eq_bands);
         self.config = config;
+    }
+
+    pub fn get_config(&self) -> EffectsConfig {
+        self.config.clone()
     }
     
     pub fn process(&mut self, input: f32) -> f32 {
         let mut output = input;
         
+        // Equalizer
+        output = self.equalizer.process(output);
+
         // Bass boost
         if self.config.bass_boost > 0.0 {
             output = self.bass_boost.process(output);
@@ -299,6 +453,7 @@ mod tests {
         assert_eq!(config.pitch_shift, 0.0);
         assert_eq!(config.tempo, 1.0);
         assert_eq!(config.reverb_mix, 0.0);
+        assert_eq!(config.eq_bands, [0.0; 10]);
     }
 
     #[test]
@@ -322,6 +477,15 @@ mod tests {
         let output = bass.process(0.5);
         // Should amplify bass frequencies
         assert!(output.abs() <= 1.0);
+    }
+
+    #[test]
+    fn test_equalizer() {
+        let mut eq = Equalizer::new(44100);
+        let input = 0.5;
+        let output = eq.process(input);
+        // Flat EQ should pass signal mostly unchanged (phase shift might cause small diff)
+        assert!((output - input).abs() < 0.0001);
     }
 
     #[test]
