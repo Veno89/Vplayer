@@ -683,31 +683,58 @@ export function OptionsWindowEnhanced({
             />
 
             <div className="pt-4 border-t border-slate-700">
-              <h4 className="text-white text-sm font-medium mb-3">Window Layouts</h4>
-              <p className="text-slate-400 text-xs mb-4">
-                Choose a preset layout to arrange your windows
-              </p>
-              <div className="space-y-2">
-                {layouts?.map((layout) => (
-                  <button
-                    key={layout.name}
-                    onClick={() => applyLayout(layout.name)}
-                    onMouseDown={e => e.stopPropagation()}
-                    className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
-                      currentLayout === layout.name
-                        ? `border-cyan-500 bg-cyan-500/10`
-                        : 'border-slate-700 hover:border-slate-600 bg-slate-800/30'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-white font-medium text-sm">{layout.label}</span>
-                      {currentLayout === layout.name && (
-                        <div className="w-2 h-2 rounded-full bg-cyan-500" />
-                      )}
-                    </div>
-                    <p className="text-slate-400 text-xs">{layout.description}</p>
-                  </button>
-                ))}
+              <h4 className="text-white text-sm font-medium mb-2">Window Layouts</h4>
+              <div className="grid grid-cols-4 gap-2">
+                {layouts?.map((layout) => {
+                  const colors = {
+                    player: 'bg-cyan-500',
+                    playlist: 'bg-emerald-500',
+                    library: 'bg-amber-500',
+                    equalizer: 'bg-violet-500',
+                    visualizer: 'bg-pink-500',
+                    queue: 'bg-orange-500',
+                  };
+                  return (
+                    <button
+                      key={layout.name}
+                      onClick={() => applyLayout(layout.name)}
+                      onMouseDown={e => e.stopPropagation()}
+                      className={`p-2 rounded-lg border-2 text-left transition-all ${
+                        currentLayout === layout.name
+                          ? `border-cyan-500 bg-cyan-500/10`
+                          : 'border-slate-700 hover:border-slate-500 bg-slate-800/30'
+                      }`}
+                      title={layout.description}
+                    >
+                      {/* Compact Layout Preview */}
+                      <div className="relative w-full h-12 bg-slate-900 rounded mb-1 overflow-hidden">
+                        {layout.preview?.map((win, idx) => (
+                          <div
+                            key={idx}
+                            className={`absolute ${colors[win.id] || 'bg-slate-500'} rounded-[2px]`}
+                            style={{
+                              left: `${(win.x / 13) * 100}%`,
+                              top: `${(win.y / 8) * 100}%`,
+                              width: `${(win.w / 13) * 100}%`,
+                              height: `${(win.h / 8) * 100}%`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <div className="text-[10px] text-white font-medium truncate">{layout.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              
+              {/* Compact Legend */}
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-400">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500"></span>Player</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500"></span>Playlist</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500"></span>Library</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-500"></span>EQ</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-pink-500"></span>Vis</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-500"></span>Queue</span>
               </div>
             </div>
           </div>

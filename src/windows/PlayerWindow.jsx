@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader, Minimize2 } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
@@ -32,7 +32,12 @@ export function PlayerWindow({
   const isDisabled = !!audioBackendError; // Disable controls if audio backend has failed
 
   // Local volume state for slider responsiveness
-  const [localVolume, setLocalVolume] = React.useState(volume * 100);
+  const [localVolume, setLocalVolume] = useState(volume * 100);
+  
+  // Progress bar drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const [hoverPercent, setHoverPercent] = useState(null);
+  const progressBarRef = useRef(null);
 
   // Sync local volume with prop
   React.useEffect(() => {
@@ -47,13 +52,65 @@ export function PlayerWindow({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Calculate percent from mouse event
+  const getPercentFromEvent = useCallback((e) => {
+    if (!progressBarRef.current) return 0;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    return Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+  }, []);
+
   // Handle progress bar click
   const handleProgressClick = (e) => {
     e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percent = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+    const percent = getPercentFromEvent(e);
     seekToPercent(percent);
+  };
+
+  // Handle progress bar mouse down (start dragging)
+  const handleProgressMouseDown = (e) => {
+    if (isDisabled) return;
+    e.stopPropagation();
+    setIsDragging(true);
+    const percent = getPercentFromEvent(e);
+    seekToPercent(percent);
+  };
+
+  // Handle progress bar mouse move (while dragging or hovering)
+  const handleProgressMouseMove = useCallback((e) => {
+    const percent = getPercentFromEvent(e);
+    setHoverPercent(percent);
+    if (isDragging) {
+      seekToPercent(percent);
+    }
+  }, [isDragging, getPercentFromEvent, seekToPercent]);
+
+  // Handle mouse up (stop dragging)
+  React.useEffect(() => {
+    if (!isDragging) return;
+    
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    const handleMouseMove = (e) => {
+      handleProgressMouseMove(e);
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [isDragging, handleProgressMouseMove]);
+
+  // Handle mouse leave
+  const handleProgressMouseLeave = () => {
+    if (!isDragging) {
+      setHoverPercent(null);
+    }
   };
 
   // Handle volume change
@@ -65,6 +122,16 @@ export function PlayerWindow({
   // Handle volume input (for immediate UI update while dragging)
   const handleVolumeInput = (e) => {
     setLocalVolume(Number(e.target.value));
+  };
+
+  // Handle scroll wheel on volume slider
+  const handleVolumeWheel = (e) => {
+    if (isDisabled) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -5 : 5; // Scroll down decreases, up increases
+    const newVolume = Math.max(0, Math.min(100, localVolume + delta));
+    setLocalVolume(newVolume);
+    setVolume(newVolume / 100);
   };
 
   // Cycle through repeat modes: off -> all -> one -> off
@@ -143,10 +210,14 @@ export function PlayerWindow({
       {/* Progress Bar */}
       <div>
         <div 
+          ref={progressBarRef}
           className={`relative w-full bg-slate-700/50 rounded-full h-2 transition-all ${
             isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:h-3 group'
           }`}
           onClick={isDisabled ? undefined : handleProgressClick}
+          onMouseDown={isDisabled ? undefined : handleProgressMouseDown}
+          onMouseMove={handleProgressMouseMove}
+          onMouseLeave={handleProgressMouseLeave}
           title={`${formatTime(progress)} / ${formatTime(duration)}`}
         >
           <div 
@@ -158,13 +229,26 @@ export function PlayerWindow({
               <div 
                 className={`absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg transition-opacity ${
                   progressPercent > 2 ? 'opacity-100' : 'opacity-0'
-                }`}
+                } ${isDragging ? 'scale-125' : ''}`}
               />
             )}
           </div>
+          {/* Hover time indicator */}
+          {hoverPercent !== null && !isDisabled && (
+            <div 
+              className="absolute top-1/2 -translate-y-1/2 w-1 h-full bg-white/30 rounded-full pointer-events-none"
+              style={{ left: `${hoverPercent}%` }}
+            />
+          )}
         </div>
         <div className="flex justify-between text-xs text-slate-400 mt-1">
           <span>{formatTime(progress)}</span>
+          {/* Show hover time when hovering */}
+          {hoverPercent !== null && duration > 0 && (
+            <span className="text-cyan-400">
+              {formatTime((hoverPercent / 100) * duration)}
+            </span>
+          )}
           <span>{formatTime(duration)}</span>
         </div>
       </div>
@@ -257,7 +341,7 @@ export function PlayerWindow({
       </div>
 
       {/* Volume Control */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" onWheel={handleVolumeWheel}>
         <button
           onClick={e => {
             e.stopPropagation();

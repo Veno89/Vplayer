@@ -22,6 +22,22 @@ export const WINDOW_MIN_WIDTH = 200;
 export const WINDOW_MIN_HEIGHT = 150;
 export const MAX_Z_INDEX_START = 1000;
 
+// Per-window minimum sizes for proper content display
+export const WINDOW_MIN_SIZES = {
+  player: { width: 340, height: 320 },      // Album art + controls + progress
+  playlist: { width: 300, height: 200 },    // Header + at least a few tracks
+  library: { width: 400, height: 350 },     // Folders + search + track list
+  equalizer: { width: 380, height: 260 },   // All 10 EQ bands + presets
+  visualizer: { width: 300, height: 150 },  // Enough canvas space
+  queue: { width: 300, height: 250 },       // Header + queue items
+  options: { width: 480, height: 480 },     // Tabs + content + layout previews
+  history: { width: 300, height: 200 },     // Track history list
+  albumView: { width: 400, height: 350 },   // Album grid
+  smartPlaylists: { width: 400, height: 350 }, // Smart playlist rules
+  lyrics: { width: 350, height: 300 },      // Lyrics display
+  shortcuts: { width: 400, height: 350 },   // Shortcuts list
+};
+
 // Playlist Constants
 export const REPEAT_MODES = {
   OFF: 'off',

@@ -327,27 +327,69 @@ export function OptionsWindow({
               <p className="text-slate-400 text-xs mb-4">
                 Choose a preset layout to arrange your windows. Each layout positions and shows/hides windows automatically.
               </p>
-              <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 {layouts?.map((layout) => (
                   <button
                     key={layout.name}
                     onClick={() => applyLayout(layout.name)}
                     onMouseDown={e => e.stopPropagation()}
-                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${
                       currentLayout === layout.name
-                        ? `border-cyan-500 bg-cyan-500/10 shadow-lg`
-                        : 'border-slate-700 hover:border-slate-600 bg-slate-800/30'
+                        ? `border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20`
+                        : 'border-slate-700 hover:border-slate-500 bg-slate-800/30 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-white font-medium">{layout.label}</span>
+                    {/* Layout Preview */}
+                    <div className="relative w-full h-20 bg-slate-900/80 rounded mb-2 overflow-hidden border border-slate-700/50">
+                      {layout.preview?.map((win, idx) => {
+                        // Grid is 9x8
+                        const colors = {
+                          player: 'bg-cyan-500/80',
+                          playlist: 'bg-emerald-500/70',
+                          library: 'bg-amber-500/70',
+                          equalizer: 'bg-violet-500/70',
+                          visualizer: 'bg-pink-500/70',
+                          queue: 'bg-orange-500/70',
+                        };
+                        return (
+                          <div
+                            key={idx}
+                            className={`absolute ${colors[win.id] || 'bg-slate-500/70'} rounded-sm flex items-center justify-center`}
+                            style={{
+                              left: `${(win.x / 13) * 100}%`,
+                              top: `${(win.y / 8) * 100}%`,
+                              width: `${(win.w / 13) * 100}%`,
+                              height: `${(win.h / 8) * 100}%`,
+                              padding: '1px',
+                            }}
+                          >
+                            <span className="text-[8px] font-bold text-white/90 truncate px-0.5">
+                              {win.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-sm font-medium">{layout.label}</span>
                       {currentLayout === layout.name && (
-                        <div className="w-2 h-2 rounded-full bg-cyan-500" />
+                        <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
                       )}
                     </div>
-                    <p className="text-slate-400 text-xs">{layout.description}</p>
+                    <p className="text-slate-400 text-[10px] mt-0.5 leading-tight">{layout.description}</p>
                   </button>
                 ))}
+              </div>
+              
+              {/* Legend */}
+              <div className="mt-4 flex flex-wrap gap-2 text-[10px]">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-cyan-500"></span> Player</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500"></span> Playlist</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500"></span> Library</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-violet-500"></span> Equalizer</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-pink-500"></span> Visualizer</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-orange-500"></span> Queue</span>
               </div>
             </div>
             

@@ -1,8 +1,12 @@
-import React from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FixedSizeList as ListVirtual } from 'react-window';
 import { Loader, MoreVertical, GripVertical } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from './StarRating';
+
+// Constants for consistent sizing
+export const TRACK_LIST_ITEM_SIZE = 48;
+export const TRACK_LIST_ITEM_SIZE_COMPACT = 40;
 
 /**
  * Unified track row component with configurable features
@@ -21,6 +25,7 @@ const TrackRow = React.memo(({ data, index, style }) => {
     onDragOver,
     onDrop,
     draggedIndex,
+    focusedIndex,
     showRating = false,
     showAlbum = true,
     showArtist = true,
@@ -32,6 +37,7 @@ const TrackRow = React.memo(({ data, index, style }) => {
   const isActive = index === currentTrack;
   const isLoading = loadingTrackIndex === index;
   const isDragging = draggedIndex === index;
+  const isFocused = index === focusedIndex;
 
   if (!track) return null;
 
@@ -70,6 +76,8 @@ const TrackRow = React.memo(({ data, index, style }) => {
       className={`flex items-center px-3 py-2 text-sm cursor-pointer select-none transition-colors group ${
         isActive 
           ? `${currentColors.accent} bg-slate-800/80 font-semibold` 
+          : isFocused
+          ? 'bg-slate-700/80 text-slate-200 ring-1 ring-cyan-500/50'
           : 'hover:bg-slate-700/60 text-slate-300'
       } ${isLoading ? 'opacity-50' : ''} ${isDragging ? 'opacity-40' : ''}`}
       onClick={() => onSelect(index)}
@@ -175,14 +183,15 @@ const TrackRow = React.memo(({ data, index, style }) => {
     prevTrack?.rating === nextTrack?.rating &&
     prevProps.data.currentTrack === nextProps.data.currentTrack &&
     prevProps.data.loadingTrackIndex === nextProps.data.loadingTrackIndex &&
-    prevProps.data.draggedIndex === nextProps.data.draggedIndex
+    prevProps.data.draggedIndex === nextProps.data.draggedIndex &&
+    prevProps.data.focusedIndex === nextProps.data.focusedIndex
   );
 });
 
 TrackRow.displayName = 'TrackRow';
 
 /**
- * Virtualized track list component
+ * Virtualized track list component with keyboard navigation
  */
 export const TrackList = React.forwardRef(function TrackList({
   tracks,
@@ -203,8 +212,87 @@ export const TrackList = React.forwardRef(function TrackList({
   showNumber = true,
   showDuration = true,
   height = 400,
-  itemSize = 40
+  itemSize = TRACK_LIST_ITEM_SIZE_COMPACT,
+  onPlayTrack // Optional: separate handler for playing vs selecting
 }, ref) {
+  const [focusedIndex, setFocusedIndex] = useState(currentTrack ?? 0);
+  const containerRef = useRef(null);
+  const listRef = useRef(null);
+
+  // Expose scrollToItem via ref
+  React.useImperativeHandle(ref, () => ({
+    scrollToItem: (index, align) => {
+      listRef.current?.scrollToItem(index, align);
+    }
+  }));
+
+  // Update focused index when current track changes
+  useEffect(() => {
+    if (currentTrack !== null && currentTrack !== undefined) {
+      setFocusedIndex(currentTrack);
+    }
+  }, [currentTrack]);
+
+  // Keyboard navigation handler
+  const handleKeyDown = useCallback((e) => {
+    if (tracks.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = Math.min(prev + 1, tracks.length - 1);
+          listRef.current?.scrollToItem(next, 'smart');
+          return next;
+        });
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = Math.max(prev - 1, 0);
+          listRef.current?.scrollToItem(next, 'smart');
+          return next;
+        });
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (onPlayTrack) {
+          onPlayTrack(focusedIndex);
+        } else {
+          onSelect(focusedIndex);
+        }
+        break;
+      case 'Home':
+        e.preventDefault();
+        setFocusedIndex(0);
+        listRef.current?.scrollToItem(0, 'start');
+        break;
+      case 'End':
+        e.preventDefault();
+        setFocusedIndex(tracks.length - 1);
+        listRef.current?.scrollToItem(tracks.length - 1, 'end');
+        break;
+      case 'PageDown':
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = Math.min(prev + 10, tracks.length - 1);
+          listRef.current?.scrollToItem(next, 'smart');
+          return next;
+        });
+        break;
+      case 'PageUp':
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = Math.max(prev - 10, 0);
+          listRef.current?.scrollToItem(next, 'smart');
+          return next;
+        });
+        break;
+      default:
+        break;
+    }
+  }, [tracks.length, focusedIndex, onSelect, onPlayTrack]);
+
   const itemData = {
     tracks,
     currentTrack,
@@ -218,6 +306,7 @@ export const TrackList = React.forwardRef(function TrackList({
     onDragOver,
     onDrop,
     draggedIndex,
+    focusedIndex,
     showRating,
     showAlbum,
     showArtist,
@@ -226,16 +315,26 @@ export const TrackList = React.forwardRef(function TrackList({
   };
 
   return (
-    <ListVirtual
-      ref={ref}
-      height={height}
-      itemCount={tracks.length}
-      itemSize={itemSize}
-      width="100%"
-      itemData={itemData}
+    <div 
+      ref={containerRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="outline-none focus:outline-none"
+      role="listbox"
+      aria-label="Track list"
+      aria-activedescendant={`track-${focusedIndex}`}
     >
-      {TrackRow}
-    </ListVirtual>
+      <ListVirtual
+        ref={listRef}
+        height={height}
+        itemCount={tracks.length}
+        itemSize={itemSize}
+        width="100%"
+        itemData={itemData}
+      >
+        {TrackRow}
+      </ListVirtual>
+    </div>
   );
 });
 
@@ -259,8 +358,46 @@ export function SimpleTrackList({
   showAlbum = true,
   showArtist = true,
   showNumber = true,
-  showDuration = true
+  showDuration = true,
+  onPlayTrack
 }) {
+  const [focusedIndex, setFocusedIndex] = useState(currentTrack ?? 0);
+  const containerRef = useRef(null);
+
+  // Keyboard navigation handler
+  const handleKeyDown = useCallback((e) => {
+    if (tracks.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedIndex(prev => Math.min(prev + 1, tracks.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedIndex(prev => Math.max(prev - 1, 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (onPlayTrack) {
+          onPlayTrack(focusedIndex);
+        } else {
+          onSelect(focusedIndex);
+        }
+        break;
+      case 'Home':
+        e.preventDefault();
+        setFocusedIndex(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        setFocusedIndex(tracks.length - 1);
+        break;
+      default:
+        break;
+    }
+  }, [tracks.length, focusedIndex, onSelect, onPlayTrack]);
+
   const itemData = {
     tracks,
     currentTrack,
@@ -274,6 +411,7 @@ export function SimpleTrackList({
     onDragOver,
     onDrop,
     draggedIndex,
+    focusedIndex,
     showRating,
     showAlbum,
     showArtist,
@@ -282,7 +420,14 @@ export function SimpleTrackList({
   };
 
   return (
-    <div className="flex flex-col">
+    <div 
+      ref={containerRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="flex flex-col outline-none focus:outline-none"
+      role="listbox"
+      aria-label="Track list"
+    >
       {tracks.map((track, index) => (
         <TrackRow
           key={track.id || index}

@@ -613,6 +613,9 @@ export function PlaylistWindow({
                 onPlay: () => {
                   handleTrackSelect(contextMenu.index);
                 },
+                onPlayNext: () => {
+                  addToQueue(contextMenu.track, 'next');
+                },
                 onAddToQueue: () => {
                   addToQueue(contextMenu.track, 'end');
                 },

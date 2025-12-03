@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { WINDOW_MIN_SIZES } from '../utils/constants';
 
 const COLOR_SCHEMES = {
   default: { name: 'default', label: 'Classic', accent: 'text-white', background: '#1e293b', primary: 'bg-cyan-500', color: '#06b6d4' },
@@ -17,42 +18,164 @@ const COLOR_SCHEMES = {
 };
 
 const LAYOUT_TEMPLATES = {
+  // Classic: Player + EQ left column, Playlist right (taller)
+  classic: {
+    name: 'classic',
+    label: 'Classic',
+    description: 'Player & Equalizer stacked left, Playlist right',
+    preview: [
+      { id: 'player', x: 0, y: 0, w: 4, h: 5, label: 'P' },
+      { id: 'equalizer', x: 0, y: 5, w: 4, h: 3, label: 'EQ' },
+      { id: 'playlist', x: 4, y: 0, w: 5, h: 8, label: 'PL' },
+    ],
+    windows: {
+      player: { x: 40, y: 40, width: 400, height: 400, visible: true, minimized: false },
+      equalizer: { x: 40, y: 460, width: 400, height: 280, visible: true, minimized: false },
+      playlist: { x: 460, y: 40, width: 480, height: 700, visible: true, minimized: false },
+      library: { x: 960, y: 40, width: 450, height: 500, visible: false, minimized: false },
+      visualizer: { x: 460, y: 760, width: 480, height: 180, visible: false, minimized: false },
+      queue: { x: 960, y: 40, width: 400, height: 400, visible: false, minimized: false },
+    }
+  },
+  
+  // Full: All main windows visible in grid
   full: {
     name: 'full',
-    label: 'Full Layout',
-    description: 'All windows visible, non-overlapping grid',
+    label: 'Full Studio',
+    description: 'All windows visible in organized grid',
+    preview: [
+      { id: 'player', x: 0, y: 0, w: 4, h: 4, label: 'P' },
+      { id: 'equalizer', x: 0, y: 4, w: 4, h: 4, label: 'EQ' },
+      { id: 'playlist', x: 4, y: 0, w: 6, h: 5, label: 'PL' },
+      { id: 'visualizer', x: 4, y: 5, w: 6, h: 3, label: 'VIS' },
+      { id: 'library', x: 10, y: 0, w: 3, h: 8, label: 'LIB' },
+    ],
     windows: {
       player: { x: 40, y: 40, width: 420, height: 400, visible: true, minimized: false },
-      playlist: { x: 480, y: 40, width: 480, height: 520, visible: true, minimized: false },
-      library: { x: 980, y: 40, width: 450, height: 520, visible: true, minimized: false },
-      equalizer: { x: 40, y: 460, width: 420, height: 300, visible: true, minimized: false },
-      visualizer: { x: 480, y: 580, width: 480, height: 180, visible: true, minimized: false }
+      equalizer: { x: 40, y: 460, width: 420, height: 340, visible: true, minimized: false },
+      playlist: { x: 480, y: 40, width: 680, height: 480, visible: true, minimized: false },
+      visualizer: { x: 480, y: 540, width: 680, height: 260, visible: true, minimized: false },
+      library: { x: 1180, y: 40, width: 420, height: 760, visible: true, minimized: false },
+      queue: { x: 1180, y: 560, width: 420, height: 240, visible: false, minimized: false },
     }
   },
-  compact: {
-    name: 'compact',
-    label: 'Compact Layout',
-    description: 'Player, playlist, and visualizer focused',
+  
+  // Playlist Focus: Large playlist, small player
+  playlistFocus: {
+    name: 'playlistFocus',
+    label: 'Playlist Focus',
+    description: 'Large playlist with compact player above',
+    preview: [
+      { id: 'player', x: 0, y: 0, w: 9, h: 3, label: 'PLAYER' },
+      { id: 'playlist', x: 0, y: 3, w: 9, h: 5, label: 'PLAYLIST' },
+    ],
     windows: {
-      player: { x: 40, y: 40, width: 420, height: 400, visible: true, minimized: false },
-      playlist: { x: 480, y: 40, width: 540, height: 580, visible: true, minimized: false },
-      visualizer: { x: 40, y: 460, width: 420, height: 160, visible: true, minimized: false },
-      library: { x: 1040, y: 40, width: 450, height: 580, visible: false, minimized: false },
-      equalizer: { x: 1040, y: 440, width: 420, height: 300, visible: false, minimized: false }
+      player: { x: 40, y: 40, width: 800, height: 340, visible: true, minimized: false },
+      playlist: { x: 40, y: 400, width: 800, height: 400, visible: true, minimized: false },
+      library: { x: 860, y: 40, width: 450, height: 500, visible: false, minimized: false },
+      equalizer: { x: 860, y: 40, width: 400, height: 280, visible: false, minimized: false },
+      visualizer: { x: 40, y: 820, width: 800, height: 180, visible: false, minimized: false },
+      queue: { x: 860, y: 40, width: 400, height: 400, visible: false, minimized: false },
     }
   },
+  
+  // DJ Mode: Player + EQ + Visualizer column, Queue right
+  djMode: {
+    name: 'djMode',
+    label: 'DJ Mode',
+    description: 'Player, Equalizer & Visualizer with Queue',
+    preview: [
+      { id: 'player', x: 0, y: 0, w: 5, h: 4, label: 'P' },
+      { id: 'equalizer', x: 0, y: 4, w: 5, h: 2, label: 'EQ' },
+      { id: 'visualizer', x: 0, y: 6, w: 5, h: 2, label: 'VIS' },
+      { id: 'queue', x: 5, y: 0, w: 4, h: 8, label: 'Q' },
+    ],
+    windows: {
+      player: { x: 40, y: 40, width: 420, height: 360, visible: true, minimized: false },
+      equalizer: { x: 40, y: 420, width: 420, height: 280, visible: true, minimized: false },
+      visualizer: { x: 40, y: 720, width: 420, height: 180, visible: true, minimized: false },
+      queue: { x: 480, y: 40, width: 400, height: 860, visible: true, minimized: false },
+      playlist: { x: 900, y: 40, width: 480, height: 500, visible: false, minimized: false },
+      library: { x: 900, y: 40, width: 450, height: 500, visible: false, minimized: false },
+    }
+  },
+  
+  // Library Browser: Large library, player + playlist side
+  libraryBrowser: {
+    name: 'libraryBrowser',
+    label: 'Library Browser',
+    description: 'Focus on library browsing with player sidebar',
+    preview: [
+      { id: 'library', x: 0, y: 0, w: 6, h: 8, label: 'LIBRARY' },
+      { id: 'player', x: 6, y: 0, w: 3, h: 4, label: 'P' },
+      { id: 'playlist', x: 6, y: 4, w: 3, h: 4, label: 'PL' },
+    ],
+    windows: {
+      library: { x: 40, y: 40, width: 520, height: 700, visible: true, minimized: false },
+      player: { x: 580, y: 40, width: 380, height: 340, visible: true, minimized: false },
+      playlist: { x: 580, y: 400, width: 380, height: 340, visible: true, minimized: false },
+      equalizer: { x: 580, y: 760, width: 380, height: 280, visible: false, minimized: false },
+      visualizer: { x: 40, y: 760, width: 520, height: 180, visible: false, minimized: false },
+      queue: { x: 980, y: 40, width: 400, height: 400, visible: false, minimized: false },
+    }
+  },
+  
+  // Visualizer Mode: Big visualizer with player
+  visualizerMode: {
+    name: 'visualizerMode',
+    label: 'Visualizer Mode',
+    description: 'Large visualizer with compact controls',
+    preview: [
+      { id: 'visualizer', x: 0, y: 0, w: 9, h: 5, label: 'VISUALIZER' },
+      { id: 'player', x: 0, y: 5, w: 5, h: 3, label: 'P' },
+      { id: 'equalizer', x: 5, y: 5, w: 4, h: 3, label: 'EQ' },
+    ],
+    windows: {
+      visualizer: { x: 40, y: 40, width: 820, height: 400, visible: true, minimized: false },
+      player: { x: 40, y: 460, width: 420, height: 340, visible: true, minimized: false },
+      equalizer: { x: 480, y: 460, width: 380, height: 280, visible: true, minimized: false },
+      playlist: { x: 880, y: 40, width: 480, height: 500, visible: false, minimized: false },
+      library: { x: 880, y: 40, width: 450, height: 500, visible: false, minimized: false },
+      queue: { x: 880, y: 40, width: 400, height: 400, visible: false, minimized: false },
+    }
+  },
+  
+  // Mini: Just the player
   mini: {
     name: 'mini',
     label: 'Mini Player',
-    description: 'Player window only, minimal interface',
+    description: 'Minimal - just the player window',
+    preview: [
+      { id: 'player', x: 2, y: 2, w: 5, h: 5, label: 'PLAYER' },
+    ],
     windows: {
       player: { x: 40, y: 40, width: 420, height: 400, visible: true, minimized: false },
-      playlist: { x: 480, y: 40, width: 480, height: 520, visible: false, minimized: false },
-      library: { x: 980, y: 40, width: 450, height: 520, visible: false, minimized: false },
-      equalizer: { x: 40, y: 460, width: 420, height: 300, visible: false, minimized: false },
-      visualizer: { x: 480, y: 580, width: 480, height: 180, visible: false, minimized: false }
+      playlist: { x: 480, y: 40, width: 480, height: 500, visible: false, minimized: false },
+      library: { x: 980, y: 40, width: 450, height: 500, visible: false, minimized: false },
+      equalizer: { x: 40, y: 460, width: 420, height: 280, visible: false, minimized: false },
+      visualizer: { x: 480, y: 460, width: 480, height: 180, visible: false, minimized: false },
+      queue: { x: 480, y: 40, width: 400, height: 400, visible: false, minimized: false },
     }
-  }
+  },
+  
+  // Compact: Player + Playlist side by side
+  compact: {
+    name: 'compact',
+    label: 'Compact',
+    description: 'Player and Playlist side by side',
+    preview: [
+      { id: 'player', x: 0, y: 0, w: 4, h: 6, label: 'P' },
+      { id: 'playlist', x: 4, y: 0, w: 5, h: 6, label: 'PL' },
+    ],
+    windows: {
+      player: { x: 40, y: 40, width: 400, height: 480, visible: true, minimized: false },
+      playlist: { x: 460, y: 40, width: 480, height: 480, visible: true, minimized: false },
+      library: { x: 960, y: 40, width: 450, height: 500, visible: false, minimized: false },
+      equalizer: { x: 40, y: 540, width: 400, height: 280, visible: false, minimized: false },
+      visualizer: { x: 460, y: 540, width: 480, height: 180, visible: false, minimized: false },
+      queue: { x: 960, y: 40, width: 400, height: 400, visible: false, minimized: false },
+    }
+  },
 };
 
 const getInitialWindows = () => {
@@ -189,10 +312,26 @@ export const useStore = create(
               maxZIndex: state.maxZIndex + 1
             };
           }
+          
+          const isBecomingVisible = !state.windows[id].visible;
+          
+          // When showing a window, bring it to front
+          if (isBecomingVisible) {
+            const newZIndex = state.maxZIndex + 1;
+            return {
+              maxZIndex: newZIndex,
+              windows: {
+                ...state.windows,
+                [id]: { ...state.windows[id], visible: true, zIndex: newZIndex }
+              }
+            };
+          }
+          
+          // When hiding, just toggle visibility
           return {
             windows: {
               ...state.windows,
-              [id]: { ...state.windows[id], visible: !state.windows[id].visible }
+              [id]: { ...state.windows[id], visible: false }
             }
           };
         }),
@@ -238,20 +377,25 @@ export const useStore = create(
 
           Object.keys(template.windows).forEach((windowId) => {
             const templateWindow = template.windows[windowId];
+            const minSize = WINDOW_MIN_SIZES[windowId] || { width: 250, height: 150 };
             if (newWindows[windowId]) {
               newWindows[windowId] = {
                 ...newWindows[windowId],
                 ...templateWindow,
+                // Enforce minimum sizes
+                width: Math.max(templateWindow.width, minSize.width),
+                height: Math.max(templateWindow.height, minSize.height),
                 zIndex: templateWindow.visible ? ++highestZ : newWindows[windowId].zIndex
               };
             }
           });
 
           if (newWindows.options) {
+            const optionsMin = WINDOW_MIN_SIZES.options || { width: 480, height: 480 };
             newWindows.options = {
               ...newWindows.options,
-              width: Math.max(newWindows.options.width, 480),
-              height: Math.max(newWindows.options.height, 420)
+              width: Math.max(newWindows.options.width, optionsMin.width),
+              height: Math.max(newWindows.options.height, optionsMin.height)
             };
           }
 

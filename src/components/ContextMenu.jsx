@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Play, Pause, Plus, Trash2, Edit3, Copy, Info, Star, 
-  Music, FolderOpen, ListPlus, Eye, EyeOff 
+  Music, FolderOpen, ListPlus, Eye, EyeOff, ListEnd 
 } from 'lucide-react';
 
 export function ContextMenu({ x, y, items, onClose }) {
@@ -82,6 +82,7 @@ export function getTrackContextMenuItems({
   track, 
   onPlay, 
   onAddToQueue, 
+  onPlayNext,
   onAddToPlaylist, 
   onRemove, 
   onEditTags, 
@@ -94,6 +95,11 @@ export function getTrackContextMenuItems({
       icon: Play,
       label: 'Play Now',
       onClick: onPlay,
+    },
+    {
+      icon: ListEnd,
+      label: 'Play Next',
+      onClick: onPlayNext,
     },
     {
       icon: Plus,

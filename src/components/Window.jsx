@@ -1,11 +1,15 @@
 import React from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
+import { WINDOW_MIN_SIZES } from '../utils/constants';
 
 export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }) {
   if (!windowData.visible) return null;
 
   // Safety check for currentColors
   const colors = currentColors || { accent: 'text-blue-400', primary: 'bg-blue-600' };
+  
+  // Get minimum sizes for this window type (with fallbacks)
+  const minSizes = WINDOW_MIN_SIZES[id] || { width: 250, height: 150 };
 
   const handleTitleBarMouseDown = (e) => {
     if (e.target.closest('.window-controls')) return;
@@ -21,8 +25,9 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
     const handleMouseMove = (moveEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
-      const newX = Math.max(0, Math.min(startWindowX + deltaX, window.innerWidth - 200));
-      const newY = Math.max(0, Math.min(startWindowY + deltaY, window.innerHeight - 100));
+      // Allow dragging anywhere (positive coordinates only) - auto-resize will expand the main window
+      const newX = Math.max(0, startWindowX + deltaX);
+      const newY = Math.max(0, startWindowY + deltaY);
       pendingX = newX;
       pendingY = newY;
       if (!raf) {
@@ -71,8 +76,8 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
     const handleMouseMove = (moveEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
-      const newWidth = Math.max(250, startWidth + deltaX);
-      const newHeight = Math.max(150, startHeight + deltaY);
+      const newWidth = Math.max(minSizes.width, startWidth + deltaX);
+      const newHeight = Math.max(minSizes.height, startHeight + deltaY);
       pendingW = newWidth;
       pendingH = newHeight;
       if (!raf) {

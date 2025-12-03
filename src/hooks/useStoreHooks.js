@@ -73,27 +73,9 @@ export function useUIState() {
   const debugVisible = useStore((state) => state.debugVisible);
   const setDebugVisible = useStore((state) => state.setDebugVisible);
   
-  // Compute layouts from constants
-  const layouts = useMemo(() => {
-    const LAYOUT_TEMPLATES = {
-      full: {
-        name: 'full',
-        label: 'Full Layout',
-        description: 'All windows visible, non-overlapping grid',
-      },
-      compact: {
-        name: 'compact',
-        label: 'Compact Layout',
-        description: 'Player, playlist, and visualizer focused',
-      },
-      mini: {
-        name: 'mini',
-        label: 'Mini Player',
-        description: 'Player window only, minimal interface',
-      }
-    };
-    return Object.values(LAYOUT_TEMPLATES);
-  }, []);
+  // Get layouts from store
+  const getLayouts = useStore((state) => state.getLayouts);
+  const layouts = useMemo(() => getLayouts(), [getLayouts]);
   
   const currentLayout = useStore((state) => state.currentLayout);
   const applyLayout = useStore((state) => state.applyLayout);
