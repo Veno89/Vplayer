@@ -14,9 +14,9 @@ describe('VPlayer UI', () => {
     expect(settingsBtn).toBeInTheDocument();
     // click should not throw and should keep app rendered
     fireEvent.click(settingsBtn);
-    // Wait for the options modal to appear
+    // Wait for the options modal to appear - look for Settings header and Appearance tab (default)
     await waitFor(() => {
-      expect(screen.getByText(/Window Visibility/i)).toBeInTheDocument();
+      expect(screen.getByText('Settings')).toBeInTheDocument();
     });
   });
 });

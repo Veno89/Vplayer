@@ -83,7 +83,9 @@ export function useWindowConfigs({
   customThemes,
   saveCustomTheme,
   deleteCustomTheme,
-  applyCustomTheme
+  applyCustomTheme,
+  // Crossfade
+  crossfade
 }) {
   return React.useMemo(() => [
     {
@@ -221,6 +223,7 @@ export function useWindowConfigs({
           saveCustomTheme={saveCustomTheme}
           deleteCustomTheme={deleteCustomTheme}
           applyCustomTheme={applyCustomTheme}
+          crossfade={crossfade}
         />
       ),
     },
@@ -307,6 +310,6 @@ export function useWindowConfigs({
     setThemeEditorOpen, backgroundImage, setBackgroundImage, backgroundBlur,
     setBackgroundBlur, backgroundOpacity, setBackgroundOpacity, windowOpacity,
     setWindowOpacity, fontSize, setFontSize, customThemes, saveCustomTheme,
-    deleteCustomTheme, applyCustomTheme
+    deleteCustomTheme, applyCustomTheme, crossfade
   ]);
 }
