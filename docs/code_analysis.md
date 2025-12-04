@@ -383,12 +383,19 @@ function usePlayer() {
 2. ✅ Created unified useShortcuts.js hook
 3. ✅ Simplified VPlayer.jsx hook usage
 
-### Phase 5: Missing Features (Optional/Future)
+### Phase 5: Missing Features ✅ COMPLETE
 
-1. Tag Editor Window UI
-2. Library Stats Window
-3. Audio Device Selection UI
-4. Onboarding flow
+1. ✅ Tag Editor Window UI - `src/windows/TagEditorWindow.jsx`
+2. ✅ Library Stats Window - `src/windows/LibraryStatsWindow.jsx`
+3. ✅ Audio Device Selection UI - Already existed in `AudioTab.jsx`
+4. ✅ Onboarding flow - `src/windows/OnboardingWindow.jsx`
+
+### Additional Refactoring Completed
+
+1. ✅ Created `src/components/PlaylistComponents.jsx` - Reusable playlist UI components
+2. ✅ Created `src/hooks/useLibraryFolders.js` - Folder management logic
+3. ✅ Created `src/hooks/useLibraryScan.js` - Scan progress/events
+4. ✅ Created `src/hooks/useLibraryFilter.js` - Search, sort, filters
 
 ---
 
@@ -406,15 +413,15 @@ function usePlayer() {
 - [x] Keyboard shortcut hooks consolidated
 
 ### Refactor (Medium Priority) - Optional
-- [ ] `src/VPlayer.jsx` → Extract orchestration
-- [ ] `src/windows/PlaylistWindow.jsx` → Split components
-- [ ] `src/hooks/useLibrary.js` → Split by concern
+- [ ] `src/VPlayer.jsx` → Extract orchestration (330 lines)
+- [ ] `src/windows/PlaylistWindow.jsx` → Split components (631 lines, helpers created)
+- [ ] `src/hooks/useLibrary.js` → Can use new split hooks if needed
 
-### Create (Missing Features) - Future
-- [ ] `src/windows/TagEditorWindow.jsx`
-- [ ] `src/windows/LibraryStatsWindow.jsx`
-- [ ] `src/windows/OnboardingWindow.jsx`
-- [ ] Audio device selection in Options
+### Create (Missing Features) ✅ ALL COMPLETE
+- [x] `src/windows/TagEditorWindow.jsx` - Edit track metadata
+- [x] `src/windows/LibraryStatsWindow.jsx` - Collection stats & performance
+- [x] `src/windows/OnboardingWindow.jsx` - First-run experience
+- [x] Audio device selection - Already in `AudioTab.jsx`
 
 ---
 

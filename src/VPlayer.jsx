@@ -18,6 +18,7 @@ import { useWindowConfigs } from './hooks/useWindowConfigs';
 import { AppContainer } from './components/AppContainer';
 import { WindowManager } from './components/WindowManager';
 import { MiniPlayerWindow } from './windows/MiniPlayerWindow';
+import { OnboardingWindow } from './windows/OnboardingWindow';
 import ThemeEditorWindow from './windows/ThemeEditorWindow';
 import { VOLUME_STEP } from './utils/constants';
 
@@ -26,6 +27,8 @@ const VPlayerInner = () => {
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
   const [miniPlayerMode, setMiniPlayerMode] = React.useState(false);
   const [activePlaybackTracks, setActivePlaybackTracks] = React.useState([]);
+  const [tagEditorTrack, setTagEditorTrack] = React.useState(null);
+  const [showOnboarding, setShowOnboarding] = React.useState(false);
   const prevPlayingRef = useRef(null);
 
   const { currentTrack, setCurrentTrack, playing, setPlaying, progress, setProgress,
@@ -277,6 +280,20 @@ const VPlayerInner = () => {
     toast.showSuccess('Track removed successfully');
   }, [refreshTracks, toast]);
 
+  // Handle tag save from editor
+  const handleTagsSaved = useCallback((updatedTrack) => {
+    refreshTracks();
+    toast.showSuccess('Tags saved successfully');
+  }, [refreshTracks, toast]);
+
+  // Check for first-run onboarding
+  useEffect(() => {
+    const onboardingComplete = localStorage.getItem('vplayer_onboarding_complete');
+    if (!onboardingComplete && libraryFolders.length === 0) {
+      setShowOnboarding(true);
+    }
+  }, [libraryFolders]);
+
   const windowConfigs = useWindowConfigs({
     currentTrack, tracks, filteredTracks, playing, progress, duration, volume,
     currentColors, shuffle, repeatMode, audio, playerHook, setPlaying,
@@ -291,7 +308,9 @@ const VPlayerInner = () => {
     handleDuplicateRemoved, setActivePlaybackTracks, crossfade, setThemeEditorOpen,
     backgroundImage, setBackgroundImage, backgroundBlur, setBackgroundBlur,
     backgroundOpacity, setBackgroundOpacity, windowOpacity, setWindowOpacity,
-    fontSize, setFontSize, setMiniPlayerMode
+    fontSize, setFontSize, setMiniPlayerMode,
+    // Tag Editor
+    tagEditorTrack, setTagEditorTrack, onTagsSaved: handleTagsSaved,
   });
 
   return (
@@ -348,6 +367,15 @@ const VPlayerInner = () => {
             onApplyTheme={applyCustomTheme}
           />
         </>
+      )}
+      
+      {/* Onboarding for first-time users */}
+      {showOnboarding && (
+        <OnboardingWindow
+          onComplete={() => setShowOnboarding(false)}
+          onAddFolder={handleAddFolder}
+          currentColors={currentColors}
+        />
       )}
     </AppContainer>
   );

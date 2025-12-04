@@ -1,5 +1,5 @@
 import React from 'react';
-import { Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles, FileText, Keyboard } from 'lucide-react';
+import { Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles, FileText, Keyboard, BarChart3, Tag } from 'lucide-react';
 import { PlayerWindow } from '../windows/PlayerWindow';
 import { PlaylistWindow } from '../windows/PlaylistWindow';
 import { LibraryWindow } from '../windows/LibraryWindow';
@@ -10,6 +10,8 @@ import { QueueWindow } from '../windows/QueueWindow';
 import { HistoryWindow } from '../windows/HistoryWindow';
 import { AlbumViewWindow } from '../windows/AlbumViewWindow';
 import { SmartPlaylistsWindow } from '../windows/SmartPlaylistsWindow';
+import { LibraryStatsWindow } from '../windows/LibraryStatsWindow';
+import { TagEditorWindow } from '../windows/TagEditorWindow';
 import LyricsWindow from '../windows/LyricsWindow';
 import ShortcutsWindow from '../windows/ShortcutsWindow';
 
@@ -85,7 +87,11 @@ export function useWindowConfigs({
   deleteCustomTheme,
   applyCustomTheme,
   // Crossfade
-  crossfade
+  crossfade,
+  // Tag Editor
+  tagEditorTrack,
+  setTagEditorTrack,
+  onTagsSaved,
 }) {
   return React.useMemo(() => [
     {
@@ -296,6 +302,31 @@ export function useWindowConfigs({
         />
       ),
     },
+    {
+      id: 'stats',
+      title: 'Library Stats',
+      icon: BarChart3,
+      content: (
+        <LibraryStatsWindow
+          tracks={tracks}
+          libraryFolders={libraryFolders}
+          currentColors={currentColors}
+        />
+      ),
+    },
+    {
+      id: 'tagEditor',
+      title: 'Tag Editor',
+      icon: Tag,
+      content: (
+        <TagEditorWindow
+          track={tagEditorTrack}
+          onClose={() => setTagEditorTrack?.(null)}
+          onSave={onTagsSaved}
+          currentColors={currentColors}
+        />
+      ),
+    },
   ], [
     currentTrack, tracks, playing, progress, duration, volume,
     currentColors, shuffle, repeatMode, audioIsLoading,
@@ -310,6 +341,7 @@ export function useWindowConfigs({
     setThemeEditorOpen, backgroundImage, setBackgroundImage, backgroundBlur,
     setBackgroundBlur, backgroundOpacity, setBackgroundOpacity, windowOpacity,
     setWindowOpacity, fontSize, setFontSize, customThemes, saveCustomTheme,
-    deleteCustomTheme, applyCustomTheme, crossfade
+    deleteCustomTheme, applyCustomTheme, crossfade, tagEditorTrack, setTagEditorTrack,
+    onTagsSaved
   ]);
 }
