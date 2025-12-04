@@ -5,8 +5,17 @@ import { WINDOW_MIN_SIZES } from '../utils/constants';
 export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }) {
   if (!windowData.visible) return null;
 
-  // Safety check for currentColors
-  const colors = currentColors || { accent: 'text-blue-400', primary: 'bg-blue-600' };
+  // Safety check for currentColors with comprehensive fallback
+  const colors = currentColors || { 
+    accent: 'text-cyan-400', 
+    primary: 'bg-cyan-500',
+    windowBg: 'rgba(15, 23, 42, 0.95)',
+    windowBorder: 'rgba(51, 65, 85, 0.8)',
+    headerBg: 'rgba(30, 41, 59, 0.8)',
+    text: '#f8fafc',
+    textMuted: '#94a3b8',
+    border: '#334155',
+  };
   
   // Get minimum sizes for this window type (with fallbacks)
   const minSizes = WINDOW_MIN_SIZES[id] || { width: 250, height: 150 };
@@ -115,24 +124,30 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
   if (windowData.minimized) {
     return (
       <div
-        style={{ left: windowData.x, top: windowData.y, zIndex: windowData.zIndex }}
-        className="fixed bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-lg shadow-2xl"
+        style={{ 
+          left: windowData.x, 
+          top: windowData.y, 
+          zIndex: windowData.zIndex,
+          background: colors.windowBg || 'rgba(15, 23, 42, 0.95)',
+          borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
+        }}
+        className="fixed border rounded-lg shadow-2xl backdrop-blur-xl"
       >
         <div 
           className="flex items-center justify-between px-3 py-2 cursor-move select-none" 
           onMouseDown={handleTitleBarMouseDown}
         >
           <div className="flex items-center gap-2">
-            <Icon className={`w-4 h-4 ${currentColors.accent}`} />
-            <span className="text-sm font-medium text-white">{title}</span>
+            <Icon className={`w-4 h-4 ${colors.accent}`} />
+            <span className="text-sm font-medium" style={{ color: colors.text || '#f8fafc' }}>{title}</span>
           </div>
           <div className="window-controls flex gap-1">
             <button
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: false } }))}
-              className="p-1 hover:bg-slate-700 rounded transition-colors"
+              className="p-1 hover:bg-white/10 rounded transition-colors"
             >
-              <span className="w-3 h-3 text-slate-400">&#9633;</span>
+              <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#9633;</span>
             </button>
           </div>
         </div>
@@ -148,36 +163,42 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
         width: windowData.width, 
         height: windowData.height,
         zIndex: windowData.zIndex,
-        opacity: windowOpacity
+        opacity: windowOpacity,
+        background: colors.windowBg || 'rgba(15, 23, 42, 0.95)',
+        borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
       }}
-      className="fixed bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-lg shadow-2xl backdrop-blur-xl"
+      className="fixed border rounded-lg shadow-2xl backdrop-blur-xl"
       onMouseDown={(e) => {
         e.stopPropagation();
         bringToFront(id);
       }}
     >
       <div 
-        className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-700 cursor-move rounded-t-lg select-none" 
+        className="flex items-center justify-between px-3 py-2 border-b cursor-move rounded-t-lg select-none" 
+        style={{
+          background: colors.headerBg || 'rgba(30, 41, 59, 0.8)',
+          borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
+        }}
         onMouseDown={handleTitleBarMouseDown}
       >
         <div className="flex items-center gap-2">
           <Icon className={`w-4 h-4 ${colors.accent}`} />
-          <span className="text-sm font-medium text-white">{title}</span>
+          <span className="text-sm font-medium" style={{ color: colors.text || '#f8fafc' }}>{title}</span>
         </div>
         <div className="window-controls flex gap-1">
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: true } }))}
-            className="p-1 hover:bg-slate-700 rounded transition-colors"
+            className="p-1 hover:bg-white/10 rounded transition-colors"
           >
-            <span className="w-3 h-3 text-slate-400">&#8211;</span>
+            <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#8211;</span>
           </button>
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => toggleWindow(id)}
             className="p-1 hover:bg-red-500/20 rounded transition-colors"
           >
-            <span className="w-3 h-3 text-slate-400">&#10005;</span>
+            <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#10005;</span>
           </button>
         </div>
       </div>
@@ -185,7 +206,8 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
         className={`p-4 overflow-auto ${className}`} 
         style={{ 
           height: 'calc(100% - 40px)',
-          pointerEvents: 'auto'
+          pointerEvents: 'auto',
+          color: colors.text || '#f8fafc',
         }}
       >
         <ErrorBoundary fallbackMessage={`Error in ${title} window`}>
@@ -193,16 +215,17 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
         </ErrorBoundary>
       </div>
       <div
-        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-slate-700/50 hover:bg-slate-600/50 transition-colors"
+        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize transition-colors hover:opacity-80"
         onMouseDown={handleResizeMouseDown}
         style={{ 
           clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
-          borderBottomRightRadius: '0.5rem'
+          borderBottomRightRadius: '0.5rem',
+          background: `${colors.border || '#334155'}50`,
         }}
       >
         <div className="absolute bottom-1 right-1 w-3 h-3" style={{
-          borderTop: '2px solid currentColor',
-          borderRight: '2px solid currentColor',
+          borderTop: `2px solid ${colors.textSubtle || '#64748b'}`,
+          borderRight: `2px solid ${colors.textSubtle || '#64748b'}`,
           transform: 'rotate(45deg)'
         }} />
       </div>

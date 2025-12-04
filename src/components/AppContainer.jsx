@@ -16,6 +16,7 @@ import { ToastContainer } from './Toast';
  * @param {string} props.backgroundImage - Background image URL
  * @param {number} props.backgroundBlur - Background blur amount
  * @param {number} props.backgroundOpacity - Background opacity (0-1)
+ * @param {Object} props.currentColors - Theme color configuration
  */
 export const AppContainer = ({ 
   children, 
@@ -27,14 +28,33 @@ export const AppContainer = ({
   fontSize,
   backgroundImage,
   backgroundBlur,
-  backgroundOpacity
+  backgroundOpacity,
+  currentColors
 }) => {
+  // Default colors for fallback
+  const colors = currentColors || {
+    gradientFrom: '#0f172a',
+    gradientVia: '#1e293b',
+    gradientTo: '#0f172a',
+    scrollbarTrack: '#1e293b',
+    scrollbarThumb: '#475569',
+    color: '#06b6d4',
+  };
+
   return (
     <div 
-      className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative"
+      className="w-full h-screen overflow-hidden relative"
       onDrop={onDrop}
       onDragOver={onDragOver}
-      style={{ fontSize: `${fontSize}px` }}
+      style={{ 
+        fontSize: `${fontSize}px`,
+        background: `linear-gradient(to bottom right, ${colors.gradientFrom}, ${colors.gradientVia}, ${colors.gradientTo})`,
+        // Apply theme-aware scrollbar colors via CSS custom properties
+        '--scrollbar-track': colors.scrollbarTrack,
+        '--scrollbar-thumb': colors.scrollbarThumb,
+        '--theme-accent': colors.color,
+        '--theme-selection': colors.selection || 'rgba(6, 182, 212, 0.2)',
+      }}
     >
       {backgroundImage && (
         <div 

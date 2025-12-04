@@ -305,6 +305,7 @@ const VPlayerInner = () => {
       backgroundImage={backgroundImage}
       backgroundBlur={backgroundBlur}
       backgroundOpacity={backgroundOpacity}
+      currentColors={currentColors}
     >
       {miniPlayerMode ? (
         <div className="fixed top-4 right-4 z-[100]">

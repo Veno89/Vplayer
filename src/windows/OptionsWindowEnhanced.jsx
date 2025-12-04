@@ -190,18 +190,24 @@ export function OptionsWindowEnhanced({
   };
 
   const colorSchemes = [
-    { name: 'default', label: 'Classic', accent: 'text-white', background: '#1e293b', primary: 'bg-cyan-500', color: '#06b6d4' },
-    { name: 'blue', label: 'Ocean Blue', accent: 'text-blue-400', background: '#1e3a8a', primary: 'bg-blue-500', color: '#3b82f6' },
-    { name: 'emerald', label: 'Forest Green', accent: 'text-emerald-400', background: '#064e3b', primary: 'bg-emerald-500', color: '#10b981' },
-    { name: 'rose', label: 'Sunset Rose', accent: 'text-rose-400', background: '#881337', primary: 'bg-rose-500', color: '#f43f5e' },
-    { name: 'amber', label: 'Golden Amber', accent: 'text-amber-400', background: '#78350f', primary: 'bg-amber-500', color: '#f59e0b' },
-    { name: 'purple', label: 'Royal Purple', accent: 'text-purple-400', background: '#581c87', primary: 'bg-purple-500', color: '#a855f7' },
-    { name: 'pink', label: 'Bubblegum Pink', accent: 'text-pink-400', background: '#831843', primary: 'bg-pink-500', color: '#ec4899' },
-    { name: 'indigo', label: 'Deep Indigo', accent: 'text-indigo-400', background: '#312e81', primary: 'bg-indigo-500', color: '#6366f1' },
-    { name: 'teal', label: 'Ocean Teal', accent: 'text-teal-400', background: '#134e4a', primary: 'bg-teal-500', color: '#14b8a6' },
-    { name: 'orange', label: 'Tangerine', accent: 'text-orange-400', background: '#7c2d12', primary: 'bg-orange-500', color: '#f97316' },
-    { name: 'slate', label: 'Midnight Slate', accent: 'text-slate-300', background: '#0f172a', primary: 'bg-slate-600', color: '#475569' },
-    { name: 'red', label: 'Cherry Red', accent: 'text-red-400', background: '#7f1d1d', primary: 'bg-red-500', color: '#ef4444' },
+    { name: 'default', label: 'Classic Cyan', accent: 'text-cyan-400', background: '#0f172a', backgroundSecondary: '#1e293b', primary: 'bg-cyan-500', color: '#06b6d4' },
+    { name: 'blue', label: 'Ocean Blue', accent: 'text-blue-400', background: '#0c1929', backgroundSecondary: '#1e3a5f', primary: 'bg-blue-500', color: '#3b82f6' },
+    { name: 'emerald', label: 'Forest Green', accent: 'text-emerald-400', background: '#022c22', backgroundSecondary: '#064e3b', primary: 'bg-emerald-500', color: '#10b981' },
+    { name: 'rose', label: 'Sunset Rose', accent: 'text-rose-400', background: '#1c0a14', backgroundSecondary: '#4c0519', primary: 'bg-rose-500', color: '#f43f5e' },
+    { name: 'amber', label: 'Golden Amber', accent: 'text-amber-400', background: '#1c1509', backgroundSecondary: '#451a03', primary: 'bg-amber-500', color: '#f59e0b' },
+    { name: 'purple', label: 'Royal Purple', accent: 'text-purple-400', background: '#1a0a2e', backgroundSecondary: '#3b0764', primary: 'bg-purple-500', color: '#a855f7' },
+    { name: 'pink', label: 'Bubblegum Pink', accent: 'text-pink-400', background: '#1f0818', backgroundSecondary: '#500724', primary: 'bg-pink-500', color: '#ec4899' },
+    { name: 'indigo', label: 'Deep Indigo', accent: 'text-indigo-400', background: '#0f0d1e', backgroundSecondary: '#1e1b4b', primary: 'bg-indigo-500', color: '#6366f1' },
+    { name: 'teal', label: 'Ocean Teal', accent: 'text-teal-400', background: '#042f2e', backgroundSecondary: '#134e4a', primary: 'bg-teal-500', color: '#14b8a6' },
+    { name: 'orange', label: 'Tangerine', accent: 'text-orange-400', background: '#1c1008', backgroundSecondary: '#431407', primary: 'bg-orange-500', color: '#f97316' },
+    { name: 'slate', label: 'Midnight Slate', accent: 'text-slate-300', background: '#020617', backgroundSecondary: '#0f172a', primary: 'bg-slate-500', color: '#64748b' },
+    { name: 'red', label: 'Cherry Red', accent: 'text-red-400', background: '#1c0808', backgroundSecondary: '#450a0a', primary: 'bg-red-500', color: '#ef4444' },
+    // Premium gradient themes
+    { name: 'sunset', label: 'Sunset Gradient', accent: 'text-orange-300', background: '#1a0a1e', backgroundSecondary: '#3d1a2e', primary: 'bg-gradient-to-r from-orange-500 to-pink-500', color: '#f97316', isGradient: true },
+    { name: 'ocean', label: 'Deep Ocean', accent: 'text-cyan-300', background: '#0a1628', backgroundSecondary: '#0c2439', primary: 'bg-gradient-to-r from-cyan-500 to-blue-500', color: '#06b6d4', isGradient: true },
+    { name: 'forest', label: 'Enchanted Forest', accent: 'text-lime-300', background: '#0a1a0a', backgroundSecondary: '#14352a', primary: 'bg-gradient-to-r from-emerald-500 to-lime-500', color: '#22c55e', isGradient: true },
+    { name: 'synthwave', label: 'Synthwave', accent: 'text-fuchsia-400', background: '#0d0221', backgroundSecondary: '#1a0536', primary: 'bg-gradient-to-r from-fuchsia-500 to-cyan-400', color: '#d946ef', isGradient: true },
+    { name: 'monochrome', label: 'Monochrome', accent: 'text-neutral-200', background: '#0a0a0a', backgroundSecondary: '#171717', primary: 'bg-neutral-600', color: '#a3a3a3' },
   ];
 
   const tabs = [
@@ -304,25 +310,68 @@ export function OptionsWindowEnhanced({
                     className={`relative p-3 rounded-lg border-2 transition-all ${
                       colorScheme === scheme.name
                         ? 'border-white shadow-lg scale-105'
-                        : 'border-slate-700 hover:border-slate-600'
+                        : 'border-transparent hover:border-white/30'
                     }`}
-                    style={{ backgroundColor: scheme.background }}
+                    style={{ 
+                      background: `linear-gradient(135deg, ${scheme.background}, ${scheme.backgroundSecondary})`,
+                    }}
                   >
-                    <div className="flex items-center gap-2 mb-2">
+                    {/* Theme preview mini-window */}
+                    <div 
+                      className="mb-2 rounded-md overflow-hidden border"
+                      style={{ 
+                        borderColor: `${scheme.color}40`,
+                        background: scheme.backgroundSecondary,
+                      }}
+                    >
+                      {/* Mini header */}
                       <div 
-                        className="w-6 h-6 rounded-full"
-                        style={{ backgroundColor: scheme.color }}
+                        className="h-3 flex items-center px-1.5 gap-1"
+                        style={{ background: `${scheme.color}20` }}
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: scheme.color }} />
+                        <div className="flex-1 h-1 rounded-full" style={{ backgroundColor: `${scheme.color}40` }} />
+                      </div>
+                      {/* Mini content */}
+                      <div className="p-1.5 space-y-1">
+                        <div className="h-1 w-3/4 rounded-full" style={{ backgroundColor: `${scheme.color}60` }} />
+                        <div className="h-1 w-1/2 rounded-full" style={{ backgroundColor: `${scheme.color}30` }} />
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className={`w-5 h-5 rounded-full ${scheme.isGradient ? scheme.primary : ''}`}
+                        style={!scheme.isGradient ? { backgroundColor: scheme.color } : {}}
                       />
-                      <span className="text-white text-xs font-medium">{scheme.label}</span>
+                      <span className="text-white text-xs font-medium truncate">{scheme.label}</span>
                     </div>
-                    <div className="flex gap-1">
-                      <div className="flex-1 h-1 rounded" style={{ backgroundColor: scheme.color, opacity: 0.8 }} />
-                      <div className="flex-1 h-1 rounded" style={{ backgroundColor: scheme.color, opacity: 0.6 }} />
-                      <div className="flex-1 h-1 rounded" style={{ backgroundColor: scheme.color, opacity: 0.4 }} />
+                    
+                    {/* Accent color bar */}
+                    <div className="flex gap-0.5 mt-2">
+                      <div 
+                        className={`flex-1 h-1 rounded-full ${scheme.isGradient ? scheme.primary : ''}`}
+                        style={!scheme.isGradient ? { backgroundColor: scheme.color, opacity: 0.9 } : {}}
+                      />
+                      <div 
+                        className="flex-1 h-1 rounded-full" 
+                        style={{ backgroundColor: scheme.color, opacity: 0.5 }}
+                      />
+                      <div 
+                        className="flex-1 h-1 rounded-full" 
+                        style={{ backgroundColor: scheme.color, opacity: 0.25 }}
+                      />
                     </div>
+                    
                     {colorScheme === scheme.name && (
                       <div className="absolute top-2 right-2">
-                        <div className="w-2 h-2 rounded-full bg-white" />
+                        <div className="w-2 h-2 rounded-full bg-white shadow-glow" />
+                      </div>
+                    )}
+                    
+                    {scheme.isGradient && (
+                      <div className="absolute bottom-2 right-2">
+                        <span className="text-[8px] text-white/60 uppercase tracking-wider">Pro</span>
                       </div>
                     )}
                   </button>
@@ -908,46 +957,114 @@ export function OptionsWindowEnhanced({
         {/* About Tab */}
         {activeTab === 'about' && (
           <div className="space-y-6">
-            <div className="text-center py-4">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
-                <Settings className="w-8 h-8 text-white" />
+            {/* Hero Section */}
+            <div className="text-center py-6">
+              <div 
+                className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4 shadow-lg"
+                style={{ boxShadow: '0 8px 32px rgba(6, 182, 212, 0.4)' }}
+              >
+                <svg className="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+                </svg>
               </div>
-              <h2 className="text-white text-2xl font-bold mb-2">VPlayer</h2>
-              <p className="text-slate-400 text-sm mb-1">Version 0.1.0</p>
-              <p className="text-slate-500 text-xs">Native Desktop Music Player</p>
+              <h2 className="text-white text-3xl font-bold mb-1 tracking-tight">VPlayer</h2>
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-400">
+                  v0.5.0
+                </span>
+                <span className="text-slate-500 text-xs">•</span>
+                <span className="text-slate-500 text-xs">Beta</span>
+              </div>
+              <p className="text-slate-400 text-sm max-w-xs mx-auto">
+                Fast, lightweight, and fully customizable music player for your desktop
+              </p>
             </div>
 
-            <div className="space-y-3 pt-4 border-t border-slate-700">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Built with</span>
-                <span className="text-white">Tauri + React</span>
+            {/* Tech Stack Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-800/50">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">🦀</span>
+                  <span className="text-white text-sm font-medium">Rust + Tauri</span>
+                </div>
+                <p className="text-slate-500 text-xs">Native performance</p>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Audio Engine</span>
-                <span className="text-white">Rodio 0.19</span>
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-800/50">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">⚛️</span>
+                  <span className="text-white text-sm font-medium">React + Zustand</span>
+                </div>
+                <p className="text-slate-500 text-xs">Reactive UI state</p>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Database</span>
-                <span className="text-white">SQLite</span>
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-800/50">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">🎵</span>
+                  <span className="text-white text-sm font-medium">Rodio + Symphonia</span>
+                </div>
+                <p className="text-slate-500 text-xs">Audio decoding & playback</p>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">UI Framework</span>
-                <span className="text-white">Tailwind CSS</span>
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-800/50">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">🗃️</span>
+                  <span className="text-white text-sm font-medium">SQLite + Lofty</span>
+                </div>
+                <p className="text-slate-500 text-xs">Library & metadata</p>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-700">
-              <h4 className="text-white text-sm font-medium mb-2">Key Features</h4>
-              <ul className="space-y-1 text-slate-400 text-xs">
-                <li>• Native audio playback with Rust</li>
-                <li>• Real-time folder scanning & monitoring</li>
-                <li>• Advanced metadata management</li>
-                <li>• Smart playlists & queue system</li>
-                <li>• Customizable themes & layouts</li>
-                <li>• ReplayGain & audio effects</li>
-                <li>• Lyrics display & visualizer</li>
-                <li>• SQLite library management</li>
-              </ul>
+            {/* Features */}
+            <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/30">
+              <h4 className="text-white text-sm font-semibold mb-3 flex items-center gap-2">
+                <span>✨</span> Features
+              </h4>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Gapless playback
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> 10-band equalizer
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Real-time visualizer
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Crossfade transitions
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Smart playlists
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Queue management
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Lyrics support
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Tag editor
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Customizable themes
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Flexible layouts
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Keyboard shortcuts
+                </div>
+                <div className="flex items-center gap-2 text-slate-300">
+                  <span className="text-cyan-400">●</span> Folder watching
+                </div>
+              </div>
+            </div>
+
+            {/* Credits / Footer */}
+            <div className="text-center pt-4 border-t border-slate-700">
+              <p className="text-slate-400 text-sm mb-2">
+                Crafted by <span className="text-cyan-400 font-medium">Veno</span>
+              </p>
+              <p className="text-slate-600 text-xs">
+                © 2024-2025 • Built with passion and open source tech
+              </p>
             </div>
           </div>
         )}
