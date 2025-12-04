@@ -1,20 +1,88 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Music, BarChart3, Activity } from 'lucide-react';
-import { useAudioContextAPI } from '../context/AudioContextProvider';
 
 const VISUALIZER_MODES = ['bars', 'wave', 'circular'];
 
+/**
+ * Simulated audio visualizer
+ * 
+ * Since audio playback happens in Rust (rodio), we can't access raw audio samples
+ * from the frontend. This visualizer creates aesthetically pleasing animations
+ * that respond to playback state. Uses multiple sine waves and noise functions
+ * to create organic, music-like patterns.
+ */
 export function VisualizerWindow({ currentColors, isPlaying }) {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
+  const timeRef = useRef(0);
+  const lastTimeRef = useRef(performance.now());
+  
+  // Smoothed values for organic motion
+  const smoothedValuesRef = useRef(new Array(64).fill(0));
   
   const [mode, setMode] = useState('bars');
-  const { isInitialized, getFrequencyData, getTimeDomainData } = useAudioContextAPI();
+
+  // Generate simulated frequency data
+  const generateFrequencyData = useCallback((time) => {
+    const data = new Uint8Array(64);
+    
+    // Multiple overlapping wave patterns for organic feel
+    for (let i = 0; i < 64; i++) {
+      const freq = i / 64;
+      
+      // Bass frequencies (lower indices) should be more prominent
+      const bassWeight = Math.pow(1 - freq, 1.5);
+      
+      // Multiple sine waves at different frequencies and phases
+      const wave1 = Math.sin(time * 2 + i * 0.1) * 0.3;
+      const wave2 = Math.sin(time * 3.7 + i * 0.2 + 1.5) * 0.25;
+      const wave3 = Math.sin(time * 1.3 + i * 0.15 + 3) * 0.2;
+      const wave4 = Math.sin(time * 5 + i * 0.3) * 0.15;
+      
+      // Add some pseudo-random noise for realism
+      const noise = (Math.sin(time * 10 + i * 7.3) * Math.sin(time * 13 + i * 11.7)) * 0.1;
+      
+      // Combine waves with bass emphasis
+      let value = (wave1 + wave2 + wave3 + wave4 + noise + 0.5) * (0.5 + bassWeight * 0.5);
+      
+      // Apply smoothing for less jittery motion
+      const smoothing = 0.7;
+      smoothedValuesRef.current[i] = smoothedValuesRef.current[i] * smoothing + value * (1 - smoothing);
+      value = smoothedValuesRef.current[i];
+      
+      // Scale to 0-255 range
+      data[i] = Math.max(0, Math.min(255, Math.floor(value * 255)));
+    }
+    
+    return data;
+  }, []);
+
+  // Generate simulated waveform data
+  const generateWaveformData = useCallback((time) => {
+    const data = new Uint8Array(256);
+    
+    for (let i = 0; i < 256; i++) {
+      const pos = i / 256;
+      
+      // Multiple overlapping waves
+      const wave1 = Math.sin(time * 2 + pos * Math.PI * 4) * 0.4;
+      const wave2 = Math.sin(time * 3.3 + pos * Math.PI * 8 + 1) * 0.3;
+      const wave3 = Math.sin(time * 1.7 + pos * Math.PI * 2) * 0.2;
+      
+      // Add slight noise
+      const noise = Math.sin(time * 15 + pos * 50) * 0.1;
+      
+      // Center around 128 (middle of waveform)
+      data[i] = Math.floor(128 + (wave1 + wave2 + wave3 + noise) * 64);
+    }
+    
+    return data;
+  }, []);
 
   // Draw visualizer
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !isInitialized || !isPlaying) {
+    if (!canvas || !isPlaying) {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
@@ -35,10 +103,18 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
     const draw = () => {
       animationRef.current = requestAnimationFrame(draw);
 
-      // Get the appropriate data based on mode
-      const dataArray = mode === 'wave' ? getTimeDomainData() : getFrequencyData();
+      // Update time
+      const now = performance.now();
+      const delta = (now - lastTimeRef.current) / 1000;
+      lastTimeRef.current = now;
+      timeRef.current += delta;
 
-      // Clear canvas
+      // Generate the appropriate data based on mode
+      const dataArray = mode === 'wave' 
+        ? generateWaveformData(timeRef.current)
+        : generateFrequencyData(timeRef.current);
+
+      // Clear canvas with slight fade effect for trail
       ctx.fillStyle = 'rgba(15, 23, 42, 0.3)';
       ctx.fillRect(0, 0, width, height);
 
@@ -59,7 +135,7 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
         animationRef.current = null;
       }
     };
-  }, [isPlaying, mode, isInitialized, getFrequencyData, getTimeDomainData]);
+  }, [isPlaying, mode, generateFrequencyData, generateWaveformData]);
 
   // Draw bar visualizer
   const drawBars = (ctx, dataArray, width, height) => {
@@ -183,12 +259,12 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
           style={{ imageRendering: 'crisp-edges' }}
         />
         
-        {/* Overlay when not playing or not initialized */}
-        {(!isPlaying || !isInitialized) && (
+        {/* Overlay when not playing */}
+        {!isPlaying && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80">
             <Music className="w-12 h-12 text-slate-600 mb-2" />
             <p className="text-slate-400 text-sm">
-              {!isInitialized ? 'Initializing audio...' : 'Start playback to see visualization'}
+              Start playback to see visualization
             </p>
           </div>
         )}
