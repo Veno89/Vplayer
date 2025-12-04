@@ -1,8 +1,6 @@
 // Audio Constants
 export const VOLUME_STEP = 0.1;
 export const SEEK_THRESHOLD_SECONDS = 3;
-export const DEFAULT_VOLUME = 0.7;
-export const AUDIO_UPDATE_INTERVAL_MS = 100;
 
 // LocalStorage Keys
 export const STORAGE_KEYS = {
@@ -16,11 +14,6 @@ export const STORAGE_KEYS = {
   CROSSFADE_DURATION: 'vplayer_crossfade_duration',
   CROSSFADE_ENABLED: 'vplayer_crossfade_enabled',
 };
-
-// UI Constants
-export const WINDOW_MIN_WIDTH = 200;
-export const WINDOW_MIN_HEIGHT = 150;
-export const MAX_Z_INDEX_START = 1000;
 
 // Per-window minimum sizes for proper content display
 export const WINDOW_MIN_SIZES = {
@@ -38,20 +31,8 @@ export const WINDOW_MIN_SIZES = {
   shortcuts: { width: 400, height: 350 },   // Shortcuts list
 };
 
-// Playlist Constants
-export const REPEAT_MODES = {
-  OFF: 'off',
-  ALL: 'all',
-  ONE: 'one',
-};
-
 // Search & Filter
 export const SEARCH_DEBOUNCE_MS = 300;
-export const MIN_SEARCH_LENGTH = 1;
-
-// Visualizer
-export const VISUALIZER_MODES = ['bars', 'wave', 'circular'];
-export const VISUALIZER_FPS = 60;
 
 // EQ Presets
 export const EQ_PRESETS = {
@@ -109,11 +90,6 @@ export const CROSSFADE_CONFIG = {
   DEFAULT_ENABLED: false,
 };
 
-// Scanner
-export const SUPPORTED_AUDIO_EXTENSIONS = [
-  'mp3', 'flac', 'ogg', 'wav', 'aac', 'm4a', 'wma', 'opus',
-];
-
 // Event Names
 export const EVENTS = {
   SCAN_TOTAL: 'scan-total',
@@ -133,26 +109,6 @@ export const SHORTCUT_ACTIONS = {
   VOLUME_UP: 'volume-up',
   VOLUME_DOWN: 'volume-down',
   MUTE: 'mute',
-};
-
-// Toast Types
-export const TOAST_TYPES = {
-  SUCCESS: 'success',
-  ERROR: 'error',
-  WARNING: 'warning',
-  INFO: 'info',
-};
-
-// Sort Options
-export const SORT_OPTIONS = {
-  TITLE: 'title',
-  ARTIST: 'artist',
-  ALBUM: 'album',
-  DURATION: 'duration',
-  YEAR: 'year',
-  RATING: 'rating',
-  PLAY_COUNT: 'playCount',
-  DATE_ADDED: 'dateAdded',
 };
 
 // Error Messages

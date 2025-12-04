@@ -42,10 +42,12 @@ Custom Hooks                  File Scanner
 ### Project Structure
 ```
 src/
-├── components/          # Reusable UI (AlbumArt, ContextMenu, TrackList)
-├── hooks/              # Business logic (useAudio, useLibrary, usePlayer)
-├── windows/            # App windows (PlayerWindow, LibraryWindow, etc.)
+├── components/          # Reusable UI (AlbumArt, ContextMenu, TrackList, Window, Modal)
+├── hooks/              # Business logic (useAudio, useLibrary, usePlayer, useEqualizer)
+├── windows/            # App windows (PlayerWindow, LibraryWindow, EqualizerWindow, etc.)
 ├── store/              # Zustand state management
+├── services/           # API services (TauriAPI, ErrorHandler)
+├── context/            # React context providers
 └── utils/              # Helpers (formatters, constants)
 
 src-tauri/src/
@@ -54,6 +56,10 @@ src-tauri/src/
 ├── database.rs         # SQLite operations
 ├── scanner.rs          # File scanning & metadata
 ├── watcher.rs          # File system monitoring
+├── effects.rs          # Audio effects processing
+├── lyrics.rs           # Lyrics fetching
+├── playlist_io.rs      # Playlist import/export
+├── smart_playlists.rs  # Smart playlist rules
 └── error.rs            # Error handling
 ```
 
@@ -81,12 +87,12 @@ src-tauri/src/
 - **Queue System**: Temporary queue management
 
 ### Advanced Features
-- **Tag Editor**: Edit ID3 tags directly in app
-- **Visualizer**: Real-time audio visualization
+- **Theme Editor**: Customize colors and appearance
+- **Visualizer**: Real-time audio visualization (bars, wave, circular)
 - **History**: Track listening history
-- **Statistics**: Library stats, top tracks, genres
-- **Duplicate Detection**: Find duplicate tracks
+- **Duplicate Detection**: Find duplicate tracks in library
 - **Mini Player**: Compact always-on-top mode
+- **Lyrics**: Fetch and display song lyrics
 
 ---
 
@@ -177,22 +183,26 @@ const result = await invoke('my_command', { param: 'value' });
 ```jsx
 export function MyWindow({ currentColors, onClose }) {
   return (
-    <Window title="My Window" onClose={onClose}>
+    <div className="flex flex-col h-full">
       {/* Content */}
-    </Window>
+    </div>
   );
 }
 ```
 
-**Register** in `VPlayer.jsx`:
+**Register** in `src/hooks/useWindowConfigs.jsx`:
 ```javascript
-const windowConfigs = {
-  myWindow: {
-    component: MyWindow,
-    defaultPos: { x: 100, y: 100 },
-    defaultSize: { w: 400, h: 300 },
-  },
-};
+{
+  id: 'myWindow',
+  title: 'My Window',
+  icon: MyIcon,
+  content: (
+    <MyWindow
+      currentColors={currentColors}
+      onClose={() => toggleWindow('myWindow')}
+    />
+  ),
+}
 ```
 
 ### State Management
@@ -390,4 +400,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.1.0 | **Updated**: November 2025
+**Version**: 0.1.0 | **Updated**: December 2025

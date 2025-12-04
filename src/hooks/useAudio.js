@@ -42,6 +42,9 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   const [duration, setDuration] = useState(0);
   const [audioBackendError, setAudioBackendError] = useState(null);
   
+  // Track if we're currently seeking to avoid polling race conditions
+  const isSeekingRef = useRef(false);
+  
   // Error handling
   const toast = useToast();
   const errorHandler = useErrorHandler(toast);
@@ -74,6 +77,9 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   useEffect(() => {
     if (isPlaying && duration > 0) {
       progressIntervalRef.current = setInterval(async () => {
+        // Skip polling if we're in the middle of a seek operation
+        if (isSeekingRef.current) return;
+        
         try {
           // Get real position from Rust backend
           const position = await invoke('get_position');
@@ -222,14 +228,21 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   const seek = useCallback(async (position) => {
     if (audioBackendError) return; // Silently fail
     
-    // Update UI immediately for instant feedback
-    setProgress(position);
+    // Set seeking flag to pause polling
+    isSeekingRef.current = true;
     
     try {
       await invoke('seek_to', { position });
+      // Update UI after successful seek to ensure we show the correct position
+      setProgress(position);
     } catch (err) {
       console.error('Failed to seek:', err);
-      // Progress already updated optimistically above
+      // Don't update progress on error
+    } finally {
+      // Small delay before resuming polling to ensure backend has updated
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 50);
     }
   }, [audioBackendError]);
 

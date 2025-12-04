@@ -281,11 +281,19 @@ impl AudioPlayer {
     
     pub fn seek(&self, position: f64) -> AppResult<()> {
         info!("Seeking to position: {}s", position);
+        
+        // Get current state before locking sink
+        let current_pos = self.get_position();
+        info!("Current position before seek: {}s, target: {}s", current_pos, position);
+        
         let sink = self.sink.lock().unwrap();
+        let was_playing = !sink.is_paused();
+        let current_volume = sink.volume();
         
         // Try to seek - rodio 0.19 supports this
         match sink.try_seek(Duration::from_secs_f64(position)) {
             Ok(_) => {
+                info!("Seek successful to {}s", position);
                 // Update timing: reset start time and adjust offset
                 let was_paused = sink.is_paused();
                 
@@ -304,8 +312,66 @@ impl AudioPlayer {
                 Ok(())
             },
             Err(e) => {
-                warn!("Seek not supported for this file: {:?}", e);
-                Err(AppError::Audio("This file format doesn't support seeking".to_string()))
+                // Direct seek failed (likely backward seek) - reload and seek forward
+                warn!("Direct seek failed: {:?}, attempting reload method", e);
+                
+                // Get the current file path
+                let path = self.current_path.lock().unwrap().clone();
+                let total_dur = *self.total_duration.lock().unwrap();
+                
+                if let Some(path) = path {
+                    // Drop the sink lock before reloading
+                    drop(sink);
+                    
+                    info!("Reloading file for backward seek: {}", path);
+                    
+                    // Reload the file
+                    let file = File::open(&path)
+                        .map_err(|e| AppError::NotFound(format!("Failed to open file: {}", e)))?;
+                    
+                    let source = Decoder::new(BufReader::new(file))
+                        .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
+                    
+                    // Wrap source with effects processor for EQ
+                    let effects_source = EffectsSource {
+                        input: source,
+                        processor: self.effects_processor.clone(),
+                    };
+                    
+                    // Get a new lock on sink
+                    let sink = self.sink.lock().unwrap();
+                    sink.clear();
+                    sink.append(effects_source);
+                    sink.set_volume(current_volume);
+                    
+                    // Now seek forward to the target position
+                    if position > 0.0 {
+                        match sink.try_seek(Duration::from_secs_f64(position)) {
+                            Ok(_) => info!("Forward seek after reload successful to {}s", position),
+                            Err(e) => warn!("Forward seek after reload failed: {:?}", e),
+                        }
+                    }
+                    
+                    // Update state
+                    *self.total_duration.lock().unwrap() = total_dur;
+                    *self.start_time.lock().unwrap() = Some(Instant::now());
+                    *self.seek_offset.lock().unwrap() = Duration::from_secs_f64(position);
+                    *self.paused_duration.lock().unwrap() = Duration::ZERO;
+                    
+                    // Resume playing if it was playing
+                    if was_playing {
+                        sink.play();
+                        *self.pause_start.lock().unwrap() = None;
+                    } else {
+                        sink.pause();
+                        *self.pause_start.lock().unwrap() = Some(Instant::now());
+                    }
+                    
+                    info!("Backward seek completed via reload to {}s", position);
+                    Ok(())
+                } else {
+                    Err(AppError::Audio("No file loaded for seeking".to_string()))
+                }
             }
         }
     }
