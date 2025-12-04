@@ -435,7 +435,7 @@ impl AudioPlayer {
         let mut output_devices = host.output_devices()
             .map_err(|e| AppError::Audio(format!("Failed to enumerate devices: {}", e)))?;
         
-        let device = output_devices
+        let _device = output_devices
             .find(|d| d.name().ok().as_deref() == Some(device_name))
             .ok_or_else(|| AppError::NotFound(format!("Device '{}' not found", device_name)))?;
         
@@ -493,7 +493,7 @@ impl AudioPlayer {
         
         // Get stream handle from current sink
         let host = rodio::cpal::default_host();
-        let device = host.default_output_device()
+        let _device = host.default_output_device()
             .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
         
         let _stream = OutputStreamBuilder::open_default_stream()
@@ -648,6 +648,7 @@ impl AudioPlayer {
         }
     }
     
+    #[allow(dead_code)]
     /// Check if the audio system is healthy (sink is responsive)
     pub fn is_healthy(&self) -> bool {
         // Try to access the sink - if this hangs or fails, system is unhealthy

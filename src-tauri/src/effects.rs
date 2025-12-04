@@ -193,6 +193,7 @@ pub struct Reverb {
     allpass_buffers: Vec<Vec<f32>>,
     allpass_indices: Vec<usize>,
     room_size: f32,
+    #[allow(dead_code)]
     sample_rate: u32,
 }
 
@@ -436,6 +437,7 @@ impl EffectsProcessor {
         output.clamp(-1.0, 1.0)
     }
     
+    #[allow(dead_code)]
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
         for sample in buffer.iter_mut() {
             *sample = self.process(*sample);

@@ -1,6 +1,8 @@
 use crate::error::{AppError, AppResult};
 use std::path::PathBuf;
 
+// Allow dead code for validation utilities - these are kept for future use
+#[allow(dead_code)]
 /// Validate a file system path
 ///
 /// Checks that the path:
@@ -28,6 +30,7 @@ pub fn validate_path(path: &str) -> AppResult<PathBuf> {
     Ok(p)
 }
 
+#[allow(dead_code)]
 /// Validate and sanitize a playlist name
 ///
 /// - Checks for empty name
@@ -55,6 +58,7 @@ pub fn validate_playlist_name(name: &str) -> AppResult<String> {
     Ok(sanitized)
 }
 
+#[allow(dead_code)]
 /// Validate track rating
 ///
 /// Ensures rating is between 0 and 5 stars
@@ -65,6 +69,7 @@ pub fn validate_rating(rating: i32) -> AppResult<i32> {
     Ok(rating)
 }
 
+#[allow(dead_code)]
 /// Validate volume level
 ///
 /// Ensures volume is between 0.0 and 1.0

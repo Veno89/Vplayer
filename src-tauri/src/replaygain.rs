@@ -1,7 +1,7 @@
 use ebur128::{EbuR128, Mode};
 use rusqlite::Connection;
 use std::fs::File;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use symphonia::core::audio::{AudioBuffer, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::formats::FormatOptions;
@@ -27,6 +27,7 @@ pub struct ReplayGainData {
 }
 
 impl ReplayGainData {
+    #[allow(dead_code)]
     /// Calculate volume adjustment factor (0.0-1.0 range)
     pub fn get_adjustment(&self, target_lufs: f64) -> f64 {
         let gain_db = target_lufs - self.loudness;

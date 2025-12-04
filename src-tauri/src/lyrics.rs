@@ -120,6 +120,7 @@ impl Lrc {
             .find(|line| line.timestamp <= time)
     }
 
+    #[allow(dead_code)]
     /// Get current and next lyric
     pub fn get_lyrics_around(&self, time: f64) -> (Option<&LyricLine>, Option<&LyricLine>) {
         let current_idx = self.lines
