@@ -91,6 +91,11 @@ fn is_finished(state: tauri::State<AppState>) -> bool {
 }
 
 #[tauri::command]
+fn recover_audio(state: tauri::State<AppState>) -> Result<bool, String> {
+    state.player.recover().map_err(|e| e.into())
+}
+
+#[tauri::command]
 fn get_audio_devices() -> Result<Vec<AudioDevice>, String> {
     AudioPlayer::get_audio_devices().map_err(|e| e.into())
 }
@@ -1019,6 +1024,7 @@ fn main() {
             get_duration,
             is_playing,
             is_finished,
+            recover_audio,
             get_audio_devices,
             set_audio_device,
             scan_folder,

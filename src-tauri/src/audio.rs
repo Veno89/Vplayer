@@ -73,7 +73,8 @@ pub struct AudioDevice {
 
 pub struct AudioPlayer {
     sink: Arc<Mutex<Sink>>,
-    _stream: Arc<OutputStream>,
+    _stream: Arc<Mutex<Option<OutputStream>>>,
+    mixer: Arc<Mutex<Option<Arc<Mixer>>>>,
     current_path: Arc<Mutex<Option<String>>>,
     start_time: Arc<Mutex<Option<Instant>>>,
     seek_offset: Arc<Mutex<Duration>>,
@@ -86,6 +87,8 @@ pub struct AudioPlayer {
     // Audio effects processor
     effects_processor: Arc<Mutex<EffectsProcessor>>,
     effects_enabled: Arc<Mutex<bool>>,
+    // Track last successful operation for recovery
+    last_volume: Arc<Mutex<f32>>,
 }
 
 // Manually implement Send and Sync for AudioPlayer
@@ -104,7 +107,8 @@ impl AudioPlayer {
         info!("Audio player initialized successfully");
         Ok(Self {
             sink: Arc::new(Mutex::new(sink)),
-            _stream: Arc::new(stream),
+            _stream: Arc::new(Mutex::new(Some(stream))),
+            mixer: Arc::new(Mutex::new(Some(mixer))),
             current_path: Arc::new(Mutex::new(None)),
             start_time: Arc::new(Mutex::new(None)),
             seek_offset: Arc::new(Mutex::new(Duration::ZERO)),
@@ -115,6 +119,7 @@ impl AudioPlayer {
             preload_path: Arc::new(Mutex::new(None)),
             effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(44100, EffectsConfig::default()))),
             effects_enabled: Arc::new(Mutex::new(true)),
+            last_volume: Arc::new(Mutex::new(1.0)),
         })
     }
     
@@ -276,6 +281,7 @@ impl AudioPlayer {
         let sink = self.sink.lock().unwrap();
         let clamped_volume = volume.max(0.0).min(1.0);
         sink.set_volume(clamped_volume);
+        *self.last_volume.lock().unwrap() = clamped_volume;
         Ok(())
     }
     
@@ -577,5 +583,85 @@ impl AudioPlayer {
     /// Check if effects are enabled
     pub fn is_effects_enabled(&self) -> bool {
         *self.effects_enabled.lock().unwrap()
+    }
+    
+    /// Recover audio system after device disconnection or long idle
+    /// Returns true if recovery was successful
+    pub fn recover(&self) -> AppResult<bool> {
+        info!("Attempting audio system recovery...");
+        
+        // Save current state
+        let current_path = self.current_path.lock().unwrap().clone();
+        let current_position = self.get_position();
+        let was_playing = self.is_playing();
+        let volume = *self.last_volume.lock().unwrap();
+        
+        // Try to recreate the audio output
+        match Self::create_high_quality_output() {
+            Ok((new_stream, new_mixer)) => {
+                info!("Audio output recreated successfully");
+                
+                // Create new sink
+                let new_sink = Sink::connect_new(&new_mixer);
+                new_sink.set_volume(volume);
+                
+                // Replace stream and mixer
+                *self._stream.lock().unwrap() = Some(new_stream);
+                *self.mixer.lock().unwrap() = Some(new_mixer);
+                
+                // Replace sink
+                {
+                    let mut sink = self.sink.lock().unwrap();
+                    *sink = new_sink;
+                }
+                
+                // Reload current track if there was one
+                if let Some(path) = current_path {
+                    info!("Reloading track after recovery: {}", path);
+                    if let Err(e) = self.load(path) {
+                        warn!("Failed to reload track after recovery: {}", e);
+                        return Ok(false);
+                    }
+                    
+                    // Restore position
+                    if current_position > 0.5 {
+                        if let Err(e) = self.seek(current_position) {
+                            warn!("Failed to restore position after recovery: {}", e);
+                        }
+                    }
+                    
+                    // Resume if was playing
+                    if was_playing {
+                        if let Err(e) = self.play() {
+                            warn!("Failed to resume playback after recovery: {}", e);
+                        }
+                    }
+                }
+                
+                info!("Audio system recovery completed successfully");
+                Ok(true)
+            }
+            Err(e) => {
+                error!("Failed to recreate audio output during recovery: {}", e);
+                Ok(false)
+            }
+        }
+    }
+    
+    /// Check if the audio system is healthy (sink is responsive)
+    pub fn is_healthy(&self) -> bool {
+        // Try to access the sink - if this hangs or fails, system is unhealthy
+        match self.sink.try_lock() {
+            Ok(sink) => {
+                // Just check if we can read state without hanging
+                let _ = sink.is_paused();
+                true
+            }
+            Err(_) => {
+                // Lock is held for too long - might be stuck
+                warn!("Audio sink lock unavailable - system may be unhealthy");
+                false
+            }
+        }
     }
 }

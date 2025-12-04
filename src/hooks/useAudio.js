@@ -57,6 +57,8 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   const progressIntervalRef = useRef(null);
   const currentTrackRef = useRef(null);
   const retryCountRef = useRef(0);
+  const pollErrorCountRef = useRef(0);
+  const MAX_POLL_ERRORS = 5;
 
   // Check if audio backend is available on mount
   useEffect(() => {
@@ -74,8 +76,11 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   }, []);
 
   // Update progress by polling the backend for real position
+  // Uses adaptive polling: 100ms when playing, 1000ms when paused
   useEffect(() => {
-    if (isPlaying && duration > 0) {
+    const pollInterval = isPlaying ? 100 : 1000; // Slower polling when paused to reduce load
+    
+    if (duration > 0) {
       progressIntervalRef.current = setInterval(async () => {
         // Skip polling if we're in the middle of a seek operation
         if (isSeekingRef.current) return;
@@ -85,12 +90,15 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
           const position = await invoke('get_position');
           setProgress(position);
           
+          // Reset error count on successful poll
+          pollErrorCountRef.current = 0;
+          
           if (onTimeUpdate) {
             onTimeUpdate(position);
           }
           
-          // Check if track finished
-          if (position >= duration - 0.1) {
+          // Check if track finished (only when playing)
+          if (isPlaying && position >= duration - 0.1) {
             const finished = await invoke('is_finished');
             if (finished) {
               setIsPlaying(false);
@@ -100,8 +108,30 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
           }
         } catch (err) {
           console.error('Failed to get position:', err);
+          pollErrorCountRef.current++;
+          
+          // If we get too many consecutive errors, try to recover
+          if (pollErrorCountRef.current >= MAX_POLL_ERRORS) {
+            console.warn('Too many poll errors, attempting audio backend recovery...');
+            pollErrorCountRef.current = 0;
+            
+            try {
+              // Try to reinitialize the audio backend connection
+              const recovered = await invoke('recover_audio');
+              if (recovered) {
+                console.log('Audio backend recovered successfully');
+                setAudioBackendError(null);
+              } else {
+                console.error('Audio backend recovery returned false');
+                setAudioBackendError('Audio system became unresponsive. Please restart the application.');
+              }
+            } catch (recoveryErr) {
+              console.error('Audio backend recovery failed:', recoveryErr);
+              setAudioBackendError('Audio system became unresponsive. Please restart the application.');
+            }
+          }
         }
-      }, 100); // Poll every 100ms for smooth updates
+      }, pollInterval);
     } else {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
