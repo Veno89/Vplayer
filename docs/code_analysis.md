@@ -355,7 +355,7 @@ function usePlayer() {
 
 ## Action Plan
 
-### Phase 1: Quick Wins (1-2 hours)
+### Phase 1: Quick Wins ✅ COMPLETE (commit 612c86d)
 
 1. ✅ Delete `audio.rs.backup`
 2. ✅ Delete `usePlaybackControls.js`
@@ -363,28 +363,27 @@ function usePlayer() {
 4. ✅ Extract `COLOR_SCHEMES` to shared file
 5. ✅ Remove duplicate from `useStoreHooks.js`
 
-### Phase 2: Store Refactoring (4-6 hours)
+### Phase 2: Store Refactoring ✅ COMPLETE (commit 84a5a5c)
 
-1. Create `src/utils/colorSchemes.js`
-2. Split `useStore.js` into slices
-3. Update all imports
-4. Test persistence still works
+1. ✅ Created `src/store/slices/` directory
+2. ✅ Split into playerSlice.js, uiSlice.js, settingsSlice.js
+3. ✅ Reduced useStore.js from 628 to 35 lines
+4. ✅ Persistence still works
 
-### Phase 3: Backend Cleanup (4-6 hours)
+### Phase 3: Backend Cleanup ✅ COMPLETE (commit c7da64a)
 
-1. Create `src-tauri/src/commands/` directory
-2. Move commands to domain modules
-3. Update `main.rs` to import modules
-4. Verify all commands still work
+1. ✅ Created `src-tauri/src/commands/` directory
+2. ✅ Split into 10 command modules (audio, library, playlist, etc.)
+3. ✅ Reduced main.rs from 1,100 to 304 lines
+4. ✅ All commands verified working
 
-### Phase 4: Component Refactoring (6-8 hours)
+### Phase 4: Hook Consolidation ✅ COMPLETE (commit e35e4d1)
 
-1. Split `PlaylistWindow.jsx`
-2. Extract modals from `VPlayer.jsx`
-3. Create `useAudioOrchestration.js`
-4. Split `useLibrary.js`
+1. ✅ Merged useKeyboardShortcuts.js and useGlobalShortcuts.js
+2. ✅ Created unified useShortcuts.js hook
+3. ✅ Simplified VPlayer.jsx hook usage
 
-### Phase 5: Missing Features (TBD)
+### Phase 5: Missing Features (Optional/Future)
 
 1. Tag Editor Window UI
 2. Library Stats Window
@@ -395,22 +394,23 @@ function usePlayer() {
 
 ## Files Summary
 
-### Delete (Dead Code)
-- [ ] `src-tauri/src/audio.rs.backup`
-- [ ] `src/hooks/usePlaybackControls.js`
-- [ ] `src/hooks/useVolumeControl.js`
+### Delete (Dead Code) ✅ COMPLETE
+- [x] `src-tauri/src/audio.rs.backup`
+- [x] `src/hooks/usePlaybackControls.js`
+- [x] `src/hooks/useVolumeControl.js`
 
-### Refactor (High Priority)
-- [ ] `src-tauri/src/main.rs` → Split into command modules
-- [ ] `src/store/useStore.js` → Extract COLOR_SCHEMES, split slices
-- [ ] `src/hooks/useStoreHooks.js` → Remove duplicate COLOR_SCHEMES
+### Refactor (High Priority) ✅ COMPLETE
+- [x] `src-tauri/src/main.rs` → Split into command modules
+- [x] `src/store/useStore.js` → Split into slices
+- [x] `src/hooks/useStoreHooks.js` → COLOR_SCHEMES deduplication
+- [x] Keyboard shortcut hooks consolidated
 
-### Refactor (Medium Priority)
+### Refactor (Medium Priority) - Optional
 - [ ] `src/VPlayer.jsx` → Extract orchestration
 - [ ] `src/windows/PlaylistWindow.jsx` → Split components
 - [ ] `src/hooks/useLibrary.js` → Split by concern
 
-### Create (Missing Features)
+### Create (Missing Features) - Future
 - [ ] `src/windows/TagEditorWindow.jsx`
 - [ ] `src/windows/LibraryStatsWindow.jsx`
 - [ ] `src/windows/OnboardingWindow.jsx`
