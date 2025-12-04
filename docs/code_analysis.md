@@ -1,313 +1,421 @@
-# VPlayer Code Analysis & Recommendations
+# VPlayer Comprehensive Code Analysis
+
+**Generated:** December 2024  
+**Version:** 0.5.0  
+**Total Files Analyzed:** 50+ frontend files, 14 backend files
+
+---
+
+## Table of Contents
+
+1. [Executive Summary](#executive-summary)
+2. [Dead Code Analysis](#dead-code-analysis)
+3. [Duplicate Code Analysis](#duplicate-code-analysis)
+4. [Files Needing Refactoring](#files-needing-refactoring)
+5. [Missing Features](#missing-features)
+6. [Architecture Recommendations](#architecture-recommendations)
+7. [Action Plan](#action-plan)
+
+---
 
 ## Executive Summary
 
-After comprehensive analysis of the codebase, I've identified opportunities across architecture, code quality, and features. The app is functional but has room for improvement in separation of concerns, code reuse, and user experience.
+VPlayer is a well-structured Tauri-based music player with solid foundations. However, there are several areas that need attention:
+
+| Category | Issues Found | Priority |
+|----------|-------------|----------|
+| Dead Code | 4 files/modules | Medium |
+| Duplicate Code | 3 major duplications | High |
+| Large Files | 6 files need splitting | Medium |
+| Missing Features | 8 expected features | Low |
 
 ---
 
-## 🏗️ Architecture Issues (SOLID Violations)
+## Dead Code Analysis
 
-### 1. **VPlayer.jsx is a God Component** (Single Responsibility Violation)
-**Location**: [src/VPlayer.jsx](src/VPlayer.jsx)
+### 🔴 High Confidence - Should Remove
 
-The main component (~300 lines) does too much:
-- State management coordination
-- Audio lifecycle
-- Library management  
-- Window management
-- Theme handling
-- Keyboard shortcuts
-- Drag & drop
+#### 1. `src-tauri/src/audio.rs.backup` (16,981 bytes)
+- **Status:** Backup file, not compiled
+- **Action:** Delete immediately
+- **Risk:** None - file is not referenced anywhere
 
-**Recommendation**: Split into domain controllers:
-```jsx
-// Proposed structure
-src/
-  controllers/
-    AudioController.jsx      // Audio lifecycle & events
-    LibraryController.jsx    // Scanning, tracks
-    WindowController.jsx     // Window state & resize
-    ThemeController.jsx      // Colors, background
-  VPlayer.jsx               // Just composes controllers
-```
+#### 2. `src/hooks/usePlaybackControls.js` (155 lines)
+- **Status:** Defined but never imported
+- **Evidence:** 
+  - Only 1 match in codebase: its own export
+  - Functionality absorbed into `usePlayer.js`
+- **Action:** Delete after verifying `usePlayer.js` has all needed functionality
+- **Risk:** Low
 
-### 2. **useStore.js Monolith** (270+ lines)
-**Location**: [src/store/useStore.js](src/store/useStore.js)
+#### 3. `src/hooks/useVolumeControl.js` (16 lines)
+- **Status:** Defined but never imported
+- **Evidence:**
+  - Only 1 match in codebase: its own export
+  - Volume control is handled in `usePlayer.js`
+- **Action:** Delete
+- **Risk:** None
 
-Single store handles player, UI, library, queue, and settings.
+### 🟡 Medium Confidence - Verify Before Removing
 
-**Recommendation**: Use Zustand slices pattern:
+#### 4. Unused Window Files (from workspace structure vs actual)
+The workspace structure showed files that don't exist:
+- `BatchMetadataEditor.jsx` - Not found in directory
+- `OnboardingWindow.jsx` - Not found in directory
+- `LibraryStatsWindow.jsx` - Not found in directory
+- `TagEditorWindow.jsx` - Not found in directory
+- `EmptyState.jsx` - Not found in directory
+- `LoadingSkeleton.jsx` - Not found in directory
+
+**Note:** These may be stale entries in workspace cache or planned features.
+
+---
+
+## Duplicate Code Analysis
+
+### 🔴 Critical Duplication #1: COLOR_SCHEMES (~400 lines duplicated)
+
+**Location:**
+1. `src/store/useStore.js` lines 6-400 (full definition with all properties)
+2. `src/hooks/useStoreHooks.js` lines 34-190 (recreated via useMemo)
+3. `src/windows/options/AppearanceTab.jsx` lines 8-29 (simplified subset)
+
+**Issue:** The same color scheme data is defined THREE times:
+- Full version in store (exported as constant)
+- Re-created in hooks (using useMemo, wasteful)
+- Simplified version in AppearanceTab
+
+**Fix:**
 ```javascript
-// stores/playerStore.js
-export const createPlayerSlice = (set) => ({
-  currentTrack: null,
-  playing: false,
-  setPlaying: (playing) => set({ playing }),
-});
+// Create single source of truth
+// src/utils/colorSchemes.js
+export const COLOR_SCHEMES = { ... };
 
-// stores/index.js - Combine slices
-export const useStore = create((...a) => ({
-  ...createPlayerSlice(...a),
-  ...createUISlice(...a),
-  ...createQueueSlice(...a),
-}));
+// Import in all other files
+import { COLOR_SCHEMES } from '../utils/colorSchemes';
 ```
 
-### 3. **Prop Drilling in Window Components**
-Many windows receive 10+ props passed down through multiple levels.
+**Impact:** Reduces ~400 duplicated lines, improves maintainability
 
-**Recommendation**: Use React Context or Zustand selectors directly in windows:
-```jsx
-// Instead of passing currentColors through 5 components:
-const currentColors = useStore(state => state.getCurrentColors());
+---
+
+### 🔴 Critical Duplication #2: Playback Control Logic
+
+**Files:**
+1. `src/hooks/usePlayer.js` (264 lines) - Full-featured player hook
+2. `src/hooks/usePlaybackControls.js` (155 lines) - Subset of functionality
+
+**Issue:** `usePlaybackControls.js` appears to be an earlier version superseded by `usePlayer.js`
+
+**Evidence:**
+- `usePlayer.js` includes: volume control, shuffle, repeat, crossfade, track navigation
+- `usePlaybackControls.js` is never imported
+- Both handle similar operations: play, pause, next, prev
+
+**Fix:** Delete `usePlaybackControls.js` after confirming all functionality is in `usePlayer.js`
+
+---
+
+### 🟡 Potential Duplication #3: Track Loading Logic
+
+**Files:**
+1. `src/hooks/useTrackLoading.js` (168 lines)
+2. `src/hooks/usePlayer.js` includes track loading code
+
+**Issue:** Some overlap in track loading state management
+
+**Fix:** Audit and consolidate if overlap exists
+
+---
+
+## Files Needing Refactoring
+
+### 🔴 Priority 1: Backend - `src-tauri/src/main.rs` (1,100 lines)
+
+**Problem:** All 60+ Tauri commands in single file
+
+**Current Structure:**
+- Audio commands (lines 43-130)
+- Scan commands (lines 165-235)
+- Database commands (lines 240-350)
+- Playlist commands (lines 350-480)
+- Smart playlist commands (lines 540-620)
+- Visualizer commands (lines 730-800)
+- ReplayGain commands (lines 790-850)
+- Cache commands (lines 850-900)
+- App setup (lines 900-1100)
+
+**Recommended Split:**
+```
+src-tauri/src/
+├── main.rs              (~200 lines - setup only)
+├── commands/
+│   ├── mod.rs
+│   ├── audio.rs         (~100 lines)
+│   ├── library.rs       (~150 lines)
+│   ├── playlist.rs      (~150 lines)
+│   ├── smart_playlist.rs(~100 lines)
+│   ├── visualizer.rs    (~50 lines)
+│   ├── replaygain.rs    (~50 lines)
+│   └── cache.rs         (~50 lines)
 ```
 
 ---
 
-## 🔄 DRY Violations (Duplicate Code)
+### 🔴 Priority 2: Frontend - `src/store/useStore.js` (1,074 lines)
 
-### 1. **Context Menu Handling** - Repeated in 3+ components
-Identical context menu show/hide logic in:
-- PlaylistWindow.jsx
-- LibraryWindow.jsx  
-- AlbumViewWindow.jsx
+**Problem:** Massive Zustand store with embedded data
 
-**Fix**: Create `useContextMenu` hook:
+**Current Structure:**
+- COLOR_SCHEMES definition (lines 6-400) - ~35% of file!
+- Window state management
+- Theme state
+- Player state
+- Library state
+- UI preferences
+- Persistence config
+
+**Recommended Split:**
+```
+src/store/
+├── index.js             (re-exports)
+├── useStore.js          (~300 lines - core store)
+├── slices/
+│   ├── windowSlice.js
+│   ├── playerSlice.js
+│   ├── librarySlice.js
+│   └── preferencesSlice.js
+```
+
+Move `COLOR_SCHEMES` to `src/utils/colorSchemes.js`
+
+---
+
+### 🟡 Priority 3: Frontend - `src/VPlayer.jsx` (330 lines)
+
+**Problem:** Main component orchestrates too many concerns
+
+**Current Responsibilities:**
+- 15+ hook imports and usage
+- Audio state management
+- Window configuration
+- Event handling
+- Context menu handling
+- Theme editor modal
+- Mini player modal
+- Duplicate finder modal
+- Debug panel
+
+**Recommended Split:**
+- Extract modal orchestration to `ModalManager.jsx`
+- Extract audio orchestration to custom hook `useAudioOrchestration.js`
+- Keep `VPlayer.jsx` as thin container (~150 lines)
+
+---
+
+### 🟡 Priority 4: `src/windows/PlaylistWindow.jsx` (631 lines)
+
+**Problem:** Single window handling too much logic
+
+**Responsibilities:**
+- Playlist CRUD
+- Track drag & drop
+- Search/filter
+- Export/import
+- Context menus
+
+**Recommended Split:**
+- `PlaylistHeader.jsx` - Search, add, export buttons
+- `PlaylistTracks.jsx` - Track list with drag/drop
+- `PlaylistModals.jsx` - Create/rename dialogs
+
+---
+
+### 🟡 Priority 5: `src/hooks/useLibrary.js` (434 lines)
+
+**Problem:** Too many responsibilities
+
+**Current Responsibilities:**
+- Folder management
+- Scanning coordination
+- Track search/filter
+- Sort management
+- Advanced filters
+
+**Recommended Split:**
+- `useLibraryFolders.js` - Folder CRUD
+- `useLibraryScan.js` - Scan progress/events
+- `useLibraryFilter.js` - Search, sort, filters
+
+---
+
+### 🟢 Lower Priority: Other Large Files
+
+| File | Lines | Issue |
+|------|-------|-------|
+| `src-tauri/src/database.rs` | 768 | Many queries, consider splitting by domain |
+| `src-tauri/src/audio.rs` | 656 | Complex but cohesive |
+| `src-tauri/src/effects.rs` | 468 | Audio DSP code, keep together |
+| `src/components/TrackList.jsx` | 415 | Complex virtualization, may be okay |
+| `src/windows/PlayerWindow.jsx` | 358 | Could split controls |
+| `src/hooks/useWindowConfigs.jsx` | 314 | Config only, acceptable |
+
+---
+
+## Missing Features
+
+Based on typical music player expectations:
+
+### 🔴 Expected but Missing
+
+1. **Tag Editor Window**
+   - Backend exists (`update_track_tags` command)
+   - No frontend window for editing
+
+2. **Library Statistics Window**
+   - Stats data available in backend (`get_performance_stats`)
+   - No dedicated stats window
+
+3. **Onboarding/First Run Experience**
+   - No guided setup for new users
+   - Should prompt for library folder on first launch
+
+### 🟡 Nice to Have
+
+4. **Album Art Grid View**
+   - AlbumViewWindow exists but limited
+   - Missing grid/gallery view
+
+5. **Batch Metadata Editor**
+   - Single track editing exists
+   - No multi-select batch editing
+
+6. **Scrobbling Integration**
+   - No Last.fm/ListenBrainz integration
+   - Backend tracks play counts (foundation exists)
+
+7. **Audio Output Selection UI**
+   - Backend: `get_audio_devices`, `set_audio_device` exist
+   - No frontend UI for device selection
+
+8. **Gapless Playback Toggle**
+   - Backend preload commands exist
+   - No UI toggle in Options
+
+---
+
+## Architecture Recommendations
+
+### State Management
+
+**Current:** Single monolithic Zustand store
+**Recommended:** Slice-based architecture
+
+```
+src/store/
+├── index.js
+├── createStore.js       # Store factory
+├── slices/
+│   ├── playerSlice.js   # playing, volume, repeat, shuffle
+│   ├── librarySlice.js  # tracks, folders, scanning
+│   ├── uiSlice.js       # windows, theme, modals
+│   └── playlistSlice.js # playlists, queue, history
+└── middleware/
+    └── persist.js       # Custom persistence logic
+```
+
+### Command Organization (Rust)
+
+**Current:** 60+ commands in main.rs
+**Recommended:** Command modules
+
+Benefits:
+- Easier testing
+- Better code navigation  
+- Clear domain boundaries
+- Parallel development
+
+### Hook Composition
+
+**Current:** Many standalone hooks with overlap
+**Recommended:** Composable hook pattern
+
 ```javascript
-export function useContextMenu() {
-  const [menu, setMenu] = useState(null);
-  const show = (e, data) => {
-    e.preventDefault();
-    setMenu({ x: e.clientX, y: e.clientY, data });
-  };
-  const hide = () => setMenu(null);
-  return { menu, show, hide };
+// High-level hook composes lower-level hooks
+function usePlayer() {
+  const playback = usePlayback();
+  const volume = useVolume();
+  const navigation = useTrackNavigation();
+  
+  return { ...playback, ...volume, ...navigation };
 }
 ```
 
-### 2. **Track Selection/Play Logic** - Duplicated
-Same track-to-index mapping in PlaylistWindow and QueueWindow.
+---
 
-**Fix**: Create `useTrackSelection` hook.
+## Action Plan
 
-### 3. **Window Resize with Delay Pattern**
-This pattern appears 4+ times:
-```javascript
-if (autoResizeWindow) {
-  setTimeout(() => recalculateSize(), 200);
-}
-```
+### Phase 1: Quick Wins (1-2 hours)
 
-**Fix**: Create a utility or hook that wraps resize operations.
+1. ✅ Delete `audio.rs.backup`
+2. ✅ Delete `usePlaybackControls.js`
+3. ✅ Delete `useVolumeControl.js`
+4. ✅ Extract `COLOR_SCHEMES` to shared file
+5. ✅ Remove duplicate from `useStoreHooks.js`
 
-### 4. **Audio Device Loading** - In multiple windows
-OptionsWindow and OptionsWindowEnhanced both load audio devices.
+### Phase 2: Store Refactoring (4-6 hours)
 
-**Fix**: Deduplicate or merge these windows (why do both exist?).
+1. Create `src/utils/colorSchemes.js`
+2. Split `useStore.js` into slices
+3. Update all imports
+4. Test persistence still works
+
+### Phase 3: Backend Cleanup (4-6 hours)
+
+1. Create `src-tauri/src/commands/` directory
+2. Move commands to domain modules
+3. Update `main.rs` to import modules
+4. Verify all commands still work
+
+### Phase 4: Component Refactoring (6-8 hours)
+
+1. Split `PlaylistWindow.jsx`
+2. Extract modals from `VPlayer.jsx`
+3. Create `useAudioOrchestration.js`
+4. Split `useLibrary.js`
+
+### Phase 5: Missing Features (TBD)
+
+1. Tag Editor Window UI
+2. Library Stats Window
+3. Audio Device Selection UI
+4. Onboarding flow
 
 ---
 
-## 💡 KISS Violations (Overcomplicated Code)
+## Files Summary
 
-### 1. **usePlayer.js getNextTrackIndex**
-The function has too many responsibilities:
-- Queue checking
-- Shuffle logic
-- Repeat handling
-- Index calculation
+### Delete (Dead Code)
+- [ ] `src-tauri/src/audio.rs.backup`
+- [ ] `src/hooks/usePlaybackControls.js`
+- [ ] `src/hooks/useVolumeControl.js`
 
-**Fix**: Break into smaller functions:
-```javascript
-const getQueueNextIndex = () => {...};
-const getShuffledIndex = () => {...};
-const getSequentialIndex = () => {...};
-const getNextTrackIndex = () => {
-  return getQueueNextIndex() ?? 
-         (shuffle ? getShuffledIndex() : getSequentialIndex());
-};
-```
+### Refactor (High Priority)
+- [ ] `src-tauri/src/main.rs` → Split into command modules
+- [ ] `src/store/useStore.js` → Extract COLOR_SCHEMES, split slices
+- [ ] `src/hooks/useStoreHooks.js` → Remove duplicate COLOR_SCHEMES
 
-### 2. **useLibrary.js filteredTracks**
-The `useMemo` callback is 80+ lines with 12 filter conditions.
+### Refactor (Medium Priority)
+- [ ] `src/VPlayer.jsx` → Extract orchestration
+- [ ] `src/windows/PlaylistWindow.jsx` → Split components
+- [ ] `src/hooks/useLibrary.js` → Split by concern
 
-**Fix**: Extract filter functions:
-```javascript
-const filters = {
-  genre: (track, filter) => ...,
-  artist: (track, filter) => ...,
-  // etc
-};
-
-const filteredTracks = useMemo(() => {
-  return tracks.filter(track => 
-    Object.entries(activeFilters).every(([key, value]) => 
-      !value || filters[key](track, value)
-    )
-  );
-}, [tracks, activeFilters]);
-```
-
-### 3. **useWindowConfigs.jsx**
-This hook returns a massive config object. Consider splitting by window category.
+### Create (Missing Features)
+- [ ] `src/windows/TagEditorWindow.jsx`
+- [ ] `src/windows/LibraryStatsWindow.jsx`
+- [ ] `src/windows/OnboardingWindow.jsx`
+- [ ] Audio device selection in Options
 
 ---
 
-## 🚨 Code Quality Issues
-
-### 1. **Inconsistent Error Handling**
-Some places use `toast.showError()`, others use `console.error`, others throw.
-
-**Fix**: Standardize on `ErrorHandler.handle()` everywhere.
-
-### 2. **Magic Numbers**
-```javascript
-setTimeout(() => recalculateSize(), 200);  // Why 200?
-setTimeout(() => setPlaying(true), 500);   // Why 500?
-const delay = timeSinceLastSeek < 100 ? 100 - timeSinceLastSeek : 0;
-```
-
-**Fix**: Extract to constants with documentation.
-
-### 3. **Missing TypeScript** (High Impact)
-No type safety leads to runtime errors. At minimum, add JSDoc:
-```javascript
-/**
- * @typedef {Object} Track
- * @property {string} id
- * @property {string} path
- * @property {string} [title]
- * @property {string} [artist]
- * @property {number} [duration]
- */
-```
-
-### 4. **Console.log Pollution**
-Many `console.log` calls in production code:
-- usePlayer.js: `[getNextTrackIndex] shuffle:...`
-- VPlayer.jsx: `console.log('Manual resize triggered')`
-
-**Fix**: Use a logger utility that respects environment.
-
-### 5. **OptionsWindow vs OptionsWindowEnhanced**
-Two similar files exist. Pick one and delete the other.
-
----
-
-## 🎯 Feature Recommendations
-
-### High Priority (UX Impact)
-
-#### 1. **Search History & Suggestions**
-Show recent searches in a dropdown, auto-complete from artist/album names.
-
-#### 2. **Multi-Select in Track Lists**
-Allow Ctrl+Click and Shift+Click for bulk operations.
-
-#### 3. **Inline Rating**
-Click to rate directly in track list (you have StarRating component but it's not widely used).
-
-#### 4. **Playlist Folders/Categories**
-Group playlists into folders for better organization.
-
-#### 5. **"Now Playing" Queue Indicator**
-Show which tracks are in queue with a visual indicator in track lists.
-
-### Medium Priority (Polish)
-
-#### 6. **Undo/Redo for Destructive Actions**
-"Undo" toast when removing tracks/playlists.
-
-#### 7. **Drag & Drop for Playlist Tabs**
-Reorder playlists by dragging tabs.
-
-#### 8. **Album Grid View**
-Grid layout option for albums with cover art thumbnails.
-
-#### 9. **Waveform Seek Bar**
-Show audio waveform in progress bar (you have visualizer data available).
-
-#### 10. **Sleep Timer**
-Auto-stop after X minutes/tracks.
-
-### Low Priority (Nice to Have)
-
-#### 11. **Spotify/Last.fm Integration**
-Scrobbling, artist info, similar tracks.
-
-#### 12. **Discord Rich Presence**
-Show "Now Playing" in Discord status.
-
-#### 13. **Audio Normalization Preview**
-Show before/after normalization effect.
-
----
-
-## 🔧 Backend Improvements (Rust)
-
-### 1. **main.rs is 600+ lines**
-Split into modules:
-```
-src/
-  commands/
-    audio_commands.rs
-    library_commands.rs
-    playlist_commands.rs
-  main.rs  // Just setup
-```
-
-### 2. **Database Pagination**
-`get_all_tracks()` loads everything. For large libraries (10k+ tracks):
-```rust
-#[tauri::command]
-fn get_tracks_paginated(offset: usize, limit: usize, state: State<AppState>) -> Result<Vec<Track>, String>
-```
-
-### 3. **Album Art Cache Management**
-Current cache grows forever. Add LRU eviction:
-```rust
-fn cleanup_old_cache(max_size_mb: u64)
-```
-
-### 4. **Parallel Scanning with Rayon**
-Scanner could use parallel iteration for faster scans.
-
----
-
-## 📊 Test Coverage Gaps
-
-Current tests cover:
-- VPlayer basic render
-- LibraryContent
-- PlaylistContent  
-- ErrorHandler
-- usePlayer
-
-**Missing tests for**:
-- useAudio (critical path)
-- TrackList keyboard navigation (just added)
-- Context menu actions
-- Queue operations
-- Crossfade logic
-- Window management
-
----
-
-## 🎨 Quick Wins (Low Effort, High Value)
-
-1. **Extract timing constants** - 30 min
-2. **Create `useContextMenu` hook** - 1 hour
-3. **Add JSDoc types to Track/Playlist** - 2 hours
-4. **Remove console.logs** - 30 min
-5. **Delete OptionsWindowEnhanced.jsx** (merge or remove) - 30 min
-6. **Add loading states to more buttons** - 1 hour
-
----
-
-## Recommended Priority Order
-
-1. **Architecture**: Split VPlayer.jsx into controllers
-2. **Code Quality**: Extract hooks for common patterns
-3. **Features**: Multi-select, search history
-4. **Testing**: Add tests for audio/queue logic
-5. **Backend**: Pagination, cache management
+*This analysis was generated by examining actual file contents, import patterns, and grep searches across the codebase.*

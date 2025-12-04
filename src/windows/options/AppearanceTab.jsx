@@ -3,28 +3,7 @@ import { Palette, Image, Eye, Type, Sparkles } from 'lucide-react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { SettingSlider, SettingSection, SettingCard, SettingDivider } from './SettingsComponents';
-
-// Color scheme definitions
-export const COLOR_SCHEMES = [
-  { name: 'default', label: 'Classic Cyan', background: '#0f172a', backgroundSecondary: '#1e293b', color: '#06b6d4' },
-  { name: 'blue', label: 'Ocean Blue', background: '#0c1929', backgroundSecondary: '#1e3a5f', color: '#3b82f6' },
-  { name: 'emerald', label: 'Forest Green', background: '#022c22', backgroundSecondary: '#064e3b', color: '#10b981' },
-  { name: 'rose', label: 'Sunset Rose', background: '#1c0a14', backgroundSecondary: '#4c0519', color: '#f43f5e' },
-  { name: 'amber', label: 'Golden Amber', background: '#1c1509', backgroundSecondary: '#451a03', color: '#f59e0b' },
-  { name: 'purple', label: 'Royal Purple', background: '#1a0a2e', backgroundSecondary: '#3b0764', color: '#a855f7' },
-  { name: 'pink', label: 'Bubblegum Pink', background: '#1f0818', backgroundSecondary: '#500724', color: '#ec4899' },
-  { name: 'indigo', label: 'Deep Indigo', background: '#0f0d1e', backgroundSecondary: '#1e1b4b', color: '#6366f1' },
-  { name: 'teal', label: 'Ocean Teal', background: '#042f2e', backgroundSecondary: '#134e4a', color: '#14b8a6' },
-  { name: 'orange', label: 'Tangerine', background: '#1c1008', backgroundSecondary: '#431407', color: '#f97316' },
-  { name: 'slate', label: 'Midnight Slate', background: '#020617', backgroundSecondary: '#0f172a', color: '#64748b' },
-  { name: 'red', label: 'Cherry Red', background: '#1c0808', backgroundSecondary: '#450a0a', color: '#ef4444' },
-  // Gradient themes
-  { name: 'sunset', label: 'Sunset Gradient', background: '#1a0a1e', backgroundSecondary: '#3d1a2e', color: '#f97316', isGradient: true, gradient: 'from-orange-500 to-pink-500' },
-  { name: 'ocean', label: 'Deep Ocean', background: '#0a1628', backgroundSecondary: '#0c2439', color: '#06b6d4', isGradient: true, gradient: 'from-cyan-500 to-blue-500' },
-  { name: 'forest', label: 'Enchanted Forest', background: '#0a1a0a', backgroundSecondary: '#14352a', color: '#22c55e', isGradient: true, gradient: 'from-emerald-500 to-lime-500' },
-  { name: 'synthwave', label: 'Synthwave', background: '#0d0221', backgroundSecondary: '#1a0536', color: '#d946ef', isGradient: true, gradient: 'from-fuchsia-500 to-cyan-400' },
-  { name: 'monochrome', label: 'Monochrome', background: '#0a0a0a', backgroundSecondary: '#171717', color: '#a3a3a3' },
-];
+import { COLOR_SCHEME_LIST } from '../../utils/colorSchemes';
 
 export function AppearanceTab({
   colorScheme,
@@ -76,7 +55,7 @@ export function AppearanceTab({
         </div>
         
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {COLOR_SCHEMES.map((scheme) => (
+          {COLOR_SCHEME_LIST.map((scheme) => (
             <ThemeCard
               key={scheme.name}
               scheme={scheme}
