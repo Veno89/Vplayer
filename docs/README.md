@@ -88,7 +88,7 @@ src-tauri/src/
 
 ### Advanced Features
 - **Theme Editor**: Customize colors and appearance
-- **Visualizer**: Real-time audio visualization (bars, wave, circular)
+- **Visualizer**: Animated audio visualization (bars, wave, circular modes)
 - **History**: Track listening history
 - **Duplicate Detection**: Find duplicate tracks in library
 - **Mini Player**: Compact always-on-top mode
@@ -400,4 +400,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.1.0 | **Updated**: December 2025
+**Version**: 0.5.0 | **Updated**: December 2025
