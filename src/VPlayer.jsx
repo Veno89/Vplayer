@@ -11,10 +11,9 @@ import { usePlayer as usePlayerHook } from './hooks/usePlayer';
 import { useTrackLoading } from './hooks/useTrackLoading';
 import { useEqualizer } from './hooks/useEqualizer';
 import { useAutoResize } from './hooks/useAutoResize';
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useShortcuts } from './hooks/useShortcuts';
 import { useCrossfade } from './hooks/useCrossfade';
 import { useDragDrop } from './hooks/useDragDrop';
-import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useWindowConfigs } from './hooks/useWindowConfigs';
 import { AppContainer } from './components/AppContainer';
 import { WindowManager } from './components/WindowManager';
@@ -118,25 +117,26 @@ const VPlayerInner = () => {
     }
   }, [autoResizeWindow, windows, isReady, recalculateSize]);
 
-  useGlobalShortcuts({ setPlaying, playerHook, audio, volume });
-
-  useKeyboardShortcuts({
-    playback: {
-      togglePlay: () => setPlaying(p => !p),
-      nextTrack: playerHook.handleNextTrack,
-      prevTrack: playerHook.handlePrevTrack,
-      volumeUp: () => playerHook.handleVolumeChange(Math.min(1, volume + VOLUME_STEP)),
-      volumeDown: () => playerHook.handleVolumeChange(Math.max(0, volume - VOLUME_STEP)),
+  useShortcuts({
+    togglePlay: () => setPlaying(p => !p),
+    nextTrack: playerHook.handleNextTrack,
+    prevTrack: playerHook.handlePrevTrack,
+    volumeUp: () => playerHook.handleVolumeChange(Math.min(1, volume + VOLUME_STEP)),
+    volumeDown: () => playerHook.handleVolumeChange(Math.max(0, volume - VOLUME_STEP)),
+    mute: playerHook.handleToggleMute,
+    stop: () => {
+      audio.pause();
+      audio.seek(0);
+      setPlaying(false);
     },
-    ui: {
-      toggleWindow: (id) => {
-        toggleWindow(id);
-        if (autoResizeWindow) {
-          setTimeout(() => recalculateSize(), 200);
-        }
-      },
-      focusSearch: () => document.querySelector('input[type="text"][placeholder*="Search"]')?.focus(),
+    toggleWindow: (id) => {
+      toggleWindow(id);
+      if (autoResizeWindow) {
+        setTimeout(() => recalculateSize(), 200);
+      }
     },
+    focusSearch: () => document.querySelector('input[type="text"][placeholder*="Search"]')?.focus(),
+    audio,
   });
 
   const dragDrop = useDragDrop({ addFolder, toast });
