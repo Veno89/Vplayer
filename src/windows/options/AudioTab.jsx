@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, Speaker, RefreshCw, Loader, Check, Radio } from 'lucide-react';
+import { Volume2, Speaker, RefreshCw, Loader, Check, Radio, Gauge } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { SettingCard, SettingSlider, SettingToggle, SettingBadge, SettingDivider } from './SettingsComponents';
+import { TauriAPI } from '../../services/TauriAPI';
 
 export function AudioTab({ crossfade }) {
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState('');
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [switchingDevice, setSwitchingDevice] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
   useEffect(() => {
     loadAudioDevices();
+    loadPlaybackSpeed();
   }, []);
 
   const loadAudioDevices = async () => {
@@ -27,6 +30,30 @@ export function AudioTab({ crossfade }) {
       setAudioDevices([]);
     } finally {
       setLoadingDevices(false);
+    }
+  };
+
+  const loadPlaybackSpeed = async () => {
+    try {
+      const effects = await TauriAPI.getAudioEffects();
+      if (effects && effects.tempo) {
+        setPlaybackSpeed(effects.tempo);
+      }
+    } catch (err) {
+      console.error('Failed to load playback speed:', err);
+    }
+  };
+
+  const handleSpeedChange = async (speed) => {
+    setPlaybackSpeed(speed);
+    try {
+      const effects = await TauriAPI.getAudioEffects();
+      await TauriAPI.setAudioEffects({
+        ...effects,
+        tempo: speed,
+      });
+    } catch (err) {
+      console.error('Failed to set playback speed:', err);
     }
   };
 
@@ -149,6 +176,51 @@ export function AudioTab({ crossfade }) {
           )}
         </SettingCard>
       )}
+
+      {/* Playback Speed */}
+      <SettingCard title="Playback Speed" icon={Gauge} accent="orange">
+        <p className="text-xs text-slate-500 mb-4">
+          Adjust the speed of audio playback (affects tempo, not pitch)
+        </p>
+        
+        <SettingSlider
+          label="Speed"
+          description="Change how fast tracks play"
+          value={playbackSpeed}
+          onChange={handleSpeedChange}
+          min={0.5}
+          max={2.0}
+          step={0.05}
+          formatValue={v => `${v.toFixed(2)}x`}
+          minLabel="0.5x"
+          maxLabel="2.0x"
+          accentColor="orange"
+        />
+        
+        {/* Speed presets */}
+        <div className="flex gap-2 mt-3">
+          {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map(speed => (
+            <button
+              key={speed}
+              onClick={() => handleSpeedChange(speed)}
+              onMouseDown={e => e.stopPropagation()}
+              className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition-all ${
+                Math.abs(playbackSpeed - speed) < 0.01
+                  ? 'bg-orange-500 text-white font-medium'
+                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              {speed}x
+            </button>
+          ))}
+        </div>
+        
+        {playbackSpeed !== 1.0 && (
+          <p className="text-xs text-orange-400 mt-3 text-center">
+            Playing at {playbackSpeed}x speed
+          </p>
+        )}
+      </SettingCard>
 
       {/* Audio Quality Info */}
       <SettingCard title="Audio Quality" icon={Volume2} accent="emerald">

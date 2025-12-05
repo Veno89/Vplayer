@@ -137,6 +137,7 @@ export function useWindowConfigs({
           loadingTrackIndex={loadingTrackIndex}
           removeTrack={removeTrack}
           onRatingChange={handleRatingChange}
+          onEditTags={(track) => setTagEditorTrack?.(track)}
         />
       ),
     },

@@ -1,11 +1,13 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowDownToLine } from 'lucide-react';
+import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowDownToLine, Star } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
 import { useStore } from '../store/useStore';
+import { StarRating } from '../components/StarRating';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function PlaylistWindow({ 
   tracks, 
@@ -15,7 +17,8 @@ export function PlaylistWindow({
   loadingTrackIndex,
   removeTrack,
   onRatingChange,
-  onActiveTracksChange
+  onActiveTracksChange,
+  onEditTags, // New prop for tag editor
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
@@ -24,6 +27,9 @@ export function PlaylistWindow({
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // New dialogs for context menu
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(null); // track to add
+  const [showRatingDialog, setShowRatingDialog] = useState(null); // track for rating
   const containerRef = useRef(null);
   const trackListRef = useRef(null);
   
@@ -620,27 +626,108 @@ export function PlaylistWindow({
                   addToQueue(contextMenu.track, 'end');
                 },
                 onAddToPlaylist: () => {
-                  // TODO: Show playlist selection dialog
-                  console.log('Add to playlist:', contextMenu.track);
+                  setShowPlaylistPicker(contextMenu.track);
+                  closeContextMenu();
                 },
                 onRemove: () => {
                   handleRemoveTrack(contextMenu.index);
                 },
                 onEditTags: () => {
-                  // TODO: Open tag editor
-                  console.log('Edit tags:', contextMenu.track);
+                  if (onEditTags) {
+                    onEditTags(contextMenu.track);
+                  }
+                  closeContextMenu();
                 },
                 onShowInfo: () => {
                   alert(`Track: ${contextMenu.track.title}\nArtist: ${contextMenu.track.artist}\nAlbum: ${contextMenu.track.album}\nPath: ${contextMenu.track.path}`);
                 },
                 onSetRating: () => {
-                  // TODO: Show rating dialog
-                  console.log('Set rating:', contextMenu.track);
+                  setShowRatingDialog(contextMenu.track);
+                  closeContextMenu();
                 },
                 currentTrack: currentTrack
               })}
               onClose={closeContextMenu}
             />,
+        document.body
+      )}
+
+      {/* Playlist Picker Dialog */}
+      {showPlaylistPicker && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]" onClick={() => setShowPlaylistPicker(null)}>
+          <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl max-h-96 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-semibold mb-3">Add to Playlist</h3>
+            <p className="text-slate-400 text-sm mb-3 truncate">
+              "{showPlaylistPicker.title || showPlaylistPicker.name}"
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-1">
+              {playlists.playlists.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-4">No playlists yet</p>
+              ) : (
+                playlists.playlists.map(pl => (
+                  <button
+                    key={pl.id}
+                    onClick={async () => {
+                      try {
+                        await playlists.addTrackToPlaylist(pl.id, showPlaylistPicker.id);
+                        setShowPlaylistPicker(null);
+                      } catch (err) {
+                        console.error('Failed to add to playlist:', err);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded transition-colors"
+                  >
+                    {pl.name}
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
+              <button
+                onClick={() => setShowPlaylistPicker(null)}
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Rating Dialog */}
+      {showRatingDialog && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]" onClick={() => setShowRatingDialog(null)}>
+          <div className="bg-slate-800 rounded-lg p-4 w-72 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-semibold mb-3">Set Rating</h3>
+            <p className="text-slate-400 text-sm mb-4 truncate">
+              "{showRatingDialog.title || showRatingDialog.name}"
+            </p>
+            <div className="flex justify-center mb-4">
+              <StarRating
+                rating={showRatingDialog.rating || 0}
+                onRate={async (newRating) => {
+                  try {
+                    await TauriAPI.updateTrackRating(showRatingDialog.id, newRating);
+                    if (onRatingChange) onRatingChange();
+                    setShowRatingDialog(null);
+                  } catch (err) {
+                    console.error('Failed to set rating:', err);
+                  }
+                }}
+                size="lg"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowRatingDialog(null)}
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body
       )}
 

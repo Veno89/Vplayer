@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { List, X, Trash2, Shuffle, PlayCircle, MoveUp, MoveDown } from 'lucide-react';
+import { List, X, Trash2, Shuffle, PlayCircle, MoveUp, MoveDown, ListX } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
@@ -12,6 +12,9 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
   const moveInQueue = useStore((state) => state.moveInQueue);
 
   const [selectedIndex, setSelectedIndex] = useState(null);
+
+  // Calculate upcoming tracks (after current)
+  const upcomingCount = Math.max(0, queue.length - queueIndex - 1);
 
   const handleTrackClick = (index) => {
     const track = queue[index];
@@ -36,6 +39,10 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
     }
   };
 
+  const handleClearQueue = () => {
+    clearQueue();
+  };
+
   return (
     <div className="flex flex-col gap-4 h-full">
       {/* Header */}
@@ -43,9 +50,11 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
         <h3 className="text-white font-semibold flex items-center gap-2">
           <List className={`w-5 h-5 ${currentColors.accent}`} />
           Queue
-          <span className="text-slate-400 text-sm">
-            ({queue.length} track{queue.length !== 1 ? 's' : ''})
-          </span>
+          {queue.length > 0 && (
+            <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${currentColors.primary} text-white`}>
+              {upcomingCount > 0 ? upcomingCount : queue.length}
+            </span>
+          )}
         </h3>
         <div className="flex gap-2">
           <button
@@ -64,18 +73,32 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
             onMouseDown={e => e.stopPropagation()}
             onClick={e => {
               e.stopPropagation();
-              if (confirm('Clear entire queue?')) {
-                clearQueue();
-              }
+              handleClearQueue();
             }}
             disabled={queue.length === 0}
-            className="p-2 bg-red-700/20 hover:bg-red-700/40 text-red-400 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-2 bg-red-700/20 hover:bg-red-700/40 text-red-400 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
             title="Clear Queue"
           >
-            <Trash2 className="w-4 h-4" />
+            <ListX className="w-4 h-4" />
           </button>
         </div>
       </div>
+
+      {/* Queue Stats */}
+      {queue.length > 0 && (
+        <div className="flex gap-3 text-xs">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded">
+            <span className="text-slate-500">Total:</span>
+            <span className="text-white font-medium">{queue.length}</span>
+          </div>
+          {upcomingCount > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded">
+              <span className="text-slate-500">Up next:</span>
+              <span className={`font-medium ${currentColors.accent}`}>{upcomingCount}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Queue List */}
       <div className="flex-1 overflow-y-auto space-y-1">

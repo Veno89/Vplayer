@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { SEEK_THRESHOLD_SECONDS } from '../utils/constants';
 
 /**
@@ -48,6 +48,7 @@ export function usePlayer({
   const nextTrackPreloadedRef = useRef(false);
   const preloadAudioRef = useRef(null);
   const crossfadeStartedRef = useRef(false);
+  const previousVolumeRef = useRef(0.7); // Store volume before muting
 
   // Pre-load next track and handle crossfade
   useEffect(() => {
@@ -256,11 +257,17 @@ export function usePlayer({
 
   /**
    * Toggle mute state
-   * Mutes to 0, unmutes to 0.7
+   * Mutes to 0, unmutes to previous volume
    */
   const handleToggleMute = useCallback(() => {
-    const newVolume = volume > 0 ? 0 : 0.7;
-    handleVolumeChange(newVolume);
+    if (volume > 0) {
+      // Store current volume before muting
+      previousVolumeRef.current = volume;
+      handleVolumeChange(0);
+    } else {
+      // Restore previous volume (default to 0.7 if not set)
+      handleVolumeChange(previousVolumeRef.current || 0.7);
+    }
   }, [volume, handleVolumeChange]);
 
   return {

@@ -2,6 +2,43 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.5.1] - 2025-12-05
+
+### Added
+- **Real-time FFT Visualizer**: Visualizer now displays actual audio spectrum data from the playing track instead of simulated patterns
+  - Taps audio samples directly from the Rust audio engine via ring buffer
+  - Uses rustfft for real FFT analysis
+  - Supports bars, wave, and circular visualization modes
+  - ~30fps refresh rate with smoothing
+
+- **Playback Speed Control**: Adjust playback tempo from 0.5x to 2.0x in Options → Audio
+  - Quick preset buttons (0.5x, 0.75x, 1.0x, 1.25x, 1.5x, 2.0x)
+  - Affects tempo without changing pitch
+
+- **Enhanced Album Grid View**: Improved album browsing experience
+  - Real album artwork display instead of placeholder icons
+  - Search/filter albums by name or artist
+  - Adjustable grid size (Small/Medium/Large)
+  - Toggle between grid and list views
+  - Play album button on hover
+
+- **Queue Improvements**: Better queue management
+  - Visual badge showing upcoming track count
+  - Quick stats (total tracks, up next count)
+  - One-click clear queue button (no confirmation needed)
+  - Improved header layout
+
+- **Context Menu Actions**: Playlist window context menu now fully functional
+  - "Add to Playlist" opens playlist picker dialog
+  - "Set Rating" opens inline star rating dialog
+  - "Edit Tags" opens tag editor window
+
+### Fixed
+- Onboarding window now properly appears on top of all other windows on first launch
+- Mute toggle now remembers previous volume level instead of resetting to 0.7
+
+---
+
 ## [0.5.0] - 2025-12-04
 
 ### 🎉 Initial Public Beta Release

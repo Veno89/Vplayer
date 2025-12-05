@@ -400,4 +400,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.5.0 | **Updated**: December 2025
+**Version**: 0.5.1 | **Updated**: December 2025
