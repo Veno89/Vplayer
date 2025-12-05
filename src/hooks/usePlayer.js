@@ -49,6 +49,17 @@ export function usePlayer({
   const preloadAudioRef = useRef(null);
   const crossfadeStartedRef = useRef(false);
   const previousVolumeRef = useRef(0.7); // Store volume before muting
+  const seekTimeoutRef = useRef(null);
+  const lastSeekTimeRef = useRef(0);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (seekTimeoutRef.current) {
+        clearTimeout(seekTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Pre-load next track and handle crossfade
   useEffect(() => {
@@ -110,9 +121,15 @@ export function usePlayer({
         // Find the track in the tracks array
         const queueTrackIndex = tracks.findIndex(t => t.id === nextQueueTrack.id);
         if (queueTrackIndex !== -1) {
-          store.nextInQueue(); // Advance queue
+          store.nextInQueue(); // Only advance queue if track was found
           console.log('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
           return queueTrackIndex;
+        } else {
+          // Track not found in library, skip it and try next in queue
+          console.warn('[getNextTrackIndex] Queue track not found in library, skipping:', nextQueueTrack.id);
+          store.nextInQueue(); // Remove invalid track from queue
+          // Recursively try next queue item
+          return getNextTrackIndex(current, totalTracks, isShuffled, repeat);
         }
       }
     }
@@ -199,8 +216,6 @@ export function usePlayer({
    * Seek to a position in the current track
    * @param {number} percent - Position as percentage (0-100)
    */
-  const seekTimeoutRef = useRef(null);
-  const lastSeekTimeRef = useRef(0);
   const handleSeek = useCallback((percent) => {
     if (duration > 0) {
       const time = (percent / 100) * duration;

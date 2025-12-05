@@ -2,6 +2,31 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.5.2] - 2025-12-05
+
+### Added
+- **Drag & Drop Support**: Drop audio folders directly onto the window to add them to your library
+  - Visual drop zone indicator when files are dragged over
+  - Supports common audio formats (MP3, FLAC, WAV, OGG, M4A, AAC, WMA)
+
+- **Keyboard Shortcut Help**: Press `?` to quickly open the keyboard shortcuts window
+
+- **Batch Playlist Operations**: Adding multiple tracks to a playlist is now significantly faster
+  - Uses single database transaction instead of N separate calls
+
+### Fixed
+- **Memory Leak in Visualizer**: Fixed async data fetching inside animation frame that could cause race conditions and stacking calls
+- **Seek Timeout Cleanup**: Fixed potential state update on unmounted component in usePlayer
+- **Library Auto-scan**: Fixed dependency array in useLibrary that could cause auto-scan to use stale folder data
+- **Queue Track Not Found**: Fixed race condition where queue would advance even if track wasn't found in library
+- **Dynamic Sample Rate**: Effects processor (EQ, reverb, etc.) now adapts to source file sample rate instead of assuming 44.1kHz
+
+### Improved
+- Visualizer now uses separate interval for data fetching (30fps) independent of render loop (60fps) for smoother performance
+- Better error handling for queue tracks that are missing from library
+
+---
+
 ## [0.5.1] - 2025-12-05
 
 ### Added

@@ -454,6 +454,25 @@ impl Database {
         Ok(())
     }
     
+    /// Batch add multiple tracks to a playlist in a single transaction
+    pub fn add_tracks_to_playlist_batch(&self, playlist_id: &str, track_ids: &[String], starting_position: i32) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        
+        let mut count = 0;
+        for (i, track_id) in track_ids.iter().enumerate() {
+            let position = starting_position + i as i32;
+            tx.execute(
+                "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                params![playlist_id, track_id, position],
+            )?;
+            count += 1;
+        }
+        
+        tx.commit()?;
+        Ok(count)
+    }
+    
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

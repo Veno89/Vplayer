@@ -55,6 +55,7 @@ where
     input: I,
     processor: Arc<Mutex<EffectsProcessor>>,
     visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
+    sample_rate_initialized: bool,
 }
 
 impl<I> Iterator for EffectsSource<I>
@@ -65,6 +66,15 @@ where
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
+        // Initialize effects processor with actual source sample rate on first sample
+        if !self.sample_rate_initialized {
+            let source_sample_rate = self.input.sample_rate();
+            if let Ok(mut processor) = self.processor.lock() {
+                processor.set_sample_rate(source_sample_rate);
+            }
+            self.sample_rate_initialized = true;
+        }
+        
         self.input.next().map(|sample| {
             let mut processor = self.processor.lock().unwrap();
             // Convert sample to f32, process, then return
@@ -275,6 +285,7 @@ impl AudioPlayer {
             input: source,
             processor: self.effects_processor.clone(),
             visualizer_buffer: self.visualizer_buffer.clone(),
+            sample_rate_initialized: false,
         };
         
         let sink = self.sink.lock().unwrap();
@@ -397,6 +408,7 @@ impl AudioPlayer {
                         input: source,
                         processor: self.effects_processor.clone(),
                         visualizer_buffer: self.visualizer_buffer.clone(),
+                        sample_rate_initialized: false,
                     };
                     
                     // Get a new lock on sink

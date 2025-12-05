@@ -239,6 +239,14 @@ class TauriAPIService {
     return this._invoke('add_track_to_playlist', { playlistId, trackId });
   }
 
+  /**
+   * Batch add multiple tracks to a playlist (single transaction)
+   * Much more efficient than calling addTrackToPlaylist multiple times
+   */
+  async addTracksToPlaylist(playlistId, trackIds) {
+    return this._invoke('add_tracks_to_playlist', { playlistId, trackIds });
+  }
+
   async removeTrackFromPlaylist(playlistId, trackId) {
     return this._invoke('remove_track_from_playlist', { playlistId, trackId });
   }

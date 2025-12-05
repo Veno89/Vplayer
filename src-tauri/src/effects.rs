@@ -397,6 +397,21 @@ impl EffectsProcessor {
         }
     }
     
+    /// Update sample rate and reinitialize all effects
+    /// Called when audio source sample rate differs from default
+    pub fn set_sample_rate(&mut self, new_sample_rate: u32) {
+        if new_sample_rate != self.sample_rate {
+            log::info!("Updating effects processor sample rate: {} -> {}", self.sample_rate, new_sample_rate);
+            self.sample_rate = new_sample_rate;
+            // Reinitialize effects with new sample rate
+            self.reverb = Reverb::new(new_sample_rate, self.config.reverb_room_size);
+            self.echo = Echo::new(new_sample_rate, self.config.echo_delay, self.config.echo_feedback);
+            self.bass_boost = BassBoost::new(new_sample_rate, self.config.bass_boost);
+            self.equalizer = Equalizer::new(new_sample_rate);
+            self.equalizer.update_gains(&self.config.eq_bands);
+        }
+    }
+    
     pub fn update_config(&mut self, config: EffectsConfig) {
         self.reverb.set_room_size(config.reverb_room_size);
         self.echo.set_delay(self.sample_rate, config.echo_delay);

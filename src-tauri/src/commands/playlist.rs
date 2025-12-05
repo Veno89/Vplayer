@@ -30,6 +30,19 @@ pub fn add_track_to_playlist(playlist_id: String, track_id: String, state: tauri
     state.db.add_track_to_playlist(&playlist_id, &track_id, position).map_err(|e| e.to_string())
 }
 
+/// Batch add multiple tracks to a playlist in a single transaction
+#[tauri::command]
+pub fn add_tracks_to_playlist(playlist_id: String, track_ids: Vec<String>, state: tauri::State<AppState>) -> Result<usize, String> {
+    info!("Adding {} tracks to playlist {}", track_ids.len(), playlist_id);
+    let starting_position = state.db.get_playlist_track_count(&playlist_id).map_err(|e| e.to_string())?;
+    
+    let count = state.db.add_tracks_to_playlist_batch(&playlist_id, &track_ids, starting_position)
+        .map_err(|e| e.to_string())?;
+    
+    info!("Successfully added {} tracks to playlist", count);
+    Ok(count)
+}
+
 #[tauri::command]
 pub fn remove_track_from_playlist(playlist_id: String, track_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     state.db.remove_track_from_playlist(&playlist_id, &track_id).map_err(|e| e.to_string())

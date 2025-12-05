@@ -141,7 +141,7 @@ const VPlayerInner = () => {
     audio,
   });
 
-  const dragDrop = useDragDrop({ addFolder, toast });
+  const dragDrop = useDragDrop({ addFolder, refreshTracks, toast });
 
   // Enhanced window manipulation functions that trigger resize
   const setWindowsWithResize = useCallback((windowsOrUpdater) => {
@@ -319,6 +319,8 @@ const VPlayerInner = () => {
       audioBackendError={audio.audioBackendError}
       onDrop={dragDrop.handleDrop}
       onDragOver={dragDrop.handleDragOver}
+      onDragLeave={dragDrop.handleDragLeave}
+      isDraggingExternal={dragDrop.isDraggingExternal}
       fontSize={fontSize}
       backgroundImage={backgroundImage}
       backgroundBlur={backgroundBlur}

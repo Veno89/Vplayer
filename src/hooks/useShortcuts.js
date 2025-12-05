@@ -89,6 +89,11 @@ export function useShortcuts({
           e.preventDefault();
           mute?.();
           break;
+        case '?':
+          // Show keyboard shortcuts window
+          e.preventDefault();
+          toggleWindow?.('shortcuts');
+          break;
       }
     };
 

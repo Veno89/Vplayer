@@ -1,5 +1,6 @@
 import React from 'react';
 import { ToastContainer } from './Toast';
+import { FolderPlus } from 'lucide-react';
 
 /**
  * Main application container
@@ -12,6 +13,8 @@ import { ToastContainer } from './Toast';
  * @param {string|null} props.audioBackendError - Audio backend error message
  * @param {Function} props.onDrop - Drop event handler
  * @param {Function} props.onDragOver - Drag over event handler
+ * @param {Function} props.onDragLeave - Drag leave event handler
+ * @param {boolean} props.isDraggingExternal - Whether files are being dragged over
  * @param {number} props.fontSize - Base font size
  * @param {string} props.backgroundImage - Background image URL
  * @param {number} props.backgroundBlur - Background blur amount
@@ -25,6 +28,8 @@ export const AppContainer = ({
   audioBackendError,
   onDrop,
   onDragOver,
+  onDragLeave,
+  isDraggingExternal,
   fontSize,
   backgroundImage,
   backgroundBlur,
@@ -46,6 +51,7 @@ export const AppContainer = ({
       className="w-full h-screen overflow-hidden relative"
       onDrop={onDrop}
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       style={{ 
         fontSize: `${fontSize}px`,
         background: `linear-gradient(to bottom right, ${colors.gradientFrom}, ${colors.gradientVia}, ${colors.gradientTo})`,
@@ -66,6 +72,32 @@ export const AppContainer = ({
             transform: 'scale(1.1)'
           }}
         />
+      )}
+      
+      {/* Drop zone overlay */}
+      {isDraggingExternal && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div 
+            className="flex flex-col items-center gap-4 p-12 rounded-2xl border-4 border-dashed"
+            style={{ 
+              borderColor: colors.color,
+              background: `${colors.color}10`
+            }}
+          >
+            <FolderPlus 
+              className="w-20 h-20 animate-pulse" 
+              style={{ color: colors.color }}
+            />
+            <div className="text-center">
+              <p className="text-xl font-semibold text-white">
+                Drop folders to add to library
+              </p>
+              <p className="text-sm text-slate-400 mt-2">
+                Supported: MP3, FLAC, WAV, OGG, M4A, AAC, WMA
+              </p>
+            </div>
+          </div>
+        </div>
       )}
       
       <ToastContainer toasts={toasts} removeToast={removeToast} />

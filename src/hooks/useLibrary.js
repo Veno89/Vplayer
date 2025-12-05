@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
@@ -77,33 +77,52 @@ export function useLibrary() {
     const initLibrary = async () => {
       await loadAllTracks();
       await loadAllFolders();
-      
-      // Start watching all existing folders if enabled
-      if (watchFolderChanges) {
-        try {
-          const dbFolders = await TauriAPI.getAllFolders();
-          for (const [id, path, name, dateAdded] of dbFolders) {
-            try {
-              await invoke('start_folder_watch', { folderPath: path });
-              console.log(`Started watching folder: ${path}`);
-            } catch (err) {
-              console.error(`Failed to start watching ${path}:`, err);
-            }
-          }
-        } catch (err) {
-          console.error('Failed to start folder watches:', err);
-        }
-      }
-
-      // Auto-scan on startup if enabled
-      if (autoScanOnStartup && libraryFolders.length > 0) {
-        console.log('Auto-scanning library on startup...');
-        await refreshFolders();
-      }
     };
     
     initLibrary();
-  }, [autoScanOnStartup, watchFolderChanges]);
+  }, []);
+
+  // Auto-scan state ref to avoid dependency issues
+  const autoScanDoneRef = useRef(false);
+
+  // Start folder watches and auto-scan when folders are loaded
+  useEffect(() => {
+    const setupWatchersAndScan = async () => {
+      if (libraryFolders.length === 0) return;
+      
+      // Start watching all existing folders if enabled
+      if (watchFolderChanges) {
+        for (const folder of libraryFolders) {
+          try {
+            await invoke('start_folder_watch', { folderPath: folder.path });
+            console.log(`Started watching folder: ${folder.path}`);
+          } catch (err) {
+            console.error(`Failed to start watching ${folder.path}:`, err);
+          }
+        }
+      }
+
+      // Auto-scan on startup if enabled (only once)
+      if (autoScanOnStartup && !autoScanDoneRef.current) {
+        autoScanDoneRef.current = true;
+        console.log('Auto-scanning library on startup...');
+        // Perform inline scan instead of calling refreshFolders
+        try {
+          setIsScanning(true);
+          for (const folder of libraryFolders) {
+            await TauriAPI.scanFolderIncremental(folder.path);
+          }
+          await loadAllTracks();
+        } catch (err) {
+          console.error('Auto-scan failed:', err);
+        } finally {
+          setIsScanning(false);
+        }
+      }
+    };
+    
+    setupWatchersAndScan();
+  }, [libraryFolders.length, autoScanOnStartup, watchFolderChanges]);
 
   // Listen for scan events
   useEffect(() => {

@@ -52,6 +52,15 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
     }
   }, [isPlaying]);
 
+  // Fetch visualization data from backend on interval (not in RAF)
+  useEffect(() => {
+    if (!isPlaying) return;
+    
+    // Fetch data at ~30fps independent of render loop
+    const interval = setInterval(fetchVisualizerData, 33);
+    return () => clearInterval(interval);
+  }, [isPlaying, fetchVisualizerData]);
+
   // Draw visualizer
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -75,19 +84,11 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
 
     const width = canvas.offsetWidth;
     const height = canvas.offsetHeight;
-    
-    let frameCount = 0;
 
-    const draw = async () => {
+    const draw = () => {
       animationRef.current = requestAnimationFrame(draw);
-      
-      // Fetch new data every 2 frames (~30fps data updates at 60fps render)
-      frameCount++;
-      if (frameCount % 2 === 0) {
-        await fetchVisualizerData();
-      }
 
-      // Apply smoothing to spectrum for fluid motion
+      // Apply smoothing to spectrum for fluid motion (using refs updated by interval)
       const smoothing = 0.7;
       for (let i = 0; i < spectrumRef.current.length; i++) {
         smoothedSpectrumRef.current[i] = 
@@ -116,7 +117,7 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
         animationRef.current = null;
       }
     };
-  }, [isPlaying, mode, fetchVisualizerData]);
+  }, [isPlaying, mode]); // Removed fetchVisualizerData from deps since it's now in separate effect
 
   // Draw bar visualizer
   const drawBars = (ctx, spectrum, width, height) => {

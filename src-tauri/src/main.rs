@@ -43,8 +43,8 @@ use commands::{
     update_track_tags,
     // Playlist commands
     create_playlist, get_all_playlists, delete_playlist, rename_playlist,
-    add_track_to_playlist, remove_track_from_playlist, reorder_playlist_tracks,
-    get_playlist_tracks, export_playlist, import_playlist,
+    add_track_to_playlist, add_tracks_to_playlist, remove_track_from_playlist,
+    reorder_playlist_tracks, get_playlist_tracks, export_playlist, import_playlist,
     // Smart playlist commands
     create_smart_playlist, get_all_smart_playlists, get_smart_playlist,
     update_smart_playlist, delete_smart_playlist, execute_smart_playlist,
@@ -241,6 +241,7 @@ fn main() {
             delete_playlist,
             rename_playlist,
             add_track_to_playlist,
+            add_tracks_to_playlist,
             remove_track_from_playlist,
             reorder_playlist_tracks,
             get_playlist_tracks,
