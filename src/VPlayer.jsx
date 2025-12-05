@@ -32,7 +32,8 @@ const VPlayerInner = () => {
 
   const { currentTrack, setCurrentTrack, playing, setPlaying, progress, setProgress,
     duration, setDuration, volume, setVolume, shuffle, setShuffle, repeatMode, 
-    setRepeatMode, loadingTrackIndex, setLoadingTrackIndex } = usePlayerState();
+    setRepeatMode, loadingTrackIndex, setLoadingTrackIndex, abRepeat, setPointA,
+    setPointB, clearABRepeat } = usePlayerState();
 
   const library = useLibrary();
   const { tracks, libraryFolders, isScanning, scanProgress, scanCurrent, scanTotal,
@@ -131,6 +132,8 @@ const VPlayerInner = () => {
       audio.seek(0);
       setPlaying(false);
     },
+    toggleShuffle: () => setShuffle(s => !s),
+    toggleRepeat: () => setRepeatMode(r => r === 'none' ? 'all' : r === 'all' ? 'one' : 'none'),
     toggleWindow: (id) => {
       toggleWindow(id);
       if (autoResizeWindow) {
@@ -197,7 +200,16 @@ const VPlayerInner = () => {
     if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
       localStorage.setItem('vplayer_last_position', audio.progress.toString());
     }
-  }, [audio.progress, setProgress]);
+    
+    // A-B Repeat: seek back to point A when reaching point B
+    if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
+      if (audio.progress >= abRepeat.pointB) {
+        audio.seek(abRepeat.pointA).catch(err => {
+          console.error('Failed to seek for A-B repeat:', err);
+        });
+      }
+    }
+  }, [audio.progress, setProgress, abRepeat]);
 
   useEffect(() => {
     if (trackLoading.hasRestoredTrack || tracks.length === 0) return;
@@ -310,6 +322,8 @@ const VPlayerInner = () => {
     fontSize, setFontSize, setMiniPlayerMode,
     // Tag Editor
     tagEditorTrack, setTagEditorTrack, onTagsSaved: handleTagsSaved,
+    // A-B Repeat
+    abRepeat, setPointA, setPointB, clearABRepeat,
   });
 
   return (

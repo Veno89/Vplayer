@@ -1,9 +1,85 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+
+// Default shortcuts - can be customized via ShortcutsWindow
+const DEFAULT_SHORTCUTS = [
+  { id: 'play-pause', name: 'Play/Pause', key: 'Space', category: 'Playback' },
+  { id: 'next-track', name: 'Next Track', key: 'ArrowRight', category: 'Playback' },
+  { id: 'prev-track', name: 'Previous Track', key: 'ArrowLeft', category: 'Playback' },
+  { id: 'volume-up', name: 'Volume Up', key: 'ArrowUp', category: 'Volume' },
+  { id: 'volume-down', name: 'Volume Down', key: 'ArrowDown', category: 'Volume' },
+  { id: 'mute', name: 'Mute', key: 'M', category: 'Volume' },
+  { id: 'shuffle', name: 'Toggle Shuffle', key: 'S', category: 'Playback' },
+  { id: 'repeat', name: 'Toggle Repeat', key: 'R', category: 'Playback' },
+  { id: 'seek-forward', name: 'Seek Forward 10s', key: 'Shift+ArrowRight', category: 'Playback' },
+  { id: 'seek-backward', name: 'Seek Backward 10s', key: 'Shift+ArrowLeft', category: 'Playback' },
+  { id: 'seek-forward-small', name: 'Seek Forward 5s', key: 'L', category: 'Playback' },
+  { id: 'seek-backward-small', name: 'Seek Backward 5s', key: 'J', category: 'Playback' },
+  { id: 'search', name: 'Focus Search', key: 'Ctrl+F', category: 'Navigation' },
+  { id: 'open-settings', name: 'Open Settings', key: 'Ctrl+O', category: 'Navigation' },
+  { id: 'open-queue', name: 'Open Queue', key: 'Ctrl+Q', category: 'Navigation' },
+  { id: 'open-library', name: 'Open Library', key: 'Ctrl+L', category: 'Navigation' },
+  { id: 'open-player', name: 'Open Player', key: 'Ctrl+P', category: 'Navigation' },
+  { id: 'open-equalizer', name: 'Open Equalizer', key: 'Ctrl+E', category: 'Navigation' },
+  { id: 'open-shortcuts', name: 'Show Shortcuts', key: '?', category: 'Navigation' },
+  { id: 'stop', name: 'Stop Playback', key: 'Escape', category: 'Playback' },
+];
+
+/**
+ * Parse a shortcut key string into components
+ * e.g., "Ctrl+Shift+F" => { ctrl: true, shift: true, alt: false, key: "f" }
+ */
+function parseShortcut(shortcutKey) {
+  const parts = shortcutKey.split('+');
+  const result = {
+    ctrl: false,
+    shift: false,
+    alt: false,
+    key: '',
+  };
+  
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (lower === 'ctrl' || lower === 'control') {
+      result.ctrl = true;
+    } else if (lower === 'shift') {
+      result.shift = true;
+    } else if (lower === 'alt') {
+      result.alt = true;
+    } else {
+      // The actual key (normalize Space to ' ')
+      result.key = part === 'Space' ? ' ' : part;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Check if keyboard event matches a shortcut
+ */
+function matchesShortcut(event, shortcut) {
+  const parsed = parseShortcut(shortcut.key);
+  
+  // Check modifiers
+  if (parsed.ctrl !== (event.ctrlKey || event.metaKey)) return false;
+  if (parsed.shift !== event.shiftKey) return false;
+  if (parsed.alt !== event.altKey) return false;
+  
+  // Check key (case-insensitive for letters)
+  const eventKey = event.key;
+  const shortcutKey = parsed.key;
+  
+  if (shortcutKey === ' ' && eventKey === ' ') return true;
+  if (eventKey.toLowerCase() === shortcutKey.toLowerCase()) return true;
+  
+  return false;
+}
 
 /**
  * Unified keyboard shortcuts hook
  * Handles both DOM keyboard events (in-app) and Tauri global events (OS media keys)
+ * Reads customizable shortcuts from localStorage
  */
 export function useShortcuts({
   // Playback callbacks
@@ -14,12 +90,41 @@ export function useShortcuts({
   volumeDown,
   mute,
   stop,
+  toggleShuffle,
+  toggleRepeat,
   // UI callbacks
   toggleWindow,
   focusSearch,
-  // Audio reference for global shortcuts
+  // Audio reference for seeking and global shortcuts
   audio,
 }) {
+  // Load shortcuts from localStorage (synced with ShortcutsWindow)
+  const [shortcuts, setShortcuts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('keyboard-shortcuts');
+      return saved ? JSON.parse(saved) : DEFAULT_SHORTCUTS;
+    } catch {
+      return DEFAULT_SHORTCUTS;
+    }
+  });
+
+  // Listen for storage changes (when ShortcutsWindow updates)
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'keyboard-shortcuts') {
+        try {
+          const newShortcuts = e.newValue ? JSON.parse(e.newValue) : DEFAULT_SHORTCUTS;
+          setShortcuts(newShortcuts);
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   // Check if an input element is focused
   const isInputFocused = useCallback(() => {
     const active = document.activeElement;
@@ -28,78 +133,54 @@ export function useShortcuts({
            active?.isContentEditable;
   }, []);
 
+  // Action handlers map
+  const actionHandlers = useCallback(() => ({
+    'play-pause': togglePlay,
+    'next-track': nextTrack,
+    'prev-track': prevTrack,
+    'volume-up': volumeUp,
+    'volume-down': volumeDown,
+    'mute': mute,
+    'stop': stop,
+    'shuffle': toggleShuffle,
+    'repeat': toggleRepeat,
+    'seek-forward': () => audio?.seek?.(Math.min((audio.currentTime || 0) + 10, audio.duration || 0)),
+    'seek-backward': () => audio?.seek?.(Math.max((audio.currentTime || 0) - 10, 0)),
+    'seek-forward-small': () => audio?.seek?.(Math.min((audio.currentTime || 0) + 5, audio.duration || 0)),
+    'seek-backward-small': () => audio?.seek?.(Math.max((audio.currentTime || 0) - 5, 0)),
+    'search': focusSearch,
+    'open-settings': () => toggleWindow?.('options'),
+    'open-queue': () => toggleWindow?.('queue'),
+    'open-library': () => toggleWindow?.('library'),
+    'open-player': () => toggleWindow?.('player'),
+    'open-equalizer': () => toggleWindow?.('equalizer'),
+    'open-shortcuts': () => toggleWindow?.('shortcuts'),
+  }), [togglePlay, nextTrack, prevTrack, volumeUp, volumeDown, mute, stop, toggleShuffle, toggleRepeat, audio, focusSearch, toggleWindow]);
+
   // DOM keyboard events (in-app shortcuts)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Skip when typing in inputs
-      if (isInputFocused()) return;
+      // Skip when typing in inputs (except for some shortcuts like Escape)
+      if (isInputFocused() && e.key !== 'Escape') return;
       
-      // Ctrl/Cmd key combinations
-      if (e.ctrlKey || e.metaKey) {
-        const windowShortcuts = {
-          'p': 'player',
-          'l': 'library', 
-          'q': 'queue',
-          'e': 'equalizer',
-          'o': 'options',
-          'h': 'history',
-          'y': 'lyrics',
-          'm': 'mini-player',
-        };
-        
-        const windowId = windowShortcuts[e.key.toLowerCase()];
-        if (windowId && toggleWindow) {
-          e.preventDefault();
-          toggleWindow(windowId);
-          return;
-        }
-        
-        // Ctrl+F for search
-        if (e.key.toLowerCase() === 'f' && focusSearch) {
-          e.preventDefault();
-          focusSearch();
-          return;
-        }
-      }
+      const handlers = actionHandlers();
       
-      // Non-modifier shortcuts
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          togglePlay?.();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          nextTrack?.();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          prevTrack?.();
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          volumeUp?.();
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          volumeDown?.();
-          break;
-        case 'm':
-        case 'M':
-          e.preventDefault();
-          mute?.();
-          break;
-        case '?':
-          // Show keyboard shortcuts window
-          e.preventDefault();
-          toggleWindow?.('shortcuts');
-          break;
+      // Find matching shortcut
+      for (const shortcut of shortcuts) {
+        if (matchesShortcut(e, shortcut)) {
+          const handler = handlers[shortcut.id];
+          if (handler) {
+            e.preventDefault();
+            handler();
+            return;
+          }
+        }
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isInputFocused, togglePlay, nextTrack, prevTrack, volumeUp, volumeDown, mute, toggleWindow, focusSearch]);
+  }, [isInputFocused, shortcuts, actionHandlers]);
 
   // Tauri global shortcuts (OS media keys)
   useEffect(() => {

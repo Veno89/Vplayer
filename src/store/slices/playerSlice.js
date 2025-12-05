@@ -12,6 +12,13 @@ export const createPlayerSlice = (set, get) => ({
   volume: 0.7,
   shuffle: false,
   repeatMode: 'off', // 'off', 'one', 'all'
+  
+  // === A-B Repeat State ===
+  abRepeat: {
+    enabled: false,
+    pointA: null,  // Start time in seconds
+    pointB: null,  // End time in seconds
+  },
 
   // === Queue State ===
   queue: [],
@@ -43,6 +50,28 @@ export const createPlayerSlice = (set, get) => ({
     })),
   
   setRepeatMode: (mode) => set({ repeatMode: mode }),
+
+  // === A-B Repeat Actions ===
+  setPointA: (time) => set((state) => ({
+    abRepeat: { ...state.abRepeat, pointA: time }
+  })),
+  
+  setPointB: (time) => set((state) => ({
+    abRepeat: { ...state.abRepeat, pointB: time, enabled: time !== null && state.abRepeat.pointA !== null }
+  })),
+  
+  toggleABRepeat: () => set((state) => ({
+    abRepeat: { 
+      ...state.abRepeat, 
+      enabled: state.abRepeat.pointA !== null && state.abRepeat.pointB !== null 
+        ? !state.abRepeat.enabled 
+        : false 
+    }
+  })),
+  
+  clearABRepeat: () => set({
+    abRepeat: { enabled: false, pointA: null, pointB: null }
+  }),
 
   // === Queue Actions ===
   addToQueue: (tracks, position = 'end') => {

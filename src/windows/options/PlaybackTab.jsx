@@ -1,9 +1,13 @@
-import React from 'react';
-import { Play, SkipForward, Volume2, Gauge, Clock, Mic2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, SkipForward, Volume2, Gauge, Clock, Mic2, Activity, Loader } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../../store/useStore';
-import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingSection, SettingDivider } from './SettingsComponents';
+import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingSection, SettingDivider, SettingButton, SettingInfo } from './SettingsComponents';
 
 export function PlaybackTab({ crossfade }) {
+  const [analyzingRG, setAnalyzingRG] = useState(false);
+  const [rgProgress, setRgProgress] = useState({ current: 0, total: 0 });
+  
   // Get all playback settings from store
   const gaplessPlayback = useStore(state => state.gaplessPlayback);
   const setGaplessPlayback = useStore(state => state.setGaplessPlayback);
@@ -171,24 +175,83 @@ export function PlaybackTab({ crossfade }) {
           options={[
             { value: 'off', label: 'Off - No normalization' },
             { value: 'track', label: 'Track Gain - Normalize each track individually' },
-            { value: 'album', label: 'Album Gain - Preserve album dynamics' },
+            { value: 'album', label: 'Album Gain - Preserve album dynamics (coming soon)' },
           ]}
         />
 
         {replayGainMode !== 'off' && (
-          <SettingSlider
-            label="Pre-amp Adjustment"
-            description="Additional gain applied after normalization"
-            value={replayGainPreamp}
-            onChange={setReplayGainPreamp}
-            min={-15}
-            max={15}
-            step={0.5}
-            formatValue={v => `${v > 0 ? '+' : ''}${v} dB`}
-            minLabel="-15 dB"
-            maxLabel="+15 dB"
-            accentColor="emerald"
-          />
+          <>
+            <SettingSlider
+              label="Pre-amp Adjustment"
+              description="Additional gain applied after normalization"
+              value={replayGainPreamp}
+              onChange={setReplayGainPreamp}
+              min={-15}
+              max={15}
+              step={0.5}
+              formatValue={v => `${v > 0 ? '+' : ''}${v} dB`}
+              minLabel="-15 dB"
+              maxLabel="+15 dB"
+              accentColor="emerald"
+            />
+            
+            <SettingDivider label="Analysis" />
+            
+            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 mb-3">
+              <p className="text-xs text-slate-400">
+                Tracks need to be analyzed before ReplayGain can be applied. Analysis measures the loudness of each track using the EBU R128 standard.
+              </p>
+            </div>
+            
+            <SettingButton
+              label={analyzingRG ? `Analyzing... (${rgProgress.current}/${rgProgress.total})` : "Analyze Library"}
+              description="Scan all tracks without ReplayGain data"
+              onClick={async () => {
+                if (analyzingRG) return;
+                
+                try {
+                  setAnalyzingRG(true);
+                  const tracks = await invoke('get_all_tracks');
+                  
+                  // Filter tracks that need analysis (no loudness data)
+                  const needsAnalysis = tracks.filter(t => t.loudness === null || t.loudness === undefined);
+                  
+                  if (needsAnalysis.length === 0) {
+                    alert('All tracks have already been analyzed!');
+                    setAnalyzingRG(false);
+                    return;
+                  }
+                  
+                  setRgProgress({ current: 0, total: needsAnalysis.length });
+                  
+                  let analyzed = 0;
+                  let failed = 0;
+                  
+                  for (const track of needsAnalysis) {
+                    try {
+                      await invoke('analyze_replaygain', { trackPath: track.path });
+                      analyzed++;
+                    } catch (err) {
+                      console.warn(`Failed to analyze ${track.path}:`, err);
+                      failed++;
+                    }
+                    setRgProgress({ current: analyzed + failed, total: needsAnalysis.length });
+                  }
+                  
+                  alert(`Analysis complete!\n\nAnalyzed: ${analyzed} tracks\nFailed: ${failed} tracks`);
+                } catch (err) {
+                  console.error('ReplayGain analysis failed:', err);
+                  alert(`Analysis failed: ${err}`);
+                } finally {
+                  setAnalyzingRG(false);
+                  setRgProgress({ current: 0, total: 0 });
+                }
+              }}
+              icon={analyzingRG ? Loader : Activity}
+              variant="primary"
+              loading={analyzingRG}
+            />
+          </>
         )}
       </SettingCard>
     </div>

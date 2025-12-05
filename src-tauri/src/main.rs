@@ -34,13 +34,13 @@ use commands::{
     load_track, play_audio, pause_audio, stop_audio, set_volume, seek_to,
     get_position, get_duration, is_playing, is_finished, recover_audio,
     get_audio_devices, set_audio_device, preload_track, swap_to_preloaded,
-    clear_preload, has_preloaded,
+    clear_preload, has_preloaded, set_balance, get_balance,
     // Library commands
     scan_folder, scan_folder_incremental, get_all_tracks, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, increment_play_count,
     get_recently_played, get_most_played, get_album_art, extract_and_cache_album_art,
-    update_track_tags,
+    update_track_tags, show_in_folder, reset_play_count,
     // Playlist commands
     create_playlist, get_all_playlists, delete_playlist, rename_playlist,
     add_track_to_playlist, add_tracks_to_playlist, remove_track_from_playlist,
@@ -57,7 +57,7 @@ use commands::{
     // Lyrics commands
     load_lyrics, get_lyric_at_time,
     // ReplayGain commands
-    analyze_replaygain, get_track_replaygain,
+    analyze_replaygain, get_track_replaygain, set_replaygain, clear_replaygain,
     // Cache commands
     clear_album_art_cache, get_cache_size, get_database_size, get_performance_stats,
     vacuum_database,
@@ -260,10 +260,14 @@ fn main() {
             get_album_art,
             extract_and_cache_album_art,
             update_track_tags,
+            show_in_folder,
+            reset_play_count,
             preload_track,
             swap_to_preloaded,
             clear_preload,
             has_preloaded,
+            set_balance,
+            get_balance,
             export_playlist,
             import_playlist,
             create_smart_playlist,
@@ -278,6 +282,8 @@ fn main() {
             get_lyric_at_time,
             analyze_replaygain,
             get_track_replaygain,
+            set_replaygain,
+            clear_replaygain,
             set_audio_effects,
             get_audio_effects,
             set_effects_enabled,

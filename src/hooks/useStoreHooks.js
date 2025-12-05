@@ -122,6 +122,13 @@ export function usePlayerState() {
   const setRepeatMode = useStore((state) => state.setRepeatMode);
   const loadingTrackIndex = useStore((state) => state.loadingTrackIndex);
   const setLoadingTrackIndex = useStore((state) => state.setLoadingTrackIndex);
+  
+  // A-B Repeat state
+  const abRepeat = useStore((state) => state.abRepeat);
+  const setPointA = useStore((state) => state.setPointA);
+  const setPointB = useStore((state) => state.setPointB);
+  const toggleABRepeat = useStore((state) => state.toggleABRepeat);
+  const clearABRepeat = useStore((state) => state.clearABRepeat);
 
   return {
     currentTrack,
@@ -139,6 +146,11 @@ export function usePlayerState() {
     repeatMode,
     setRepeatMode,
     loadingTrackIndex,
-    setLoadingTrackIndex
+    setLoadingTrackIndex,
+    abRepeat,
+    setPointA,
+    setPointB,
+    toggleABRepeat,
+    clearABRepeat
   };
 }

@@ -70,7 +70,9 @@ src-tauri/src/
 ### Audio Playback
 - **Formats**: MP3, FLAC, OGG, WAV, AAC
 - **Gapless Playback**: Seamless track transitions
-- **Crossfade**: Smooth fades between tracks
+- **Crossfade**: Smooth fades between tracks (1-10s configurable)
+- **ReplayGain**: Volume normalization using EBU R128 standard
+- **Playback Speed**: Adjust tempo from 0.5x to 2.0x
 - **10-band EQ**: 9 presets + custom settings
 - **Volume Control**: Per-app volume with system integration
 
@@ -106,14 +108,20 @@ src-tauri/src/
 - `→` / `←` - Next/Previous track
 - `↑` / `↓` - Volume up/down
 - `Shift + →` / `←` - Seek forward/backward 10s
+- `J` / `L` - Seek backward/forward 5s
+- `S` - Toggle shuffle
+- `R` - Cycle repeat mode (off → all → one)
+- `M` - Mute/unmute
+- `Escape` - Stop playback
 
 **Navigation**:
 - `Ctrl+L` - Library window
-- `Ctrl+P` - Playlist window
+- `Ctrl+P` - Player window
+- `Ctrl+Q` - Queue window
 - `Ctrl+E` - Equalizer window
-- `Ctrl+V` - Visualizer window
-- `Ctrl+F` - Add folder
-- `?` - Show keyboard shortcuts help
+- `Ctrl+O` - Options window
+- `Ctrl+F` - Focus search
+- `?` - Show keyboard shortcuts (customizable)
 
 **List Navigation**:
 - `Ctrl+↑` / `↓` or `Ctrl+J` / `K` - Move selection
@@ -402,4 +410,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.5.3 | **Updated**: December 2025
+**Version**: 0.5.4 | **Updated**: December 2025

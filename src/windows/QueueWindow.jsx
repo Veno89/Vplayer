@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { List, X, Trash2, Shuffle, PlayCircle, MoveUp, MoveDown, ListX } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { List, X, Trash2, Shuffle, PlayCircle, MoveUp, MoveDown, ListX, Search, Target } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
@@ -12,6 +12,26 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
   const moveInQueue = useStore((state) => state.moveInQueue);
 
   const [selectedIndex, setSelectedIndex] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter queue based on search query
+  const filteredQueue = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return queue.map((track, index) => ({ track, originalIndex: index }));
+    }
+    const query = searchQuery.toLowerCase();
+    return queue
+      .map((track, index) => ({ track, originalIndex: index }))
+      .filter(({ track }) => {
+        const searchableText = [
+          track.title,
+          track.name,
+          track.artist,
+          track.album
+        ].filter(Boolean).join(' ').toLowerCase();
+        return searchableText.includes(query);
+      });
+  }, [queue, searchQuery]);
 
   // Calculate upcoming tracks (after current)
   const upcomingCount = Math.max(0, queue.length - queueIndex - 1);
@@ -97,6 +117,34 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
               <span className={`font-medium ${currentColors.accent}`}>{upcomingCount}</span>
             </div>
           )}
+          {searchQuery && filteredQueue.length !== queue.length && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-900/30 rounded">
+              <span className="text-cyan-400">{filteredQueue.length} match{filteredQueue.length !== 1 ? 'es' : ''}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Search Bar */}
+      {queue.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search queue..."
+            className="w-full bg-slate-800/50 border border-slate-700 rounded pl-10 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
+              title="Clear search"
+            >
+              <X className="w-4 h-4 text-slate-400" />
+            </button>
+          )}
         </div>
       )}
 
@@ -110,14 +158,22 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
               Add tracks from your library or playlists
             </p>
           </div>
+        ) : filteredQueue.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center p-4">
+            <Search className="w-12 h-12 text-slate-600 mb-3" />
+            <p className="text-slate-400 text-sm mb-2">No matches found</p>
+            <p className="text-slate-500 text-xs">
+              Try a different search term
+            </p>
+          </div>
         ) : (
-          queue.map((track, index) => {
-            const isCurrent = index === queueIndex;
-            const isSelected = index === selectedIndex;
+          filteredQueue.map(({ track, originalIndex }) => {
+            const isCurrent = originalIndex === queueIndex;
+            const isSelected = originalIndex === selectedIndex;
 
             return (
               <div
-                key={`${track.id}-${index}`}
+                key={`${track.id}-${originalIndex}`}
                 className={`group flex items-center gap-3 p-2 rounded transition-all cursor-pointer ${
                   isCurrent
                     ? `bg-gradient-to-r ${currentColors.primary} text-white`
@@ -126,8 +182,8 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
                     : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300'
                 }`}
                 onClick={() => {
-                  setSelectedIndex(index);
-                  handleTrackClick(index);
+                  setSelectedIndex(originalIndex);
+                  handleTrackClick(originalIndex);
                 }}
                 onMouseDown={e => e.stopPropagation()}
               >
@@ -136,7 +192,7 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
                   {isCurrent ? (
                     <PlayCircle className="w-5 h-5 inline-block" />
                   ) : (
-                    <span className="text-slate-500 text-sm">{index + 1}</span>
+                    <span className="text-slate-500 text-sm">{originalIndex + 1}</span>
                   )}
                 </div>
 
@@ -155,9 +211,9 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
                   <button
                     onClick={e => {
                       e.stopPropagation();
-                      handleMoveUp(index);
+                      handleMoveUp(originalIndex);
                     }}
-                    disabled={index === 0}
+                    disabled={originalIndex === 0}
                     className="p-1 hover:bg-slate-700 rounded disabled:opacity-30"
                     title="Move Up"
                   >
@@ -166,9 +222,9 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
                   <button
                     onClick={e => {
                       e.stopPropagation();
-                      handleMoveDown(index);
+                      handleMoveDown(originalIndex);
                     }}
-                    disabled={index === queue.length - 1}
+                    disabled={originalIndex === queue.length - 1}
                     className="p-1 hover:bg-slate-700 rounded disabled:opacity-30"
                     title="Move Down"
                   >
@@ -177,7 +233,7 @@ export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
                   <button
                     onClick={e => {
                       e.stopPropagation();
-                      removeFromQueue(index);
+                      removeFromQueue(originalIndex);
                     }}
                     className="p-1 hover:bg-red-500/20 text-red-400 rounded"
                     title="Remove from Queue"

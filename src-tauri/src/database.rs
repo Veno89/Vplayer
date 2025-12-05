@@ -279,6 +279,16 @@ impl Database {
         Ok(count)
     }
     
+    pub fn reset_play_count(&self, track_id: &str) -> Result<()> {
+        self.invalidate_cache();
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tracks SET play_count = 0, last_played = 0 WHERE id = ?1",
+            params![track_id],
+        )?;
+        Ok(())
+    }
+
     pub fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(

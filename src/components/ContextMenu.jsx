@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Play, Pause, Plus, Trash2, Edit3, Copy, Info, Star, 
-  Music, FolderOpen, ListPlus, Eye, EyeOff, ListEnd 
+  Music, FolderOpen, ListPlus, Eye, EyeOff, ListEnd, RotateCcw
 } from 'lucide-react';
+import { TauriAPI } from '../services/TauriAPI';
 
 export function ContextMenu({ x, y, items, onClose }) {
   const menuRef = useRef(null);
@@ -88,6 +89,7 @@ export function getTrackContextMenuItems({
   onEditTags, 
   onShowInfo,
   onSetRating,
+  onResetPlayCount,
   currentTrack,
 }) {
   return [
@@ -142,9 +144,27 @@ export function getTrackContextMenuItems({
     {
       icon: FolderOpen,
       label: 'Show in Folder',
-      onClick: () => {
-        // Would need Tauri command to open file explorer
-        console.log('Show in folder:', track.path);
+      onClick: async () => {
+        try {
+          await TauriAPI.showInFolder(track.path);
+        } catch (err) {
+          console.error('Failed to show in folder:', err);
+        }
+      },
+    },
+    {
+      icon: RotateCcw,
+      label: 'Reset Play Count',
+      onClick: async () => {
+        if (onResetPlayCount) {
+          onResetPlayCount(track.id);
+        } else {
+          try {
+            await TauriAPI.resetPlayCount(track.id);
+          } catch (err) {
+            console.error('Failed to reset play count:', err);
+          }
+        }
       },
     },
     {

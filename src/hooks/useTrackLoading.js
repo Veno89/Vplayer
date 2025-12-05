@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES, STORAGE_KEYS } from '../utils/constants';
+import { useReplayGain } from './useReplayGain';
 
 export function useTrackLoading({ 
   audio, 
@@ -18,6 +19,9 @@ export function useTrackLoading({
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
   const lastToastTrackId = useRef(null);
   const shouldRestorePosition = useRef(true); // Track if we should restore position on next load
+  
+  // ReplayGain hook for volume normalization
+  const replayGain = useReplayGain();
 
   // Restore last played track on mount
   useEffect(() => {
@@ -65,6 +69,9 @@ export function useTrackLoading({
           setLoadedTrackId(track.id);
           setLoadingTrackIndex(null);
           setDuration(track.duration || 0);
+          
+          // Apply ReplayGain if enabled
+          await replayGain.applyReplayGain(track);
           
           // Restore last position if we should
           const savedTrackId = localStorage.getItem('vplayer_last_track');

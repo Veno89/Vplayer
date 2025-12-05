@@ -4,35 +4,42 @@ import { Window } from '../components/Window';
 import { useStore } from '../store/useStore';
 import { useToast } from '../hooks/useToast';
 
+// Default shortcuts - shared with useShortcuts.js
+const defaultShortcuts = [
+  { id: 'play-pause', name: 'Play/Pause', key: 'Space', category: 'Playback' },
+  { id: 'next-track', name: 'Next Track', key: 'ArrowRight', category: 'Playback' },
+  { id: 'prev-track', name: 'Previous Track', key: 'ArrowLeft', category: 'Playback' },
+  { id: 'volume-up', name: 'Volume Up', key: 'ArrowUp', category: 'Volume' },
+  { id: 'volume-down', name: 'Volume Down', key: 'ArrowDown', category: 'Volume' },
+  { id: 'mute', name: 'Mute', key: 'M', category: 'Volume' },
+  { id: 'shuffle', name: 'Toggle Shuffle', key: 'S', category: 'Playback' },
+  { id: 'repeat', name: 'Toggle Repeat', key: 'R', category: 'Playback' },
+  { id: 'seek-forward', name: 'Seek Forward 10s', key: 'Shift+ArrowRight', category: 'Playback' },
+  { id: 'seek-backward', name: 'Seek Backward 10s', key: 'Shift+ArrowLeft', category: 'Playback' },
+  { id: 'seek-forward-small', name: 'Seek Forward 5s', key: 'L', category: 'Playback' },
+  { id: 'seek-backward-small', name: 'Seek Backward 5s', key: 'J', category: 'Playback' },
+  { id: 'search', name: 'Focus Search', key: 'Ctrl+F', category: 'Navigation' },
+  { id: 'open-settings', name: 'Open Settings', key: 'Ctrl+O', category: 'Navigation' },
+  { id: 'open-queue', name: 'Open Queue', key: 'Ctrl+Q', category: 'Navigation' },
+  { id: 'open-library', name: 'Open Library', key: 'Ctrl+L', category: 'Navigation' },
+  { id: 'open-player', name: 'Open Player', key: 'Ctrl+P', category: 'Navigation' },
+  { id: 'open-equalizer', name: 'Open Equalizer', key: 'Ctrl+E', category: 'Navigation' },
+  { id: 'open-shortcuts', name: 'Show Shortcuts', key: '?', category: 'Navigation' },
+  { id: 'stop', name: 'Stop Playback', key: 'Escape', category: 'Playback' },
+];
+
 /**
  * ShortcutsWindow - Configure keyboard shortcuts
  * 
  * Allows users to customize keyboard shortcuts for all actions
  * with conflict detection and restore defaults.
+ * Changes are synced with useShortcuts.js via localStorage.
  */
 export default function ShortcutsWindow({ id, onClose }) {
   const [shortcuts, setShortcuts] = useState([]);
   const [editing, setEditing] = useState(null);
   const [listening, setListening] = useState(false);
   const { showToast } = useToast();
-
-  const defaultShortcuts = [
-    { id: 'play-pause', name: 'Play/Pause', key: 'Space', category: 'Playback' },
-    { id: 'next-track', name: 'Next Track', key: 'ArrowRight', category: 'Playback' },
-    { id: 'prev-track', name: 'Previous Track', key: 'ArrowLeft', category: 'Playback' },
-    { id: 'volume-up', name: 'Volume Up', key: 'ArrowUp', category: 'Volume' },
-    { id: 'volume-down', name: 'Volume Down', key: 'ArrowDown', category: 'Volume' },
-    { id: 'mute', name: 'Mute', key: 'M', category: 'Volume' },
-    { id: 'shuffle', name: 'Toggle Shuffle', key: 'S', category: 'Playback' },
-    { id: 'repeat', name: 'Toggle Repeat', key: 'R', category: 'Playback' },
-    { id: 'seek-forward', name: 'Seek Forward', key: 'Shift+ArrowRight', category: 'Playback' },
-    { id: 'seek-backward', name: 'Seek Backward', key: 'Shift+ArrowLeft', category: 'Playback' },
-    { id: 'search', name: 'Focus Search', key: 'Ctrl+F', category: 'Navigation' },
-    { id: 'open-settings', name: 'Open Settings', key: 'Ctrl+,', category: 'Navigation' },
-    { id: 'open-queue', name: 'Open Queue', key: 'Ctrl+Q', category: 'Navigation' },
-    { id: 'add-to-playlist', name: 'Add to Playlist', key: 'Ctrl+P', category: 'Library' },
-    { id: 'delete-track', name: 'Delete Track', key: 'Delete', category: 'Library' },
-  ];
 
   useEffect(() => {
     // Load shortcuts from localStorage or use defaults

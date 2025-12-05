@@ -26,3 +26,6 @@ pub use cache::*;
 
 // Explicit re-export of batch playlist command
 pub use playlist::add_tracks_to_playlist;
+
+// Explicit re-export of ReplayGain commands
+pub use audio::{set_replaygain, clear_replaygain};

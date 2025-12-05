@@ -1,11 +1,14 @@
 // Audio playback commands
 use crate::AppState;
 use crate::audio::{AudioPlayer, AudioDevice};
+use crate::validation;
 use log::info;
 
 #[tauri::command]
 pub fn load_track(path: String, state: tauri::State<AppState>) -> Result<(), String> {
     info!("Loading track: {}", path);
+    // Validate path exists before loading
+    validation::validate_path(&path).map_err(|e| e.to_string())?;
     state.player.load(path).map_err(|e| e.into())
 }
 
@@ -26,7 +29,22 @@ pub fn stop_audio(state: tauri::State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn set_volume(volume: f32, state: tauri::State<AppState>) -> Result<(), String> {
-    state.player.set_volume(volume).map_err(|e| e.into())
+    let valid_volume = validation::validate_volume(volume).map_err(|e| e.to_string())?;
+    state.player.set_volume(valid_volume).map_err(|e| e.into())
+}
+
+#[tauri::command]
+pub fn set_balance(balance: f32, state: tauri::State<AppState>) -> Result<(), String> {
+    // Balance is -1.0 (full left) to 1.0 (full right), 0.0 is center
+    if !(-1.0..=1.0).contains(&balance) {
+        return Err("Balance must be between -1.0 and 1.0".to_string());
+    }
+    state.player.set_balance(balance).map_err(|e| e.into())
+}
+
+#[tauri::command]
+pub fn get_balance(state: tauri::State<AppState>) -> f32 {
+    state.player.get_balance()
 }
 
 #[tauri::command]
@@ -89,4 +107,15 @@ pub fn clear_preload(state: tauri::State<AppState>) {
 #[tauri::command]
 pub fn has_preloaded(state: tauri::State<AppState>) -> bool {
     state.player.has_preloaded()
+}
+
+// ReplayGain commands
+#[tauri::command]
+pub fn set_replaygain(gain_db: f32, preamp_db: f32, state: tauri::State<AppState>) -> Result<(), String> {
+    state.player.set_replaygain(gain_db, preamp_db).map_err(|e| e.into())
+}
+
+#[tauri::command]
+pub fn clear_replaygain(state: tauri::State<AppState>) {
+    state.player.clear_replaygain()
 }

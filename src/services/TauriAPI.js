@@ -99,6 +99,60 @@ class TauriAPIService {
     return this._invoke('get_duration');
   }
 
+  // ========== Balance/Pan Commands ==========
+
+  /**
+   * Set stereo balance/pan
+   * @param {number} balance - Balance value from -1.0 (left) to 1.0 (right), 0.0 is center
+   */
+  async setBalance(balance) {
+    return this._invoke('set_balance', { balance });
+  }
+
+  /**
+   * Get current stereo balance
+   * @returns {Promise<number>} Current balance value (-1.0 to 1.0)
+   */
+  async getBalance() {
+    return this._invoke('get_balance');
+  }
+
+  // ========== ReplayGain Commands ==========
+
+  /**
+   * Analyze a track for ReplayGain data (LUFS loudness measurement)
+   * @param {string} trackPath - Path to the audio file
+   * @returns {Promise<{track_gain: number, track_peak: number, loudness: number}>}
+   */
+  async analyzeReplayGain(trackPath) {
+    return this._invoke('analyze_replaygain', { trackPath });
+  }
+
+  /**
+   * Get stored ReplayGain data for a track
+   * @param {string} trackPath - Path to the audio file
+   * @returns {Promise<{track_gain: number, track_peak: number, loudness: number}|null>}
+   */
+  async getTrackReplayGain(trackPath) {
+    return this._invoke('get_track_replaygain', { trackPath });
+  }
+
+  /**
+   * Set ReplayGain adjustment for current playback
+   * @param {number} gainDb - ReplayGain value in dB
+   * @param {number} preampDb - Additional preamp adjustment in dB
+   */
+  async setReplayGain(gainDb, preampDb) {
+    return this._invoke('set_replaygain', { gainDb, preampDb });
+  }
+
+  /**
+   * Clear ReplayGain adjustment (reset to unity gain)
+   */
+  async clearReplayGain() {
+    return this._invoke('clear_replaygain');
+  }
+
   // ========== Library Commands ==========
 
   async scanFolder(folderPath) {
@@ -135,6 +189,22 @@ class TauriAPIService {
 
   async findDuplicates() {
     return this._invoke('find_duplicates');
+  }
+
+  /**
+   * Show a file in the system file explorer
+   * @param {string} path - Full path to the file
+   */
+  async showInFolder(path) {
+    return this._invoke('show_in_folder', { path });
+  }
+
+  /**
+   * Reset play count for a track
+   * @param {string} trackId - Track ID
+   */
+  async resetPlayCount(trackId) {
+    return this._invoke('reset_play_count', { trackId });
   }
 
   // ========== Album Art Commands ==========

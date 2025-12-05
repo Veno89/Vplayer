@@ -30,6 +30,9 @@ export function PlaylistWindow({
   // New dialogs for context menu
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(null); // track to add
   const [showRatingDialog, setShowRatingDialog] = useState(null); // track for rating
+  // Multi-select state
+  const [selectedIndices, setSelectedIndices] = useState(new Set());
+  const [showBatchPlaylistPicker, setShowBatchPlaylistPicker] = useState(false); // for batch add to playlist
   const containerRef = useRef(null);
   const trackListRef = useRef(null);
   
@@ -125,6 +128,44 @@ export function PlaylistWindow({
       trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
     }
   }, [displayCurrentTrack]);
+
+  // Handle batch actions from multi-select
+  const handleBatchAction = useCallback(async (action, selectedTracks) => {
+    if (!selectedTracks || selectedTracks.length === 0) return;
+    
+    switch (action) {
+      case 'queue':
+        // Add all selected tracks to queue
+        selectedTracks.forEach(track => addToQueue(track, 'end'));
+        // Clear selection
+        setSelectedIndices(new Set());
+        break;
+        
+      case 'playlist':
+        // Show playlist picker for batch add
+        setShowBatchPlaylistPicker(true);
+        break;
+        
+      case 'delete':
+        // Remove selected tracks from current playlist
+        if (!playlists.currentPlaylist) return;
+        if (confirm(`Remove ${selectedTracks.length} track(s) from this playlist?`)) {
+          for (const track of selectedTracks) {
+            await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+          }
+          setSelectedIndices(new Set());
+        }
+        break;
+        
+      default:
+        console.warn('Unknown batch action:', action);
+    }
+  }, [addToQueue, playlists, setSelectedIndices]);
+
+  // Get selected tracks from indices
+  const getSelectedTracks = useCallback(() => {
+    return Array.from(selectedIndices).map(i => displayTracks[i]).filter(Boolean);
+  }, [selectedIndices, displayTracks]);
   
   // Update active tracks when displayTracks changes
   useEffect(() => {
@@ -564,6 +605,10 @@ export function PlaylistWindow({
             draggedIndex={draggedIndex}
             height={listHeight}
             itemSize={itemSize}
+            enableMultiSelect={true}
+            selectedIndices={selectedIndices}
+            onSelectionChange={setSelectedIndices}
+            onBatchAction={handleBatchAction}
           />
         )}
       </div>
@@ -721,6 +766,48 @@ export function PlaylistWindow({
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowRatingDialog(null)}
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Batch Playlist Picker Dialog */}
+      {showBatchPlaylistPicker && selectedIndices.size > 0 && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]" onClick={() => setShowBatchPlaylistPicker(false)}>
+          <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl max-h-96 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-semibold mb-3">Add {selectedIndices.size} Tracks to Playlist</h3>
+            <div className="flex-1 overflow-y-auto space-y-1">
+              {playlists.playlists.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-4">No playlists yet</p>
+              ) : (
+                playlists.playlists.map(pl => (
+                  <button
+                    key={pl.id}
+                    onClick={async () => {
+                      try {
+                        const selectedTracks = getSelectedTracks();
+                        await playlists.addTracksToPlaylist(pl.id, selectedTracks.map(t => t.id));
+                        setShowBatchPlaylistPicker(false);
+                        setSelectedIndices(new Set());
+                      } catch (err) {
+                        console.error('Failed to add tracks to playlist:', err);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded transition-colors"
+                  >
+                    {pl.name}
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
+              <button
+                onClick={() => setShowBatchPlaylistPicker(false)}
                 className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
               >
                 Cancel

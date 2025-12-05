@@ -272,3 +272,54 @@ pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, 
     info!("Tags updated successfully");
     Ok(())
 }
+
+#[tauri::command]
+pub fn show_in_folder(path: String) -> Result<(), String> {
+    use std::path::Path;
+    use std::process::Command;
+    
+    info!("Showing file in folder: {}", path);
+    
+    let file_path = Path::new(&path);
+    if !file_path.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use explorer /select
+        Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use open -R to reveal in Finder
+        Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, open the parent folder
+        let parent = file_path.parent()
+            .ok_or_else(|| "Cannot get parent directory".to_string())?;
+        
+        Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reset_play_count(track_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    info!("Resetting play count for track: {}", track_id);
+    state.db.reset_play_count(&track_id).map_err(|e| e.to_string())
+}

@@ -32,6 +32,11 @@ export function useWindowConfigs({
   repeatMode,
   setRepeatMode,
   loadingTrackIndex,
+  // A-B Repeat
+  abRepeat,
+  setPointA,
+  setPointB,
+  clearABRepeat,
   // Library
   libraryFolders,
   isScanning,
@@ -121,6 +126,10 @@ export function useWindowConfigs({
           isMuted={false}
           toggleMute={() => {}}
           audioBackendError={audioBackendError}
+          abRepeat={abRepeat}
+          setPointA={setPointA}
+          setPointB={setPointB}
+          clearABRepeat={clearABRepeat}
         />
       ),
     },
@@ -343,6 +352,6 @@ export function useWindowConfigs({
     setBackgroundBlur, backgroundOpacity, setBackgroundOpacity, windowOpacity,
     setWindowOpacity, fontSize, setFontSize, customThemes, saveCustomTheme,
     deleteCustomTheme, applyCustomTheme, crossfade, tagEditorTrack, setTagEditorTrack,
-    onTagsSaved
+    onTagsSaved, abRepeat, setPointA, setPointB, clearABRepeat
   ]);
 }

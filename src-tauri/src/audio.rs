@@ -141,6 +141,10 @@ pub struct AudioPlayer {
     effects_enabled: Arc<Mutex<bool>>,
     // Track last successful operation for recovery
     last_volume: Arc<Mutex<f32>>,
+    // ReplayGain: multiplier applied to volume (1.0 = no change)
+    replaygain_multiplier: Arc<Mutex<f32>>,
+    // Stereo balance: -1.0 = full left, 0.0 = center, 1.0 = full right
+    balance: Arc<Mutex<f32>>,
     // Visualizer sample buffer
     visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
 }
@@ -177,6 +181,8 @@ impl AudioPlayer {
             effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(44100, EffectsConfig::default()))),
             effects_enabled: Arc::new(Mutex::new(true)),
             last_volume: Arc::new(Mutex::new(1.0)),
+            replaygain_multiplier: Arc::new(Mutex::new(1.0)),
+            balance: Arc::new(Mutex::new(0.0)),
             visualizer_buffer,
         })
     }
@@ -345,9 +351,61 @@ impl AudioPlayer {
     pub fn set_volume(&self, volume: f32) -> AppResult<()> {
         let sink = self.sink.lock().unwrap();
         let clamped_volume = volume.max(0.0).min(1.0);
-        sink.set_volume(clamped_volume);
         *self.last_volume.lock().unwrap() = clamped_volume;
+        
+        // Apply ReplayGain multiplier to the volume
+        let rg_multiplier = *self.replaygain_multiplier.lock().unwrap();
+        let effective_volume = (clamped_volume * rg_multiplier).max(0.0).min(1.0);
+        sink.set_volume(effective_volume);
         Ok(())
+    }
+    
+    /// Set the ReplayGain adjustment in dB
+    /// Converts dB to linear multiplier and applies to current volume
+    pub fn set_replaygain(&self, gain_db: f32, preamp_db: f32) -> AppResult<()> {
+        // Convert dB to linear multiplier: 10^(dB/20)
+        let total_gain_db = gain_db + preamp_db;
+        let multiplier = 10_f32.powf(total_gain_db / 20.0);
+        
+        // Clamp to reasonable range (prevent extreme amplification)
+        let clamped_multiplier = multiplier.max(0.1).min(3.0);
+        
+        info!("Setting ReplayGain: {}dB + {}dB preamp = {}dB (multiplier: {:.3})", 
+              gain_db, preamp_db, total_gain_db, clamped_multiplier);
+        
+        *self.replaygain_multiplier.lock().unwrap() = clamped_multiplier;
+        
+        // Re-apply current volume with new multiplier
+        let current_volume = *self.last_volume.lock().unwrap();
+        self.set_volume(current_volume)
+    }
+    
+    /// Clear ReplayGain adjustment (reset to 1.0 multiplier)
+    pub fn clear_replaygain(&self) {
+        *self.replaygain_multiplier.lock().unwrap() = 1.0;
+        
+        // Re-apply current volume without ReplayGain
+        let current_volume = *self.last_volume.lock().unwrap();
+        let _ = self.set_volume(current_volume);
+    }
+    
+    /// Get current ReplayGain multiplier
+    pub fn get_replaygain_multiplier(&self) -> f32 {
+        *self.replaygain_multiplier.lock().unwrap()
+    }
+    
+    /// Set stereo balance
+    /// -1.0 = full left, 0.0 = center, 1.0 = full right
+    pub fn set_balance(&self, balance: f32) -> AppResult<()> {
+        let clamped = balance.clamp(-1.0, 1.0);
+        *self.balance.lock().unwrap() = clamped;
+        info!("Balance set to: {:.2}", clamped);
+        Ok(())
+    }
+    
+    /// Get current stereo balance
+    pub fn get_balance(&self) -> f32 {
+        *self.balance.lock().unwrap()
     }
     
     pub fn seek(&self, position: f64) -> AppResult<()> {

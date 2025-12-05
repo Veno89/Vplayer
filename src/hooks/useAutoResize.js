@@ -5,7 +5,32 @@ import { LogicalSize } from '@tauri-apps/api/window';
 const PADDING = 60; // Extra padding around windows
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
-const DEBOUNCE_MS = 50; // Faster response for smoother resizing
+const DEBOUNCE_MS = 200; // Increased for stability - resize happens after drag/resize ends
+
+// Global drag state tracker - shared across all components
+let isDraggingOrResizing = false;
+let dragEndTimer = null;
+
+/**
+ * Notify auto-resize that dragging/resizing has started
+ */
+export function notifyDragStart() {
+  isDraggingOrResizing = true;
+  if (dragEndTimer) {
+    clearTimeout(dragEndTimer);
+    dragEndTimer = null;
+  }
+}
+
+/**
+ * Notify auto-resize that dragging/resizing has ended
+ */
+export function notifyDragEnd() {
+  // Small delay to ensure window state is updated
+  dragEndTimer = setTimeout(() => {
+    isDraggingOrResizing = false;
+  }, 50);
+}
 
 /**
  * Auto-resize main window to fit all visible windows
@@ -18,6 +43,11 @@ export function useAutoResize(windows, enabled) {
   const lastResizeRef = useRef({ width: 0, height: 0 });
 
   const calculateAndResize = useCallback(async (force = false) => {
+    // Skip resize while user is actively dragging or resizing
+    if (!force && isDraggingOrResizing) {
+      return;
+    }
+
     if (!enabled || !windows) {
       return;
     }

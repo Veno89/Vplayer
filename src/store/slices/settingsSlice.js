@@ -99,8 +99,7 @@ export const settingsPersistState = (state) => ({
   skipSilence: state.skipSilence,
   replayGainMode: state.replayGainMode,
   replayGainPreamp: state.replayGainPreamp,
-  crossfadeEnabled: state.crossfadeEnabled,
-  crossfadeDuration: state.crossfadeDuration,
+  // Note: crossfade settings are managed by useCrossfade hook with localStorage
   playbackSpeed: state.playbackSpeed,
   fadeOnPause: state.fadeOnPause,
   fadeDuration: state.fadeDuration,

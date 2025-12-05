@@ -1,6 +1,7 @@
 import React from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { WINDOW_MIN_SIZES } from '../utils/constants';
+import { notifyDragStart, notifyDragEnd } from '../hooks/useAutoResize';
 
 export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }) {
   if (!windowData.visible) return null;
@@ -28,6 +29,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
     const startWindowX = windowData.x;
     const startWindowY = windowData.y;
     bringToFront(id);
+    notifyDragStart(); // Notify auto-resize that dragging started
     let raf = null;
     let pendingX = startWindowX;
     let pendingY = startWindowY;
@@ -64,6 +66,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           };
         });
       }
+      notifyDragEnd(); // Notify auto-resize that dragging ended
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -79,6 +82,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
     const startWidth = windowData.width;
     const startHeight = windowData.height;
     bringToFront(id);
+    notifyDragStart(); // Notify auto-resize that resizing started
     let raf = null;
     let pendingW = startWidth;
     let pendingH = startHeight;
@@ -114,6 +118,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           };
         });
       }
+      notifyDragEnd(); // Notify auto-resize that resizing ended
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };

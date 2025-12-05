@@ -2,6 +2,36 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.5.4] - 2025-12-05
+
+### Added
+- **ReplayGain / Volume Normalization**: Automatically normalize volume levels across your library
+  - Uses EBU R128 loudness standard (-18 LUFS target)
+  - Track and Album gain modes
+  - Configurable preamp adjustment (±15 dB)
+  - "Analyze Library" button in Options → Playback to scan all tracks
+  - Gain applied seamlessly during playback without re-encoding
+
+- **Enhanced Keyboard Shortcuts**: Fully customizable keyboard shortcuts
+  - Press `?` to open the Shortcuts window and customize any key binding
+  - New shortcuts: `J`/`L` for 5s seek, `Shift+Arrow` for 10s seek
+  - `S` for shuffle toggle, `R` for repeat mode toggle
+  - `Escape` to stop playback
+  - Shortcuts are now synced between ShortcutsWindow and actual key handling
+  - Changes take effect immediately without restart
+
+### Fixed
+- **Auto-Resize Flickering**: Main window no longer flickers while dragging child windows
+  - Window resize is now deferred until drag/resize operation completes
+  - Increased debounce from 50ms to 200ms for stability
+  - Smooth resize happens after you release the mouse
+
+### Improved
+- Keyboard shortcut system now uses localStorage for persistence
+- All shortcuts are conflict-checked when customizing
+
+---
+
 ## [0.5.3] - 2025-12-05
 
 ### Added

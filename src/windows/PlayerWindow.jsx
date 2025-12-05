@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader, Minimize2 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader, Minimize2, CornerDownLeft, CornerDownRight, X } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
 
@@ -26,6 +26,12 @@ export function PlayerWindow({
   toggleMute,
   audioBackendError,
   onMinimize,
+  // A-B Repeat props
+  abRepeat,
+  setPointA,
+  setPointB,
+  clearABRepeat,
+  onSeek, // Direct seek function (time in seconds)
 }) {
   const currentTrackData = currentTrack !== null ? tracks[currentTrack] : null;
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
@@ -220,6 +226,35 @@ export function PlayerWindow({
           onMouseLeave={handleProgressMouseLeave}
           title={`${formatTime(progress)} / ${formatTime(duration)}`}
         >
+          {/* A-B Repeat region highlight */}
+          {abRepeat?.pointA !== null && abRepeat?.pointB !== null && duration > 0 && (
+            <div 
+              className="absolute h-full bg-green-500/20 rounded-full pointer-events-none"
+              style={{ 
+                left: `${(abRepeat.pointA / duration) * 100}%`,
+                width: `${((abRepeat.pointB - abRepeat.pointA) / duration) * 100}%`
+              }}
+            />
+          )}
+          
+          {/* A marker */}
+          {abRepeat?.pointA !== null && duration > 0 && (
+            <div 
+              className="absolute top-0 bottom-0 w-0.5 bg-green-500 pointer-events-none z-10"
+              style={{ left: `${(abRepeat.pointA / duration) * 100}%` }}
+              title={`Point A: ${formatTime(abRepeat.pointA)}`}
+            />
+          )}
+          
+          {/* B marker */}
+          {abRepeat?.pointB !== null && duration > 0 && (
+            <div 
+              className="absolute top-0 bottom-0 w-0.5 bg-green-500 pointer-events-none z-10"
+              style={{ left: `${(abRepeat.pointB / duration) * 100}%` }}
+              title={`Point B: ${formatTime(abRepeat.pointB)}`}
+            />
+          )}
+          
           <div 
             className={`h-full bg-gradient-to-r ${currentColors.primary} rounded-full transition-all relative`}
             style={{ width: `${progressPercent}%` }}
@@ -373,6 +408,76 @@ export function PlayerWindow({
           {Math.round(localVolume)}%
         </span>
       </div>
+
+      {/* A-B Repeat Controls */}
+      {duration > 0 && (
+        <div className="flex items-center justify-center gap-2 py-1">
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              if (abRepeat?.pointA === null) {
+                setPointA?.(progress);
+              } else {
+                setPointA?.(null);
+                if (abRepeat?.pointB !== null) {
+                  clearABRepeat?.();
+                }
+              }
+            }}
+            disabled={isDisabled}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
+              abRepeat?.pointA !== null 
+                ? 'bg-green-700 text-white' 
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+            } ${isDisabled ? 'opacity-30 cursor-not-allowed' : ''}`}
+            title={abRepeat?.pointA !== null ? `Point A: ${formatTime(abRepeat.pointA)} (click to clear)` : 'Set loop start point (A)'}
+          >
+            <CornerDownRight className="w-3 h-3" />
+            A {abRepeat?.pointA !== null && `(${formatTime(abRepeat.pointA)})`}
+          </button>
+          
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              if (abRepeat?.pointB === null && abRepeat?.pointA !== null) {
+                setPointB?.(progress);
+              } else if (abRepeat?.pointB !== null) {
+                setPointB?.(null);
+              }
+            }}
+            disabled={isDisabled || abRepeat?.pointA === null}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
+              abRepeat?.pointB !== null 
+                ? 'bg-green-700 text-white' 
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+            } ${isDisabled || abRepeat?.pointA === null ? 'opacity-30 cursor-not-allowed' : ''}`}
+            title={abRepeat?.pointB !== null ? `Point B: ${formatTime(abRepeat.pointB)} (click to clear)` : 'Set loop end point (B)'}
+          >
+            <CornerDownLeft className="w-3 h-3" />
+            B {abRepeat?.pointB !== null && `(${formatTime(abRepeat.pointB)})`}
+          </button>
+          
+          {abRepeat?.enabled && (
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                clearABRepeat?.();
+              }}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-red-700/50 text-red-300 hover:bg-red-700 transition-all"
+              title="Clear A-B loop"
+            >
+              <X className="w-3 h-3" />
+              Clear
+            </button>
+          )}
+          
+          {abRepeat?.enabled && (
+            <span className="text-xs text-green-400 animate-pulse">
+              🔁 Looping
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Track Counter */}
       {tracks.length > 0 && (
