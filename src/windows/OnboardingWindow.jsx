@@ -112,7 +112,7 @@ export function OnboardingWindow({
   const StepIcon = currentStep.icon;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center" style={{ zIndex: 9999 }}>
       <div className="w-full max-w-2xl mx-4">
         {/* Progress */}
         <div className="flex justify-center gap-2 mb-8">
