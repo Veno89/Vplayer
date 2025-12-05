@@ -8,9 +8,43 @@ use std::io::BufReader;
 use log::{info, error, warn};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::collections::VecDeque;
 use serde::Serialize;
 use crate::error::{AppError, AppResult};
 use crate::effects::{EffectsConfig, EffectsProcessor};
+
+/// Ring buffer for visualizer samples - shared between audio thread and main thread
+pub struct VisualizerBuffer {
+    samples: VecDeque<f32>,
+    capacity: usize,
+}
+
+impl VisualizerBuffer {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            samples: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+    
+    /// Add a sample to the buffer (called from audio thread)
+    pub fn push(&mut self, sample: f32) {
+        if self.samples.len() >= self.capacity {
+            self.samples.pop_front();
+        }
+        self.samples.push_back(sample);
+    }
+    
+    /// Get a copy of current samples for visualization
+    pub fn get_samples(&self) -> Vec<f32> {
+        self.samples.iter().copied().collect()
+    }
+    
+    /// Clear the buffer
+    pub fn clear(&mut self) {
+        self.samples.clear();
+    }
+}
 
 /// EffectsSource wraps a Source and applies audio effects (EQ, etc.) to each sample
 struct EffectsSource<I>
@@ -20,6 +54,7 @@ where
 {
     input: I,
     processor: Arc<Mutex<EffectsProcessor>>,
+    visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
 }
 
 impl<I> Iterator for EffectsSource<I>
@@ -34,7 +69,14 @@ where
             let mut processor = self.processor.lock().unwrap();
             // Convert sample to f32, process, then return
             let sample_f32: f32 = f32::from_sample_(sample);
-            processor.process(sample_f32)
+            let processed = processor.process(sample_f32);
+            
+            // Send sample to visualizer buffer (don't block if lock fails)
+            if let Ok(mut buffer) = self.visualizer_buffer.try_lock() {
+                buffer.push(processed);
+            }
+            
+            processed
         })
     }
 }
@@ -89,6 +131,8 @@ pub struct AudioPlayer {
     effects_enabled: Arc<Mutex<bool>>,
     // Track last successful operation for recovery
     last_volume: Arc<Mutex<f32>>,
+    // Visualizer sample buffer
+    visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
 }
 
 // Manually implement Send and Sync for AudioPlayer
@@ -103,6 +147,9 @@ impl AudioPlayer {
         let (stream, mixer) = Self::create_high_quality_output()?;
         
         let sink = Sink::connect_new(&mixer);
+        
+        // Create visualizer buffer - 4096 samples is enough for FFT analysis at ~30fps
+        let visualizer_buffer = Arc::new(Mutex::new(VisualizerBuffer::new(4096)));
         
         info!("Audio player initialized successfully");
         Ok(Self {
@@ -120,6 +167,7 @@ impl AudioPlayer {
             effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(44100, EffectsConfig::default()))),
             effects_enabled: Arc::new(Mutex::new(true)),
             last_volume: Arc::new(Mutex::new(1.0)),
+            visualizer_buffer,
         })
     }
     
@@ -217,10 +265,16 @@ impl AudioPlayer {
         
         info!("Audio file loaded successfully, duration: {:?}", duration);
         
-        // Wrap source with effects processor for EQ
+        // Clear visualizer buffer for new track
+        if let Ok(mut buffer) = self.visualizer_buffer.lock() {
+            buffer.clear();
+        }
+        
+        // Wrap source with effects processor for EQ and visualizer
         let effects_source = EffectsSource {
             input: source,
             processor: self.effects_processor.clone(),
+            visualizer_buffer: self.visualizer_buffer.clone(),
         };
         
         let sink = self.sink.lock().unwrap();
@@ -338,10 +392,11 @@ impl AudioPlayer {
                     let source = Decoder::new(BufReader::new(file))
                         .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
                     
-                    // Wrap source with effects processor for EQ
+                    // Wrap source with effects processor for EQ and visualizer
                     let effects_source = EffectsSource {
                         input: source,
                         processor: self.effects_processor.clone(),
+                        visualizer_buffer: self.visualizer_buffer.clone(),
                     };
                     
                     // Get a new lock on sink
@@ -663,6 +718,14 @@ impl AudioPlayer {
                 warn!("Audio sink lock unavailable - system may be unhealthy");
                 false
             }
+        }
+    }
+    
+    /// Get current audio samples for visualization
+    pub fn get_visualizer_samples(&self) -> Vec<f32> {
+        match self.visualizer_buffer.lock() {
+            Ok(buffer) => buffer.get_samples(),
+            Err(_) => Vec::new(),
         }
     }
 }

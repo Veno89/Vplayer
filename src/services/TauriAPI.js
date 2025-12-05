@@ -183,6 +183,20 @@ class TauriAPIService {
     return this._invoke('is_effects_enabled');
   }
 
+  // ========== Visualizer Commands ==========
+
+  async getVisualizerData() {
+    return this._invoke('get_visualizer_data');
+  }
+
+  async setVisualizerMode(mode) {
+    return this._invoke('set_visualizer_mode', { mode });
+  }
+
+  async setBeatSensitivity(sensitivity) {
+    return this._invoke('set_beat_sensitivity', { sensitivity });
+  }
+
   // ========== Tag Editor Commands ==========
 
   async updateTrackTags(trackId, trackPath, tags) {

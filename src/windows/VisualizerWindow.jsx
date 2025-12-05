@@ -1,83 +1,56 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Music, BarChart3, Activity } from 'lucide-react';
+import { TauriAPI } from '../services/TauriAPI';
 
 const VISUALIZER_MODES = ['bars', 'wave', 'circular'];
 
 /**
- * Simulated audio visualizer
+ * Real-time audio visualizer using FFT analysis from Rust backend
  * 
- * Since audio playback happens in Rust (rodio), we can't access raw audio samples
- * from the frontend. This visualizer creates aesthetically pleasing animations
- * that respond to playback state. Uses multiple sine waves and noise functions
- * to create organic, music-like patterns.
+ * This visualizer gets actual audio samples from the playing track via the
+ * Rust backend's ring buffer, processes them with FFT, and displays the
+ * frequency spectrum and waveform data.
  */
 export function VisualizerWindow({ currentColors, isPlaying }) {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
-  const timeRef = useRef(0);
-  const lastTimeRef = useRef(performance.now());
   
-  // Smoothed values for organic motion
-  const smoothedValuesRef = useRef(new Array(64).fill(0));
+  // Store visualization data from backend
+  const spectrumRef = useRef(new Array(64).fill(0));
+  const waveformRef = useRef(new Array(256).fill(0));
+  const smoothedSpectrumRef = useRef(new Array(64).fill(0));
   
   const [mode, setMode] = useState('bars');
+  const [beatDetected, setBeatDetected] = useState(false);
 
-  // Generate simulated frequency data
-  const generateFrequencyData = useCallback((time) => {
-    const data = new Uint8Array(64);
+  // Fetch visualization data from backend
+  const fetchVisualizerData = useCallback(async () => {
+    if (!isPlaying) return;
     
-    // Multiple overlapping wave patterns for organic feel
-    for (let i = 0; i < 64; i++) {
-      const freq = i / 64;
+    try {
+      const data = await TauriAPI.getVisualizerData();
       
-      // Bass frequencies (lower indices) should be more prominent
-      const bassWeight = Math.pow(1 - freq, 1.5);
-      
-      // Multiple sine waves at different frequencies and phases
-      const wave1 = Math.sin(time * 2 + i * 0.1) * 0.3;
-      const wave2 = Math.sin(time * 3.7 + i * 0.2 + 1.5) * 0.25;
-      const wave3 = Math.sin(time * 1.3 + i * 0.15 + 3) * 0.2;
-      const wave4 = Math.sin(time * 5 + i * 0.3) * 0.15;
-      
-      // Add some pseudo-random noise for realism
-      const noise = (Math.sin(time * 10 + i * 7.3) * Math.sin(time * 13 + i * 11.7)) * 0.1;
-      
-      // Combine waves with bass emphasis
-      let value = (wave1 + wave2 + wave3 + wave4 + noise + 0.5) * (0.5 + bassWeight * 0.5);
-      
-      // Apply smoothing for less jittery motion
-      const smoothing = 0.7;
-      smoothedValuesRef.current[i] = smoothedValuesRef.current[i] * smoothing + value * (1 - smoothing);
-      value = smoothedValuesRef.current[i];
-      
-      // Scale to 0-255 range
-      data[i] = Math.max(0, Math.min(255, Math.floor(value * 255)));
+      if (data) {
+        // Update spectrum data (already normalized 0-1 from backend)
+        if (data.spectrum && data.spectrum.length > 0) {
+          spectrumRef.current = data.spectrum;
+        }
+        
+        // Update waveform data
+        if (data.waveform && data.waveform.length > 0) {
+          waveformRef.current = data.waveform;
+        }
+        
+        // Update beat detection
+        if (data.beat_detected !== undefined) {
+          setBeatDetected(data.beat_detected);
+        }
+      }
+    } catch (err) {
+      // Silently fail - visualization is non-critical
+      console.debug('Visualizer data fetch failed:', err);
     }
-    
-    return data;
-  }, []);
-
-  // Generate simulated waveform data
-  const generateWaveformData = useCallback((time) => {
-    const data = new Uint8Array(256);
-    
-    for (let i = 0; i < 256; i++) {
-      const pos = i / 256;
-      
-      // Multiple overlapping waves
-      const wave1 = Math.sin(time * 2 + pos * Math.PI * 4) * 0.4;
-      const wave2 = Math.sin(time * 3.3 + pos * Math.PI * 8 + 1) * 0.3;
-      const wave3 = Math.sin(time * 1.7 + pos * Math.PI * 2) * 0.2;
-      
-      // Add slight noise
-      const noise = Math.sin(time * 15 + pos * 50) * 0.1;
-      
-      // Center around 128 (middle of waveform)
-      data[i] = Math.floor(128 + (wave1 + wave2 + wave3 + noise) * 64);
-    }
-    
-    return data;
-  }, []);
+  }, [isPlaying]);
 
   // Draw visualizer
   useEffect(() => {
@@ -93,37 +66,45 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
     const ctx = canvas.getContext('2d');
 
     // Set canvas size
-    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const updateCanvasSize = () => {
+      canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    };
+    updateCanvasSize();
 
     const width = canvas.offsetWidth;
     const height = canvas.offsetHeight;
+    
+    let frameCount = 0;
 
-    const draw = () => {
+    const draw = async () => {
       animationRef.current = requestAnimationFrame(draw);
+      
+      // Fetch new data every 2 frames (~30fps data updates at 60fps render)
+      frameCount++;
+      if (frameCount % 2 === 0) {
+        await fetchVisualizerData();
+      }
 
-      // Update time
-      const now = performance.now();
-      const delta = (now - lastTimeRef.current) / 1000;
-      lastTimeRef.current = now;
-      timeRef.current += delta;
-
-      // Generate the appropriate data based on mode
-      const dataArray = mode === 'wave' 
-        ? generateWaveformData(timeRef.current)
-        : generateFrequencyData(timeRef.current);
+      // Apply smoothing to spectrum for fluid motion
+      const smoothing = 0.7;
+      for (let i = 0; i < spectrumRef.current.length; i++) {
+        smoothedSpectrumRef.current[i] = 
+          smoothedSpectrumRef.current[i] * smoothing + 
+          spectrumRef.current[i] * (1 - smoothing);
+      }
 
       // Clear canvas with slight fade effect for trail
       ctx.fillStyle = 'rgba(15, 23, 42, 0.3)';
       ctx.fillRect(0, 0, width, height);
 
       if (mode === 'bars') {
-        drawBars(ctx, dataArray, width, height);
+        drawBars(ctx, smoothedSpectrumRef.current, width, height);
       } else if (mode === 'wave') {
-        drawWave(ctx, dataArray, width, height);
+        drawWave(ctx, waveformRef.current, width, height);
       } else if (mode === 'circular') {
-        drawCircular(ctx, dataArray, width, height);
+        drawCircular(ctx, smoothedSpectrumRef.current, width, height);
       }
     };
 
@@ -135,43 +116,79 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
         animationRef.current = null;
       }
     };
-  }, [isPlaying, mode, generateFrequencyData, generateWaveformData]);
+  }, [isPlaying, mode, fetchVisualizerData]);
 
   // Draw bar visualizer
-  const drawBars = (ctx, dataArray, width, height) => {
-    const barCount = 64;
+  const drawBars = (ctx, spectrum, width, height) => {
+    const barCount = spectrum.length;
     const barWidth = width / barCount;
-    const step = Math.floor(dataArray.length / barCount);
+    const maxHeight = height * 0.85;
 
     for (let i = 0; i < barCount; i++) {
-      const value = dataArray[i * step] || 0;
-      const barHeight = (value / 255) * height * 0.8;
+      // Spectrum values are 0-1 from backend
+      const value = spectrum[i] || 0;
+      const barHeight = value * maxHeight;
       const x = i * barWidth;
       const y = height - barHeight;
 
-      // Create gradient
+      // Create gradient based on frequency (bass=purple, treble=cyan)
       const gradient = ctx.createLinearGradient(x, y, x, height);
-      gradient.addColorStop(0, '#06b6d4');
-      gradient.addColorStop(0.5, '#3b82f6');
-      gradient.addColorStop(1, '#8b5cf6');
+      
+      // Color based on frequency band
+      const freqRatio = i / barCount;
+      if (freqRatio < 0.3) {
+        // Bass - purple to blue
+        gradient.addColorStop(0, '#8b5cf6');
+        gradient.addColorStop(1, '#6366f1');
+      } else if (freqRatio < 0.6) {
+        // Mids - blue to cyan
+        gradient.addColorStop(0, '#3b82f6');
+        gradient.addColorStop(1, '#06b6d4');
+      } else {
+        // Highs - cyan to teal
+        gradient.addColorStop(0, '#06b6d4');
+        gradient.addColorStop(1, '#14b8a6');
+      }
 
       ctx.fillStyle = gradient;
-      ctx.fillRect(x, y, barWidth - 2, barHeight);
+      ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
+      
+      // Add glow effect on peaks
+      if (value > 0.7) {
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(x + 1, y, barWidth - 2, 3);
+        ctx.shadowBlur = 0;
+      }
     }
   };
 
   // Draw waveform visualizer
-  const drawWave = (ctx, dataArray, width, height) => {
-    ctx.lineWidth = 3;
+  const drawWave = (ctx, waveform, width, height) => {
+    const centerY = height / 2;
+    
+    // Draw background line
+    ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(width, centerY);
+    ctx.stroke();
+    
+    // Draw waveform
+    ctx.lineWidth = 2;
     ctx.strokeStyle = '#06b6d4';
     ctx.beginPath();
 
-    const sliceWidth = width / dataArray.length;
+    const sliceWidth = width / waveform.length;
     let x = 0;
 
-    for (let i = 0; i < dataArray.length; i++) {
-      const v = (dataArray[i] || 128) / 128.0;
-      const y = (v * height) / 2;
+    for (let i = 0; i < waveform.length; i++) {
+      // Waveform values are -1 to 1 (or raw samples), normalize them
+      const sample = waveform[i] || 0;
+      // Clamp and scale the sample
+      const normalized = Math.max(-1, Math.min(1, sample));
+      const y = centerY + (normalized * height * 0.4);
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -183,44 +200,78 @@ export function VisualizerWindow({ currentColors, isPlaying }) {
     }
 
     ctx.stroke();
+    
+    // Add glow effect
+    ctx.shadowColor = '#06b6d4';
+    ctx.shadowBlur = 5;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
   };
 
   // Draw circular visualizer
-  const drawCircular = (ctx, dataArray, width, height) => {
+  const drawCircular = (ctx, spectrum, width, height) => {
     const centerX = width / 2;
     const centerY = height / 2;
-    const radius = Math.min(width, height) / 3;
-    const bars = 64;
-    const step = Math.floor(dataArray.length / bars);
+    const baseRadius = Math.min(width, height) / 3.5;
+    const bars = spectrum.length;
 
+    // Draw center circle with subtle pulse on beat
+    const pulseRadius = beatDetected ? baseRadius * 1.05 : baseRadius;
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.1)';
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, pulseRadius * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw frequency bars in circle
     for (let i = 0; i < bars; i++) {
-      const value = dataArray[i * step] || 0;
-      const barHeight = (value / 255) * radius;
-      const angle = (i / bars) * Math.PI * 2;
+      const value = spectrum[i] || 0;
+      const barHeight = value * baseRadius * 0.8;
+      const angle = (i / bars) * Math.PI * 2 - Math.PI / 2; // Start from top
 
-      const x1 = centerX + Math.cos(angle) * radius;
-      const y1 = centerY + Math.sin(angle) * radius;
-      const x2 = centerX + Math.cos(angle) * (radius + barHeight);
-      const y2 = centerY + Math.sin(angle) * (radius + barHeight);
+      const x1 = centerX + Math.cos(angle) * pulseRadius;
+      const y1 = centerY + Math.sin(angle) * pulseRadius;
+      const x2 = centerX + Math.cos(angle) * (pulseRadius + barHeight);
+      const y2 = centerY + Math.sin(angle) * (pulseRadius + barHeight);
 
-      // Create gradient
-      const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
-      gradient.addColorStop(0, '#8b5cf6');
-      gradient.addColorStop(1, '#06b6d4');
+      // Color based on frequency
+      const freqRatio = i / bars;
+      let color;
+      if (freqRatio < 0.3) {
+        color = '#8b5cf6'; // Bass - purple
+      } else if (freqRatio < 0.6) {
+        color = '#3b82f6'; // Mids - blue
+      } else {
+        color = '#06b6d4'; // Highs - cyan
+      }
 
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, (2 * Math.PI * pulseRadius) / bars - 2);
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.stroke();
     }
 
-    // Draw center circle
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.1)';
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Draw inner mirror effect (optional - creates symmetric look)
+    for (let i = 0; i < bars; i++) {
+      const value = spectrum[i] || 0;
+      const barHeight = value * baseRadius * 0.3;
+      const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
+
+      const innerRadius = pulseRadius * 0.75;
+      const x1 = centerX + Math.cos(angle) * innerRadius;
+      const y1 = centerY + Math.sin(angle) * innerRadius;
+      const x2 = centerX + Math.cos(angle) * (innerRadius - barHeight);
+      const y2 = centerY + Math.sin(angle) * (innerRadius - barHeight);
+
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
+      ctx.lineWidth = Math.max(1, (2 * Math.PI * innerRadius) / bars - 2);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
   };
 
   // Cycle through modes

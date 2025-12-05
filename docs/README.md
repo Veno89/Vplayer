@@ -88,7 +88,7 @@ src-tauri/src/
 
 ### Advanced Features
 - **Theme Editor**: Customize colors and appearance
-- **Visualizer**: Animated audio visualization (bars, wave, circular modes)
+- **Visualizer**: Real-time FFT spectrum analyzer with bars, wave, and circular modes
 - **History**: Track listening history
 - **Duplicate Detection**: Find duplicate tracks in library
 - **Mini Player**: Compact always-on-top mode

@@ -1,7 +1,6 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { AudioContextProvider } from './context/AudioContextProvider';
 import { usePlayerState, useUIState, useWindowManagement } from './hooks/useStoreHooks';
 import { useStore } from './store/useStore';
 import { useAudio } from './hooks/useAudio';
@@ -381,10 +380,4 @@ const VPlayerInner = () => {
   );
 };
 
-const VPlayer = () => (
-  <AudioContextProvider>
-    <VPlayerInner />
-  </AudioContextProvider>
-);
-
-export default VPlayer;
+export default VPlayerInner;
