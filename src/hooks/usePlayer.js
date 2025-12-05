@@ -48,9 +48,18 @@ export function usePlayer({
   const nextTrackPreloadedRef = useRef(false);
   const preloadAudioRef = useRef(null);
   const crossfadeStartedRef = useRef(false);
+  const crossfadeInProgressRef = useRef(false);
   const previousVolumeRef = useRef(0.7); // Store volume before muting
+  const userVolumeRef = useRef(volume); // Track user's intended volume (not affected by crossfade)
   const seekTimeoutRef = useRef(null);
   const lastSeekTimeRef = useRef(0);
+
+  // Keep user volume in sync
+  useEffect(() => {
+    if (!crossfadeInProgressRef.current) {
+      userVolumeRef.current = volume;
+    }
+  }, [volume]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -61,57 +70,11 @@ export function usePlayer({
     };
   }, []);
 
-  // Pre-load next track and handle crossfade
-  useEffect(() => {
-    if (!tracks.length || currentTrack === null || !duration) return;
-    
-    const timeRemaining = duration - progress;
-    
-    // Check if we should start crossfade
-    if (crossfade && crossfade.shouldCrossfade(progress, duration) && !crossfadeStartedRef.current) {
-      const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
-      
-      if (nextIdx !== null && nextIdx !== currentTrack) {
-        crossfadeStartedRef.current = true;
-        console.log('Starting crossfade...');
-        
-        crossfade.startCrossfade(() => {
-          setCurrentTrack(nextIdx);
-          crossfadeStartedRef.current = false;
-          nextTrackPreloadedRef.current = false;
-        });
-      }
-    }
-    
-    if (timeRemaining <= 5 && timeRemaining > 0 && !nextTrackPreloadedRef.current && !crossfade?.enabled) {
-      const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
-      
-      if (nextIdx !== null && nextIdx !== currentTrack) {
-        const nextTrack = tracks[nextIdx];
-        if (nextTrack) {
-          console.log(`Preloading next track: ${nextTrack.title || nextTrack.name}`);
-          nextTrackPreloadedRef.current = true;
-        }
-      }
-    }
-    
-    if (progress < 1) {
-      nextTrackPreloadedRef.current = false;
-      crossfadeStartedRef.current = false;
-    }
-  }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack]);
-
   /**
    * Calculate the next track index based on playback mode
    * Prioritizes queue over shuffle/normal playback
-   * 
-   * @param {number} current - Current track index
-   * @param {number} totalTracks - Total number of tracks
-   * @param {boolean} isShuffled - Whether shuffle is enabled
-   * @param {string} repeat - Repeat mode ('off', 'all', 'one')
-   * @returns {number|null} Next track index, or null if no next track
    */
-  const getNextTrackIndex = (current, totalTracks, isShuffled, repeat) => {
+  const getNextTrackIndex = useCallback((current, totalTracks, isShuffled, repeat) => {
     console.log('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', totalTracks);
     
     // Check queue first - queue always takes priority
@@ -154,7 +117,73 @@ export function usePlayer({
       console.log('[getNextTrackIndex] No next track');
       return null;
     }
-  };
+  }, [store, tracks]);
+
+  // Crossfade monitoring effect
+  useEffect(() => {
+    if (!tracks.length || currentTrack === null || !duration) return;
+    if (!crossfade || !crossfade.enabled) return;
+    
+    // Check if we should start crossfade
+    if (crossfade.shouldCrossfade(progress, duration) && !crossfadeStartedRef.current) {
+      const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
+      
+      if (nextIdx !== null && nextIdx !== currentTrack) {
+        crossfadeStartedRef.current = true;
+        crossfadeInProgressRef.current = true;
+        console.log('[Crossfade] Initiating crossfade to track:', nextIdx);
+        
+        crossfade.startCrossfade({
+          setVolume: (vol) => {
+            audio.changeVolume(vol).catch(err => console.error('Volume change failed:', err));
+          },
+          currentVolume: userVolumeRef.current,
+          onMidpoint: () => {
+            // Switch to next track at midpoint
+            setCurrentTrack(nextIdx);
+          },
+          onComplete: () => {
+            crossfadeStartedRef.current = false;
+            crossfadeInProgressRef.current = false;
+            nextTrackPreloadedRef.current = false;
+            // Restore user's intended volume
+            audio.changeVolume(userVolumeRef.current).catch(err => 
+              console.error('Failed to restore volume:', err)
+            );
+          }
+        });
+      }
+    }
+    
+    // Reset crossfade state when near start of track
+    if (progress < 1) {
+      crossfadeStartedRef.current = false;
+    }
+  }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, getNextTrackIndex]);
+
+  // Pre-load next track for gapless playback (when crossfade disabled)
+  useEffect(() => {
+    if (!tracks.length || currentTrack === null || !duration) return;
+    if (crossfade?.enabled) return; // Don't preload if crossfade is handling transitions
+    
+    const timeRemaining = duration - progress;
+    
+    if (timeRemaining <= 5 && timeRemaining > 0 && !nextTrackPreloadedRef.current) {
+      const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
+      
+      if (nextIdx !== null && nextIdx !== currentTrack) {
+        const nextTrack = tracks[nextIdx];
+        if (nextTrack) {
+          console.log(`[Gapless] Preloading next track: ${nextTrack.title || nextTrack.name}`);
+          nextTrackPreloadedRef.current = true;
+        }
+      }
+    }
+    
+    if (progress < 1) {
+      nextTrackPreloadedRef.current = false;
+    }
+  }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, getNextTrackIndex]);
 
   /**
    * Skip to the next track
@@ -164,16 +193,21 @@ export function usePlayer({
   const handleNextTrack = useCallback(() => {
     if (!tracks.length) return;
     
+    // Cancel any in-progress crossfade
+    if (crossfade && crossfadeInProgressRef.current) {
+      crossfade.cancelCrossfade((vol) => {
+        audio.changeVolume(vol).catch(err => console.error('Volume restore failed:', err));
+      });
+      crossfadeInProgressRef.current = false;
+    }
+    
     const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
     if (nextIdx !== null) {
       setCurrentTrack(nextIdx);
       nextTrackPreloadedRef.current = false;
       crossfadeStartedRef.current = false;
-      if (crossfade) {
-        crossfade.cancelCrossfade();
-      }
     }
-  }, [currentTrack, tracks, shuffle, repeatMode, setCurrentTrack, crossfade]);
+  }, [currentTrack, tracks, shuffle, repeatMode, setCurrentTrack, crossfade, audio, getNextTrackIndex]);
 
   /**
    * Go to previous track or restart current track
@@ -182,6 +216,14 @@ export function usePlayer({
    */
   const handlePrevTrack = useCallback(() => {
     if (!tracks.length) return;
+    
+    // Cancel any in-progress crossfade
+    if (crossfade && crossfadeInProgressRef.current) {
+      crossfade.cancelCrossfade((vol) => {
+        audio.changeVolume(vol).catch(err => console.error('Volume restore failed:', err));
+      });
+      crossfadeInProgressRef.current = false;
+    }
     
     if (progress > SEEK_THRESHOLD_SECONDS) {
       audio.seek(0).catch(err => {
@@ -207,9 +249,6 @@ export function usePlayer({
     }
     nextTrackPreloadedRef.current = false;
     crossfadeStartedRef.current = false;
-    if (crossfade) {
-      crossfade.cancelCrossfade();
-    }
   }, [currentTrack, tracks, shuffle, repeatMode, progress, audio, setCurrentTrack, toast, crossfade]);
 
   /**
@@ -245,6 +284,7 @@ export function usePlayer({
    * @param {number} newVolume - Volume level (0-1)
    */
   const handleVolumeChange = useCallback((newVolume) => {
+    userVolumeRef.current = newVolume; // Track user's intended volume
     setVolume(newVolume);
     audio.changeVolume(newVolume).catch(err => {
       console.error('Failed to change volume:', err);
@@ -257,18 +297,18 @@ export function usePlayer({
    * @param {number} step - Amount to increase (default 0.05)
    */
   const handleVolumeUp = useCallback((step = 0.05) => {
-    const newVolume = Math.min(1, volume + step);
+    const newVolume = Math.min(1, userVolumeRef.current + step);
     handleVolumeChange(newVolume);
-  }, [volume, handleVolumeChange]);
+  }, [handleVolumeChange]);
 
   /**
    * Decrease volume by step
    * @param {number} step - Amount to decrease (default 0.05)
    */
   const handleVolumeDown = useCallback((step = 0.05) => {
-    const newVolume = Math.max(0, volume - step);
+    const newVolume = Math.max(0, userVolumeRef.current - step);
     handleVolumeChange(newVolume);
-  }, [volume, handleVolumeChange]);
+  }, [handleVolumeChange]);
 
   /**
    * Toggle mute state
@@ -277,7 +317,7 @@ export function usePlayer({
   const handleToggleMute = useCallback(() => {
     if (volume > 0) {
       // Store current volume before muting
-      previousVolumeRef.current = volume;
+      previousVolumeRef.current = userVolumeRef.current;
       handleVolumeChange(0);
     } else {
       // Restore previous volume (default to 0.7 if not set)

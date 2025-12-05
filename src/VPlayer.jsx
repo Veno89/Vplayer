@@ -70,7 +70,7 @@ const VPlayerInner = () => {
   });
 
   const equalizer = useEqualizer();
-  const crossfade = useCrossfade({ audio, enabled: false, duration: 3 });
+  const crossfade = useCrossfade();
   
   const playerHook = usePlayerHook({ 
     audio, 

@@ -2,6 +2,27 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.5.3] - 2025-12-05
+
+### Added
+- **True Crossfade**: Fully implemented smooth volume-based crossfading between tracks
+  - Volume gradually fades out on current track while next track fades in
+  - Uses cosine/sine easing curves for natural-sounding transitions
+  - Configurable duration from 1-10 seconds
+  - Enable in Options → Audio → Crossfade
+
+### Improved
+- Crossfade respects user's volume settings - automatically restores after transition
+- Volume up/down now properly tracks user intent during crossfade
+- Better state management for crossfade in-progress detection
+
+### Note
+- **Audio Device Selection** and **Track Virtualization** were already implemented:
+  - Device selection available in Options → Audio → Output Device
+  - Track list uses react-window for smooth scrolling with large libraries
+
+---
+
 ## [0.5.2] - 2025-12-05
 
 ### Added

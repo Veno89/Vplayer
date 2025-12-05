@@ -93,6 +93,7 @@ src-tauri/src/
 - **Duplicate Detection**: Find duplicate tracks in library
 - **Mini Player**: Compact always-on-top mode
 - **Lyrics**: Fetch and display song lyrics
+- **Drag & Drop**: Drop audio folders directly onto window to add to library
 
 ---
 
@@ -112,6 +113,7 @@ src-tauri/src/
 - `Ctrl+E` - Equalizer window
 - `Ctrl+V` - Visualizer window
 - `Ctrl+F` - Add folder
+- `?` - Show keyboard shortcuts help
 
 **List Navigation**:
 - `Ctrl+↑` / `↓` or `Ctrl+J` / `K` - Move selection
@@ -400,4 +402,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.5.1 | **Updated**: December 2025
+**Version**: 0.5.3 | **Updated**: December 2025
