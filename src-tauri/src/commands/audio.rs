@@ -79,6 +79,31 @@ pub fn recover_audio(state: tauri::State<AppState>) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn is_audio_healthy(state: tauri::State<AppState>) -> bool {
+    state.player.is_healthy()
+}
+
+#[tauri::command]
+pub fn needs_audio_reinit(state: tauri::State<AppState>) -> bool {
+    state.player.needs_reinit()
+}
+
+#[tauri::command]
+pub fn get_inactive_duration(state: tauri::State<AppState>) -> f64 {
+    state.player.get_inactive_duration()
+}
+
+#[tauri::command]
+pub fn has_audio_device_changed(state: tauri::State<AppState>) -> bool {
+    state.player.has_device_changed()
+}
+
+#[tauri::command]
+pub fn is_audio_device_available(state: tauri::State<AppState>) -> bool {
+    state.player.is_device_available()
+}
+
+#[tauri::command]
 pub fn get_audio_devices() -> Result<Vec<AudioDevice>, String> {
     AudioPlayer::get_audio_devices().map_err(|e| e.into())
 }

@@ -123,6 +123,10 @@ pub struct AudioDevice {
     pub is_default: bool,
 }
 
+/// Threshold for considering a pause "long" - after this duration, we proactively
+/// reinitialize the audio stream to prevent stale device issues
+const LONG_PAUSE_THRESHOLD: Duration = Duration::from_secs(5 * 60); // 5 minutes
+
 pub struct AudioPlayer {
     sink: Arc<Mutex<Sink>>,
     _stream: Arc<Mutex<Option<OutputStream>>>,
@@ -147,6 +151,10 @@ pub struct AudioPlayer {
     balance: Arc<Mutex<f32>>,
     // Visualizer sample buffer
     visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
+    // Track when the stream was last known to be active (for stale detection)
+    last_active: Arc<Mutex<Instant>>,
+    // Track the device name we're connected to (for detecting device changes)
+    connected_device_name: Arc<Mutex<Option<String>>>,
 }
 
 // Manually implement Send and Sync for AudioPlayer
@@ -158,14 +166,14 @@ impl AudioPlayer {
         info!("Initializing audio player with high-quality settings");
         
         // Try to create output with optimal settings for quality
-        let (stream, mixer) = Self::create_high_quality_output()?;
+        let (stream, mixer, device_name) = Self::create_high_quality_output_with_device_name()?;
         
         let sink = Sink::connect_new(&mixer);
         
         // Create visualizer buffer - 4096 samples is enough for FFT analysis at ~30fps
         let visualizer_buffer = Arc::new(Mutex::new(VisualizerBuffer::new(4096)));
         
-        info!("Audio player initialized successfully");
+        info!("Audio player initialized successfully on device: {:?}", device_name);
         Ok(Self {
             sink: Arc::new(Mutex::new(sink)),
             _stream: Arc::new(Mutex::new(Some(stream))),
@@ -184,13 +192,19 @@ impl AudioPlayer {
             replaygain_multiplier: Arc::new(Mutex::new(1.0)),
             balance: Arc::new(Mutex::new(0.0)),
             visualizer_buffer,
+            last_active: Arc::new(Mutex::new(Instant::now())),
+            connected_device_name: Arc::new(Mutex::new(device_name)),
         })
     }
     
-    fn create_high_quality_output() -> AppResult<(OutputStream, Arc<Mixer>)> {
+    /// Create high quality output and return the device name we connected to
+    fn create_high_quality_output_with_device_name() -> AppResult<(OutputStream, Arc<Mixer>, Option<String>)> {
         let host = rodio::cpal::default_host();
         let device = host.default_output_device()
             .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
+        
+        let device_name = device.name().ok();
+        info!("Using audio device: {:?}", device_name);
         
         // Try to get supported configs
         let supported_configs = device.supported_output_configs()
@@ -222,7 +236,48 @@ impl AudioPlayer {
             .map_err(|e| AppError::Audio(format!("Failed to create audio output: {}", e)))?;
         let mixer = Arc::new(stream.mixer().clone());
         
-        Ok((stream, mixer))
+        Ok((stream, mixer, device_name))
+    }
+    
+    /// Check if the default audio device has changed since we connected
+    /// This detects when external DACs/headphones are disconnected/reconnected
+    pub fn has_device_changed(&self) -> bool {
+        let host = rodio::cpal::default_host();
+        
+        // Get current default device name
+        let current_default = host.default_output_device()
+            .and_then(|d| d.name().ok());
+        
+        // Get the device we originally connected to
+        let connected = self.connected_device_name.lock().unwrap().clone();
+        
+        // If we don't know what we connected to, assume it hasn't changed
+        if connected.is_none() {
+            return false;
+        }
+        
+        // Check if device changed
+        let changed = current_default != connected;
+        
+        if changed {
+            info!("Audio device changed: {:?} -> {:?}", connected, current_default);
+        }
+        
+        changed
+    }
+    
+    /// Check if our connected audio device is still available
+    pub fn is_device_available(&self) -> bool {
+        let host = rodio::cpal::default_host();
+        
+        // Check if there's any default output device
+        if host.default_output_device().is_none() {
+            warn!("No default audio output device available");
+            return false;
+        }
+        
+        // The device is available (even if it changed)
+        true
     }
     
     pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
@@ -306,13 +361,105 @@ impl AudioPlayer {
         *self.paused_duration.lock().unwrap() = Duration::ZERO;
         *self.pause_start.lock().unwrap() = None;
         
+        // Update last active time since we just loaded a track
+        *self.last_active.lock().unwrap() = Instant::now();
+        
         Ok(())
     }
     
     pub fn play(&self) -> AppResult<()> {
         info!("Starting playback");
+        
+        // Check if we've been paused for a long time - if so, reinitialize audio
+        let pause_duration = self.pause_start.lock().unwrap()
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        
+        // Also check time since last active audio (covers cases where pause_start wasn't set)
+        let time_since_active = self.last_active.lock().unwrap().elapsed();
+        
+        // Check if the audio device has changed (e.g., external DAC disconnected/reconnected)
+        let device_changed = self.has_device_changed();
+        
+        // Check if the device is even available
+        let device_available = self.is_device_available();
+        
+        if !device_available {
+            error!("No audio device available");
+            return Err(AppError::Audio("No audio output device available. Please connect an audio device.".to_string()));
+        }
+        
+        let needs_reinit = device_changed || 
+                          pause_duration > LONG_PAUSE_THRESHOLD || 
+                          time_since_active > LONG_PAUSE_THRESHOLD;
+        
+        if needs_reinit {
+            if device_changed {
+                info!("Audio device changed, reinitializing audio stream...");
+            } else {
+                info!("Long pause detected (paused: {:?}, inactive: {:?}), reinitializing audio stream...", 
+                      pause_duration, time_since_active);
+            }
+            
+            // Get current state for recovery
+            let current_path = self.current_path.lock().unwrap().clone();
+            let current_position = self.get_position();
+            let volume = *self.last_volume.lock().unwrap();
+            
+            // Reinitialize audio output
+            match Self::create_high_quality_output_with_device_name() {
+                Ok((new_stream, new_mixer, new_device_name)) => {
+                    info!("Audio stream reinitialized successfully on device: {:?}", new_device_name);
+                    
+                    // Create new sink
+                    let new_sink = Sink::connect_new(&new_mixer);
+                    new_sink.set_volume(volume);
+                    
+                    // Replace stream and mixer
+                    *self._stream.lock().unwrap() = Some(new_stream);
+                    *self.mixer.lock().unwrap() = Some(new_mixer);
+                    
+                    // Update connected device name
+                    *self.connected_device_name.lock().unwrap() = new_device_name;
+                    
+                    // Replace sink
+                    {
+                        let mut sink = self.sink.lock().unwrap();
+                        *sink = new_sink;
+                    }
+                    
+                    // Reload the track if there was one
+                    if let Some(path) = current_path {
+                        info!("Reloading track after audio reinit: {}", path);
+                        
+                        // Load the track fresh
+                        if let Err(e) = self.load(path.clone()) {
+                            error!("Failed to reload track after reinit: {}", e);
+                            return Err(e);
+                        }
+                        
+                        // Restore position (but not if we were at the start)
+                        if current_position > 0.5 {
+                            if let Err(e) = self.seek(current_position) {
+                                warn!("Failed to restore position after reinit: {}", e);
+                                // Continue anyway - better to play from start than not at all
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to reinitialize audio: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        
+        // Now actually play
         let sink = self.sink.lock().unwrap();
         sink.play();
+        
+        // Update last active time
+        *self.last_active.lock().unwrap() = Instant::now();
         
         // Handle resume from pause
         if let Some(pause_start) = self.pause_start.lock().unwrap().take() {
@@ -715,16 +862,22 @@ impl AudioPlayer {
     pub fn recover(&self) -> AppResult<bool> {
         info!("Attempting audio system recovery...");
         
+        // Check if device is available
+        if !self.is_device_available() {
+            warn!("No audio device available for recovery");
+            return Ok(false);
+        }
+        
         // Save current state
         let current_path = self.current_path.lock().unwrap().clone();
         let current_position = self.get_position();
         let was_playing = self.is_playing();
         let volume = *self.last_volume.lock().unwrap();
         
-        // Try to recreate the audio output
-        match Self::create_high_quality_output() {
-            Ok((new_stream, new_mixer)) => {
-                info!("Audio output recreated successfully");
+        // Try to recreate the audio output with device name tracking
+        match Self::create_high_quality_output_with_device_name() {
+            Ok((new_stream, new_mixer, new_device_name)) => {
+                info!("Audio output recreated successfully on device: {:?}", new_device_name);
                 
                 // Create new sink
                 let new_sink = Sink::connect_new(&new_mixer);
@@ -734,11 +887,17 @@ impl AudioPlayer {
                 *self._stream.lock().unwrap() = Some(new_stream);
                 *self.mixer.lock().unwrap() = Some(new_mixer);
                 
+                // Update connected device name
+                *self.connected_device_name.lock().unwrap() = new_device_name;
+                
                 // Replace sink
                 {
                     let mut sink = self.sink.lock().unwrap();
                     *sink = new_sink;
                 }
+                
+                // Update last active time
+                *self.last_active.lock().unwrap() = Instant::now();
                 
                 // Reload current track if there was one
                 if let Some(path) = current_path {
@@ -773,7 +932,6 @@ impl AudioPlayer {
         }
     }
     
-    #[allow(dead_code)]
     /// Check if the audio system is healthy (sink is responsive)
     pub fn is_healthy(&self) -> bool {
         // Try to access the sink - if this hangs or fails, system is unhealthy
@@ -791,6 +949,35 @@ impl AudioPlayer {
         }
     }
     
+    /// Check how long the audio has been inactive/paused
+    /// Returns the duration in seconds
+    pub fn get_inactive_duration(&self) -> f64 {
+        let pause_duration = self.pause_start.lock().unwrap()
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        
+        let time_since_active = self.last_active.lock().unwrap().elapsed();
+        
+        // Return the longer of the two
+        pause_duration.max(time_since_active).as_secs_f64()
+    }
+    
+    /// Check if audio needs reinitialization (paused too long or device changed)
+    pub fn needs_reinit(&self) -> bool {
+        // Check for device changes first (external DAC reconnected, etc.)
+        if self.has_device_changed() {
+            return true;
+        }
+        
+        let pause_duration = self.pause_start.lock().unwrap()
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        
+        let time_since_active = self.last_active.lock().unwrap().elapsed();
+        
+        pause_duration > LONG_PAUSE_THRESHOLD || time_since_active > LONG_PAUSE_THRESHOLD
+    }
+
     /// Get current audio samples for visualization
     pub fn get_visualizer_samples(&self) -> Vec<f32> {
         match self.visualizer_buffer.lock() {
