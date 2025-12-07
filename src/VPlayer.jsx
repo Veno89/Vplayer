@@ -14,11 +14,13 @@ import { useShortcuts } from './hooks/useShortcuts';
 import { useCrossfade } from './hooks/useCrossfade';
 import { useDragDrop } from './hooks/useDragDrop';
 import { useWindowConfigs } from './hooks/useWindowConfigs';
+import { useUpdater } from './hooks/useUpdater';
 import { AppContainer } from './components/AppContainer';
 import { WindowManager } from './components/WindowManager';
 import { MiniPlayerWindow } from './windows/MiniPlayerWindow';
 import { OnboardingWindow } from './windows/OnboardingWindow';
 import ThemeEditorWindow from './windows/ThemeEditorWindow';
+import { UpdateBanner } from './components/UpdateComponents';
 import { VOLUME_STEP } from './utils/constants';
 
 const VPlayerInner = () => {
@@ -29,6 +31,9 @@ const VPlayerInner = () => {
   const [tagEditorTrack, setTagEditorTrack] = React.useState(null);
   const [showOnboarding, setShowOnboarding] = React.useState(false);
   const prevPlayingRef = useRef(null);
+
+  // Auto-updater
+  const updater = useUpdater();
 
   const { currentTrack, setCurrentTrack, playing, setPlaying, progress, setProgress,
     duration, setDuration, volume, setVolume, shuffle, setShuffle, repeatMode, 
@@ -341,6 +346,18 @@ const VPlayerInner = () => {
       backgroundOpacity={backgroundOpacity}
       currentColors={currentColors}
     >
+      {/* Update notification banner */}
+      {updater.updateAvailable && (
+        <UpdateBanner
+          updateInfo={updater.updateInfo}
+          downloading={updater.downloading}
+          downloadProgress={updater.downloadProgress}
+          onDownload={updater.downloadAndInstall}
+          onDismiss={updater.dismissUpdate}
+          currentColors={currentColors}
+        />
+      )}
+      
       {miniPlayerMode ? (
         <div className="fixed top-4 right-4 z-[100]">
           <MiniPlayerWindow

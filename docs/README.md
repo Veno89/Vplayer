@@ -1,5 +1,8 @@
 # VPlayer Documentation
 
+[![Download Latest](https://img.shields.io/github/v/release/Veno89/Vplayer?label=Download&style=for-the-badge)](https://github.com/Veno89/Vplayer/releases/latest)
+[![GitHub Release Date](https://img.shields.io/github/release-date/Veno89/Vplayer?style=flat-square)](https://github.com/Veno89/Vplayer/releases)
+
 **Desktop Music Player** built with Tauri 2 (Rust) + React 18
 
 ---

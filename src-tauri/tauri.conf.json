@@ -44,5 +44,13 @@
     "category": "Music",
     "shortDescription": "Modern desktop music player",
     "longDescription": "VPlayer is a powerful, feature-rich desktop music player with smart playlists, equalizer, tag editing, and more."
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Veno89/Vplayer/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcwRUQ4N0RENDhGNDNBRTIKUldUaU92UkkzWWZ0Y0E4dzRENnk2K0FvRFV4WEdsclRCaHhTU3NGbUt1WXZ5b2FMYnpsTTlBVi8K"
+    }
   }
 }
