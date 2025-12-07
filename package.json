@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "test": "vitest",
     "build": "vite build",
