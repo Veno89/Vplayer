@@ -186,6 +186,20 @@ export function OptionsWindowEnhanced({
 
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }) {
+  const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall } = window.updater || {};
+  const currentVersion = '0.5.5';
+  const [checking, setChecking] = React.useState(false);
+
+  const handleCheckForUpdates = async () => {
+    if (!checkForUpdates) return;
+    setChecking(true);
+    try {
+      await checkForUpdates();
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Hero Section */}
@@ -201,13 +215,46 @@ function AboutTab({ currentColors }) {
         <h2 className="text-white text-4xl font-bold mb-2 tracking-tight">VPlayer</h2>
         <div className="flex items-center justify-center gap-3 mb-3">
           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-            v0.5.0
+            v{currentVersion}
           </span>
           <span className="text-slate-500 text-sm">Beta</span>
         </div>
         <p className="text-slate-400 text-sm max-w-sm mx-auto leading-relaxed">
           Fast, lightweight, and fully customizable music player for your desktop
         </p>
+
+        {/* Update Checker */}
+        <div className="mt-6">
+          {updateAvailable ? (
+            <div className="inline-flex flex-col gap-2">
+              <div className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-sm">
+                Update available: v{updateInfo?.version}
+              </div>
+              {downloading ? (
+                <div className="text-xs text-slate-400">
+                  Downloading... {downloadProgress}%
+                </div>
+              ) : (
+                <button
+                  onClick={downloadAndInstall}
+                  onMouseDown={e => e.stopPropagation()}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg transition-colors"
+                >
+                  Download & Install
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={handleCheckForUpdates}
+              onMouseDown={e => e.stopPropagation()}
+              disabled={checking}
+              className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm rounded-lg transition-colors disabled:opacity-50"
+            >
+              {checking ? 'Checking...' : 'Check for Updates'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tech Stack Cards */}

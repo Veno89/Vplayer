@@ -107,7 +107,6 @@ Two separate systems exist:
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
-| **Bookmarks / Cue Points** | Save timestamps for quick navigation | Medium |
 | **Audio Limiter** | Prevent clipping with EQ boost | Medium |
 
 ### Medium Priority
@@ -118,8 +117,6 @@ Two separate systems exist:
 | **Column Customization** | Show/hide columns (bitrate, file size) | Medium |
 | **Library Context Menu Rating** | Rate from library, not just playlist | Low |
 | **Sort by Last Played** | Add sort option | Low |
-| **Random Album/Artist Playback** | Play random album instead of shuffle | Medium |
-| **Auto-Queue Similar Tracks** | Queue similar by genre/artist | Medium |
 
 ### Lower Priority
 
@@ -127,17 +124,6 @@ Two separate systems exist:
 |---------|-------------|------------|
 | **Additional Keyboard Shortcuts** | Delete, F2 for tags, number keys for rating | Low |
 | **Visualizer Configuration** | Bar count, colors, peak hold | Low-Medium |
-| **Mono Audio Mode** | Mix stereo to mono | Low |
-| **Pre-Amp Control** | Master gain before EQ | Low |
-
-### Accessibility
-
-| Feature | Description | Complexity |
-|---------|-------------|------------|
-| **Screen Reader Support** | ARIA labels, roles, live regions | Medium |
-| **High Contrast Mode** | Built-in theme | Low |
-| **Reduced Motion Mode** | Option to disable animations | Low-Medium |
-| **Focus Indicators** | Consistent visible focus ring | Low |
 
 ---
 

@@ -35,6 +35,14 @@ const VPlayerInner = () => {
   // Auto-updater
   const updater = useUpdater();
 
+  // Expose updater globally for About tab
+  useEffect(() => {
+    window.updater = updater;
+    return () => {
+      delete window.updater;
+    };
+  }, [updater]);
+
   const { currentTrack, setCurrentTrack, playing, setPlaying, progress, setProgress,
     duration, setDuration, volume, setVolume, shuffle, setShuffle, repeatMode, 
     setRepeatMode, loadingTrackIndex, setLoadingTrackIndex, abRepeat, setPointA,
