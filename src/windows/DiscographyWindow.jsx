@@ -24,8 +24,93 @@ import {
   Download,
   CheckCircle,
   XCircle,
+  FileText,
 } from 'lucide-react';
 import { useDiscography } from '../hooks/useDiscography';
+
+// Helper to export missing albums to a text file
+const exportMissingAlbums = (artistName, albums, allArtistsData = null) => {
+  const lines = [];
+  const timestamp = new Date().toISOString().split('T')[0];
+  
+  if (allArtistsData) {
+    // Export all artists' missing albums
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('                    MISSING ALBUMS REPORT');
+    lines.push(`                    Generated: ${timestamp}`);
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('');
+    
+    let totalMissing = 0;
+    
+    allArtistsData.forEach(({ artistName: name, albums: artistAlbums }) => {
+      const missing = artistAlbums.filter(a => a.status === 'missing');
+      if (missing.length === 0) return;
+      
+      totalMissing += missing.length;
+      lines.push(`━━━ ${name} ━━━`);
+      lines.push(`    ${missing.length} missing album${missing.length !== 1 ? 's' : ''}`);
+      lines.push('');
+      
+      missing.sort((a, b) => {
+        const yearA = a.mbFirstReleaseDate?.substring(0, 4) || '9999';
+        const yearB = b.mbFirstReleaseDate?.substring(0, 4) || '9999';
+        return yearA.localeCompare(yearB);
+      }).forEach(album => {
+        const year = album.mbFirstReleaseDate?.substring(0, 4) || 'Unknown';
+        const type = album.mbPrimaryType || 'Album';
+        const secondary = album.mbSecondaryTypes?.length > 0 ? ` (${album.mbSecondaryTypes.join(', ')})` : '';
+        lines.push(`    • [${year}] ${album.mbTitle} - ${type}${secondary}`);
+      });
+      
+      lines.push('');
+    });
+    
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push(`                    TOTAL: ${totalMissing} missing albums`);
+    lines.push('═══════════════════════════════════════════════════════════════');
+  } else {
+    // Export single artist's missing albums
+    const missing = albums.filter(a => a.status === 'missing');
+    
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push(`                    MISSING ALBUMS: ${artistName}`);
+    lines.push(`                    Generated: ${timestamp}`);
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('');
+    lines.push(`Found ${missing.length} missing album${missing.length !== 1 ? 's' : ''}`);
+    lines.push('');
+    
+    missing.sort((a, b) => {
+      const yearA = a.mbFirstReleaseDate?.substring(0, 4) || '9999';
+      const yearB = b.mbFirstReleaseDate?.substring(0, 4) || '9999';
+      return yearA.localeCompare(yearB);
+    }).forEach(album => {
+      const year = album.mbFirstReleaseDate?.substring(0, 4) || 'Unknown';
+      const type = album.mbPrimaryType || 'Album';
+      const secondary = album.mbSecondaryTypes?.length > 0 ? ` (${album.mbSecondaryTypes.join(', ')})` : '';
+      lines.push(`• [${year}] ${album.mbTitle}`);
+      lines.push(`    Type: ${type}${secondary}`);
+      if (album.mbReleaseGroupId) {
+        lines.push(`    MusicBrainz: https://musicbrainz.org/release-group/${album.mbReleaseGroupId}`);
+      }
+      lines.push('');
+    });
+  }
+  
+  const content = lines.join('\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = allArtistsData 
+    ? `missing-albums-${timestamp}.txt`
+    : `missing-albums-${artistName.replace(/[^a-zA-Z0-9]/g, '-')}-${timestamp}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 // Status badge component
 const StatusBadge = ({ status }) => {
@@ -323,6 +408,23 @@ export function DiscographyWindow({ tracks, currentColors }) {
     setSearchQuery('');
   }, [setSelectedArtistMbid]);
 
+  // Export all missing albums from all artists
+  const handleExportAllMissing = useCallback(() => {
+    const allArtistsData = artistList
+      .filter(artist => artist.discography?.albums?.some(a => a.status === 'missing'))
+      .map(artist => ({
+        artistName: artist.name,
+        albums: artist.discography.albums,
+      }));
+    
+    if (allArtistsData.length === 0) {
+      alert('No missing albums found. Fetch discographies first.');
+      return;
+    }
+    
+    exportMissingAlbums(null, null, allArtistsData);
+  }, [artistList]);
+
   // Render artist list view
   const renderArtistList = () => (
     <>
@@ -342,6 +444,15 @@ export function DiscographyWindow({ tracks, currentColors }) {
             title="Settings"
           >
             <Settings className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={handleExportAllMissing}
+            disabled={loading || stats.totalMissing === 0}
+            className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 rounded transition-colors disabled:opacity-50"
+            title="Export all missing albums to file"
+          >
+            <FileText className="w-4 h-4" />
           </button>
           
           <button
@@ -515,6 +626,15 @@ export function DiscographyWindow({ tracks, currentColors }) {
             title="Refresh discography"
           >
             <RefreshCw className={`w-4 h-4 text-white ${loading ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => exportMissingAlbums(selectedDiscography.artistName, albums)}
+            disabled={missingAlbums.length === 0}
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors disabled:opacity-50"
+            title="Export missing albums to file"
+          >
+            <FileText className="w-4 h-4 text-white" />
           </button>
 
           <a
