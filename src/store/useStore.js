@@ -17,7 +17,8 @@ import {
   createSettingsSlice,
   settingsPersistState,
   createMusicBrainzSlice,
-  musicBrainzPersistState
+  musicBrainzPersistState,
+  getInitialWindows
 } from './slices';
 
 export const useStore = create(
@@ -37,7 +38,19 @@ export const useStore = create(
         ...uiPersistState(state),
         ...settingsPersistState(state),
         ...musicBrainzPersistState(state),
-      })
+      }),
+      // Merge persisted state with fresh defaults to add new windows
+      merge: (persistedState, currentState) => {
+        const merged = { ...currentState, ...persistedState };
+        
+        // Ensure new windows from layouts are added to existing persisted windows
+        if (persistedState?.windows) {
+          const defaultWindows = getInitialWindows();
+          merged.windows = { ...defaultWindows, ...persistedState.windows };
+        }
+        
+        return merged;
+      }
     }
   )
 );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Eye, EyeOff, RotateCcw, Maximize2, Music, ListMusic, Library, Sliders, Radio, ListOrdered, Mic, Settings, BarChart3 } from 'lucide-react';
+import { Layout, Eye, EyeOff, RotateCcw, Maximize2, Music, ListMusic, Library, Sliders, Radio, ListOrdered, Mic, Settings, BarChart3, Disc3 } from 'lucide-react';
 import { SettingCard, SettingButton, SettingDivider } from './SettingsComponents';
 
 // Window icon mapping
@@ -13,6 +13,7 @@ const WINDOW_ICONS = {
   lyrics: Mic,
   options: Settings,
   libraryStats: BarChart3,
+  discography: Disc3,
 };
 
 // Window color mapping
@@ -26,6 +27,7 @@ const WINDOW_COLORS = {
   lyrics: { bg: 'bg-rose-500', text: 'text-rose-400', border: 'border-rose-500/30' },
   options: { bg: 'bg-slate-500', text: 'text-slate-400', border: 'border-slate-500/30' },
   libraryStats: { bg: 'bg-blue-500', text: 'text-blue-400', border: 'border-blue-500/30' },
+  discography: { bg: 'bg-indigo-500', text: 'text-indigo-400', border: 'border-indigo-500/30' },
 };
 
 export function WindowsTab({ windows, toggleWindow }) {
