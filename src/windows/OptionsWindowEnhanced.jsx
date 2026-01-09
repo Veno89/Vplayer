@@ -186,15 +186,25 @@ export function OptionsWindowEnhanced({
 
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }) {
-  const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall } = window.updater || {};
-  const currentVersion = '0.5.10';
+  const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = window.updater || {};
+  const currentVersion = '0.6.0';
   const [checking, setChecking] = React.useState(false);
+  const [message, setMessage] = React.useState('');
 
   const handleCheckForUpdates = async () => {
-    if (!checkForUpdates) return;
+    if (!checkForUpdates) {
+      setMessage('Updater not available');
+      return;
+    }
     setChecking(true);
+    setMessage('');
     try {
-      await checkForUpdates();
+      const hasUpdate = await checkForUpdates();
+      if (!hasUpdate && !updateAvailable) {
+        setMessage(`You are up to date! (v${currentVersion})`);
+      }
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
     } finally {
       setChecking(false);
     }
@@ -245,14 +255,21 @@ function AboutTab({ currentColors }) {
               )}
             </div>
           ) : (
-            <button
-              onClick={handleCheckForUpdates}
-              onMouseDown={e => e.stopPropagation()}
-              disabled={checking}
-              className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm rounded-lg transition-colors disabled:opacity-50"
-            >
-              {checking ? 'Checking...' : 'Check for Updates'}
-            </button>
+            <div className="inline-flex flex-col gap-2 items-center">
+              <button
+                onClick={handleCheckForUpdates}
+                onMouseDown={e => e.stopPropagation()}
+                disabled={checking}
+                className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm rounded-lg transition-colors disabled:opacity-50"
+              >
+                {checking ? 'Checking...' : 'Check for Updates'}
+              </button>
+              {message && (
+                <div className={`text-xs ${error || message.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                  {message}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -285,6 +302,7 @@ function AboutTab({ currentColors }) {
             'Gapless playback', '10-band equalizer', 'Real-time visualizer', 'Crossfade transitions',
             'Smart playlists', 'Queue management', 'Lyrics support', 'Tag editor',
             'Customizable themes', 'Flexible layouts', 'Keyboard shortcuts', 'Folder watching',
+            'MusicBrainz discography', 'Album cover art',
           ].map((feature, i) => (
             <div key={i} className="flex items-center gap-2 text-slate-300">
               <span className="text-cyan-400">●</span> {feature}

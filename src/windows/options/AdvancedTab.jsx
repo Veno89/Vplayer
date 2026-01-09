@@ -77,7 +77,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
       // Get all settings from store
       const state = useStore.getState();
       const settings = {
-        version: '0.5.0',
+        version: '0.6.0',
         exportedAt: new Date().toISOString(),
         settings: {
           colorScheme: state.colorScheme,

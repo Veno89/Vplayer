@@ -2,6 +2,38 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.0] - 2026-01-09
+
+### Added
+- **MusicBrainz Discography Matching**: Find missing albums from your favorite artists
+  - Automatically matches local artists with MusicBrainz database
+  - Fetches complete discographies from MusicBrainz API
+  - Shows which albums you own vs which are missing
+  - Cover art from Cover Art Archive integration
+  - Smart album name matching (handles deluxe editions, remasters, etc.)
+  - Manual artist matching and correction
+  - Configurable options: include/exclude EPs, live albums, compilations
+  - Persistent caching with 7-day refresh interval
+  - Rate-limited API calls (respects MusicBrainz 1 req/sec limit)
+  
+- **Discography Window**: New dedicated window for browsing artist discographies
+  - Artist list with match status indicators
+  - Album grid showing owned/missing/uncertain status
+  - Quick stats: total artists, matched, missing albums
+  - Filter by: all artists, matched, unmatched, with missing albums
+  - Auto-match all unresolved artists with one click
+  - Manual artist search and selection
+  - Mark albums as owned/not owned manually
+  - Direct links to MusicBrainz for each artist
+
+### Technical
+- New services: MusicBrainzAPI, CoverArtArchive, DiscographyMatcher
+- New store slice: musicBrainzSlice for state management
+- New hook: useDiscography for consuming the feature
+- Full test coverage for matching algorithms
+
+---
+
 ## [0.5.4] - 2025-12-05
 
 ### Added

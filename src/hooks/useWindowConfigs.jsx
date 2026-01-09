@@ -1,5 +1,5 @@
 import React from 'react';
-import { Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles, FileText, Keyboard, BarChart3, Tag } from 'lucide-react';
+import { Music, Settings, List, Sliders, FolderOpen, ListOrdered, History, Disc, Sparkles, FileText, Keyboard, BarChart3, Tag, Library } from 'lucide-react';
 import { PlayerWindow } from '../windows/PlayerWindow';
 import { PlaylistWindow } from '../windows/PlaylistWindow';
 import { LibraryWindow } from '../windows/LibraryWindow';
@@ -12,6 +12,7 @@ import { AlbumViewWindow } from '../windows/AlbumViewWindow';
 import { SmartPlaylistsWindow } from '../windows/SmartPlaylistsWindow';
 import { LibraryStatsWindow } from '../windows/LibraryStatsWindow';
 import { TagEditorWindow } from '../windows/TagEditorWindow';
+import { DiscographyWindow } from '../windows/DiscographyWindow';
 import LyricsWindow from '../windows/LyricsWindow';
 import ShortcutsWindow from '../windows/ShortcutsWindow';
 
@@ -333,6 +334,17 @@ export function useWindowConfigs({
           track={tagEditorTrack}
           onClose={() => setTagEditorTrack?.(null)}
           onSave={onTagsSaved}
+          currentColors={currentColors}
+        />
+      ),
+    },
+    {
+      id: 'discography',
+      title: 'Discography',
+      icon: Library,
+      content: (
+        <DiscographyWindow
+          tracks={tracks}
           currentColors={currentColors}
         />
       ),

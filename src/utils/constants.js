@@ -29,6 +29,7 @@ export const WINDOW_MIN_SIZES = {
   smartPlaylists: { width: 400, height: 350 }, // Smart playlist rules
   lyrics: { width: 350, height: 300 },      // Lyrics display
   shortcuts: { width: 400, height: 350 },   // Shortcuts list
+  discography: { width: 450, height: 450 }, // Artist discography matching
 };
 
 // Search & Filter

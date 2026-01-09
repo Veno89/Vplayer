@@ -22,6 +22,7 @@ export const LAYOUT_TEMPLATES = {
       library: { x: 960, y: 40, width: 450, height: 500, visible: false, minimized: false },
       visualizer: { x: 460, y: 760, width: 480, height: 180, visible: false, minimized: false },
       queue: { x: 960, y: 40, width: 400, height: 400, visible: false, minimized: false },
+      discography: { x: 960, y: 40, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -43,6 +44,7 @@ export const LAYOUT_TEMPLATES = {
       visualizer: { x: 480, y: 540, width: 680, height: 260, visible: true, minimized: false },
       library: { x: 1180, y: 40, width: 420, height: 760, visible: true, minimized: false },
       queue: { x: 1180, y: 560, width: 420, height: 240, visible: false, minimized: false },
+      discography: { x: 1180, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -61,6 +63,7 @@ export const LAYOUT_TEMPLATES = {
       equalizer: { x: 860, y: 40, width: 400, height: 280, visible: false, minimized: false },
       visualizer: { x: 40, y: 820, width: 800, height: 180, visible: false, minimized: false },
       queue: { x: 860, y: 40, width: 400, height: 400, visible: false, minimized: false },
+      discography: { x: 860, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -81,6 +84,7 @@ export const LAYOUT_TEMPLATES = {
       queue: { x: 480, y: 40, width: 400, height: 860, visible: true, minimized: false },
       playlist: { x: 900, y: 40, width: 480, height: 500, visible: false, minimized: false },
       library: { x: 900, y: 40, width: 450, height: 500, visible: false, minimized: false },
+      discography: { x: 900, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -100,6 +104,7 @@ export const LAYOUT_TEMPLATES = {
       equalizer: { x: 580, y: 760, width: 380, height: 280, visible: false, minimized: false },
       visualizer: { x: 40, y: 760, width: 520, height: 180, visible: false, minimized: false },
       queue: { x: 980, y: 40, width: 400, height: 400, visible: false, minimized: false },
+      discography: { x: 980, y: 460, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -119,6 +124,7 @@ export const LAYOUT_TEMPLATES = {
       playlist: { x: 880, y: 40, width: 480, height: 500, visible: false, minimized: false },
       library: { x: 880, y: 40, width: 450, height: 500, visible: false, minimized: false },
       queue: { x: 880, y: 40, width: 400, height: 400, visible: false, minimized: false },
+      discography: { x: 880, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -136,6 +142,7 @@ export const LAYOUT_TEMPLATES = {
       equalizer: { x: 40, y: 460, width: 420, height: 280, visible: false, minimized: false },
       visualizer: { x: 480, y: 460, width: 480, height: 180, visible: false, minimized: false },
       queue: { x: 480, y: 40, width: 400, height: 400, visible: false, minimized: false },
+      discography: { x: 480, y: 460, width: 450, height: 500, visible: false, minimized: false },
     }
   },
   
@@ -154,6 +161,7 @@ export const LAYOUT_TEMPLATES = {
       equalizer: { x: 40, y: 540, width: 400, height: 280, visible: false, minimized: false },
       visualizer: { x: 460, y: 540, width: 480, height: 180, visible: false, minimized: false },
       queue: { x: 960, y: 40, width: 400, height: 400, visible: false, minimized: false },
+      discography: { x: 960, y: 40, width: 450, height: 500, visible: false, minimized: false },
     }
   },
 };

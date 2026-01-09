@@ -5,6 +5,7 @@
  * - playerSlice: Playback state, queue management
  * - uiSlice: Windows, themes, layouts, visual settings
  * - settingsSlice: User preferences (playback, library, behavior, performance)
+ * - musicBrainzSlice: MusicBrainz integration and discography matching
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -14,7 +15,9 @@ import {
   createUISlice,
   uiPersistState,
   createSettingsSlice,
-  settingsPersistState
+  settingsPersistState,
+  createMusicBrainzSlice,
+  musicBrainzPersistState
 } from './slices';
 
 export const useStore = create(
@@ -24,6 +27,7 @@ export const useStore = create(
       ...createPlayerSlice(set, get),
       ...createUISlice(set, get),
       ...createSettingsSlice(set),
+      ...createMusicBrainzSlice(set, get),
     }),
     {
       name: 'vplayer-storage',
@@ -32,6 +36,7 @@ export const useStore = create(
         ...playerPersistState(state),
         ...uiPersistState(state),
         ...settingsPersistState(state),
+        ...musicBrainzPersistState(state),
       })
     }
   )
