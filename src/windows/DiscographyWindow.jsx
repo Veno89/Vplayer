@@ -27,9 +27,12 @@ import {
   FileText,
 } from 'lucide-react';
 import { useDiscography } from '../hooks/useDiscography';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { desktopDir } from '@tauri-apps/api/path';
 
 // Helper to export missing albums to a text file
-const exportMissingAlbums = (artistName, albums, allArtistsData = null) => {
+const exportMissingAlbums = async (artistName, albums, allArtistsData = null) => {
   const lines = [];
   const timestamp = new Date().toISOString().split('T')[0];
   
@@ -99,17 +102,37 @@ const exportMissingAlbums = (artistName, albums, allArtistsData = null) => {
   }
   
   const content = lines.join('\n');
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = allArtistsData 
-    ? `missing-albums-${timestamp}.txt`
-    : `missing-albums-${artistName.replace(/[^a-zA-Z0-9]/g, '-')}-${timestamp}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  
+  try {
+    // Get desktop directory path
+    const desktop = await desktopDir();
+    
+    // Create default filename
+    const defaultFilename = allArtistsData 
+      ? `missing-albums-${timestamp}.txt`
+      : `missing-albums-${artistName.replace(/[^a-zA-Z0-9]/g, '-')}-${timestamp}.txt`;
+    
+    // Show save dialog with desktop as default location
+    const filePath = await save({
+      defaultPath: `${desktop}${defaultFilename}`,
+      filters: [{
+        name: 'Text',
+        extensions: ['txt']
+      }]
+    });
+    
+    if (filePath) {
+      // Write the file
+      await writeTextFile(filePath, content);
+      console.log('[DiscographyWindow] Exported missing albums to:', filePath);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('[DiscographyWindow] Failed to export missing albums:', error);
+    alert(`Failed to export file: ${error.message || error}`);
+    return false;
+  }
 };
 
 // Status badge component
@@ -411,7 +434,7 @@ export function DiscographyWindow({ tracks, currentColors }) {
   }, [setSelectedArtistMbid]);
 
   // Export all missing albums from all artists
-  const handleExportAllMissing = useCallback(() => {
+  const handleExportAllMissing = useCallback(async () => {
     const allArtistsData = artistList
       .filter(artist => artist.discography?.albums?.some(a => a.status === 'missing'))
       .map(artist => ({
@@ -424,7 +447,7 @@ export function DiscographyWindow({ tracks, currentColors }) {
       return;
     }
     
-    exportMissingAlbums(null, null, allArtistsData);
+    await exportMissingAlbums(null, null, allArtistsData);
   }, [artistList]);
 
   // Render artist list view

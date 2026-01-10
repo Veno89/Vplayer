@@ -2,6 +2,15 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.7.0] - 2026-01-10
+
+### Fixed
+- **Export Missing Albums**: Fixed "Export all missing albums" button not working
+  - Now uses Tauri's native save dialog instead of browser download
+  - Defaults to Desktop folder for saving
+  - Properly formatted text file with organized album listings
+  - Shows save dialog to let you choose filename and location
+
 ## [0.6.9] - 2026-01-10
 
 ### Added
