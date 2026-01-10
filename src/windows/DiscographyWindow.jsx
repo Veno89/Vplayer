@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useDiscography } from '../hooks/useDiscography';
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
 import { desktopDir } from '@tauri-apps/api/path';
 
 // Helper to export missing albums to a text file
@@ -122,8 +122,8 @@ const exportMissingAlbums = async (artistName, albums, allArtistsData = null) =>
     });
     
     if (filePath) {
-      // Write the file
-      await writeTextFile(filePath, content);
+      // Write the file using Tauri command
+      await invoke('write_text_file', { filePath, content });
       console.log('[DiscographyWindow] Exported missing albums to:', filePath);
       return true;
     }

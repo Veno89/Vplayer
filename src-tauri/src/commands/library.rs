@@ -323,3 +323,10 @@ pub fn reset_play_count(track_id: String, state: tauri::State<AppState>) -> Resu
     info!("Resetting play count for track: {}", track_id);
     state.db.reset_play_count(&track_id).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn write_text_file(file_path: String, content: String) -> Result<(), String> {
+    use std::fs;
+    info!("Writing text file: {}", file_path);
+    fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {}", e))
+}

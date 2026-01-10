@@ -42,7 +42,7 @@ use commands::{
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, increment_play_count,
     get_recently_played, get_most_played, get_album_art, extract_and_cache_album_art,
-    update_track_tags, show_in_folder, reset_play_count,
+    update_track_tags, show_in_folder, reset_play_count, write_text_file,
     // Playlist commands
     create_playlist, get_all_playlists, delete_playlist, rename_playlist,
     add_track_to_playlist, add_tracks_to_playlist, remove_track_from_playlist,
@@ -271,6 +271,7 @@ fn main() {
             update_track_tags,
             show_in_folder,
             reset_play_count,
+            write_text_file,
             preload_track,
             swap_to_preloaded,
             clear_preload,
