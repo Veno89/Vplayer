@@ -28,6 +28,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
   const [isDraggingTracks, setIsDraggingTracks] = useState(false);
   const [isDraggingExternal, setIsDraggingExternal] = useState(false);
   const [dragData, setDragData] = useState(null);
+  const [tauriDropHandled, setTauriDropHandled] = useState(false);
 
   // Listen for Tauri file drop events
   useEffect(() => {
@@ -41,12 +42,16 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
             setIsDraggingExternal(true);
           } else if (event.payload.type === 'drop') {
             setIsDraggingExternal(false);
+            setTauriDropHandled(true);
+            // Reset the flag after a short delay
+            setTimeout(() => setTauriDropHandled(false), 500);
             
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
               console.log('Files dropped via Tauri:', paths);
               
-              // Check if it's a folder or files
+              // Collect all new tracks from scanning
+              const newTrackIds = [];
               let foldersAdded = 0;
               let filesAdded = 0;
               
@@ -55,9 +60,14 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
                 const isFolder = !path.match(/\.(mp3|flac|wav|ogg|m4a|aac|wma|opus)$/i);
                 
                 if (isFolder) {
-                  // Scan folder
+                  // Scan folder and collect new track IDs
                   try {
-                    await TauriAPI.scanFolder(path);
+                    const scannedTracks = await TauriAPI.scanFolder(path);
+                    if (scannedTracks && Array.isArray(scannedTracks)) {
+                      scannedTracks.forEach(track => {
+                        if (track.id) newTrackIds.push(track.id);
+                      });
+                    }
                     foldersAdded++;
                   } catch (err) {
                     console.error('Failed to scan folder:', path, err);
@@ -69,9 +79,16 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
                 }
               }
               
-              // Refresh library
+              // Refresh library to get all tracks
               if (refreshTracks) {
                 await refreshTracks();
+              }
+              
+              // Emit event with new track IDs for playlist to handle
+              if (newTrackIds.length > 0) {
+                window.dispatchEvent(new CustomEvent('vplayer-external-tracks-added', {
+                  detail: { trackIds: newTrackIds }
+                }));
               }
               
               // Show notification
@@ -103,6 +120,11 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
     e.preventDefault();
     setIsDraggingExternal(false);
     
+    // If Tauri already handled this drop, don't show the message
+    if (tauriDropHandled) {
+      return;
+    }
+    
     const internalData = e.dataTransfer.getData('application/json');
     if (internalData) {
       window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
@@ -111,12 +133,14 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
       return;
     }
     
-    // For web file drops (non-Tauri), show guidance
+    // For web file drops (non-Tauri), the Tauri handler should have picked it up
+    // Only show this if we're somehow in a browser-only context
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      toast?.showInfo('Please use the "Add Folder" button or drag files to the window title bar');
+      // Don't show confusing message - Tauri should handle it
+      console.debug('Web drop detected, Tauri should handle this');
     }
-  }, [toast]);
+  }, [tauriDropHandled]);
 
   const handleDragOver = useCallback((e) => {
     const types = Array.from(e.dataTransfer.types);

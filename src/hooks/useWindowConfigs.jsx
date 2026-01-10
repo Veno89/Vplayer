@@ -23,6 +23,7 @@ export function useWindowConfigs({
   // Player
   currentTrack,
   tracks,
+  filteredTracks,
   playing,
   setPlaying,
   progress,
@@ -158,7 +159,7 @@ export function useWindowConfigs({
       content: (
         <LibraryWindow
           libraryFolders={libraryFolders}
-          tracks={tracks}
+          tracks={filteredTracks}
           tracksCount={tracks.length}
           currentColors={currentColors}
           isScanning={isScanning}

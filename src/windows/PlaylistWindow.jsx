@@ -41,7 +41,7 @@ export function PlaylistWindow({
   const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
   const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
   
-  // Listen for global track drop events from VPlayer
+  // Listen for global track drop events from VPlayer (internal library drops)
   useEffect(() => {
     const handleGlobalDrop = (e) => {
       if (!e.detail?.data) return;
@@ -68,6 +68,30 @@ export function PlaylistWindow({
       window.removeEventListener('vplayer-track-drop', handleGlobalDrop);
     };
   }, [playlists.currentPlaylist]);
+
+  // Listen for external file drops (from OS file explorer) that were scanned and added to library
+  useEffect(() => {
+    const handleExternalTracksAdded = async (e) => {
+      if (!e.detail?.trackIds || e.detail.trackIds.length === 0) return;
+      if (!playlists.currentPlaylist) {
+        console.log('No active playlist to add external tracks to');
+        return;
+      }
+      
+      try {
+        console.log('Adding', e.detail.trackIds.length, 'externally dropped tracks to playlist');
+        await playlists.addTracksToPlaylist(playlists.currentPlaylist, e.detail.trackIds);
+      } catch (err) {
+        console.error('Failed to add external tracks to playlist:', err);
+      }
+    };
+    
+    window.addEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
+    
+    return () => {
+      window.removeEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
+    };
+  }, [playlists.currentPlaylist, playlists.addTracksToPlaylist]);
   
   // Fuzzy search filter
   const displayTracks = useMemo(() => {

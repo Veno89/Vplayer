@@ -8,7 +8,7 @@
  */
 
 const MB_BASE_URL = 'https://musicbrainz.org/ws/2';
-const USER_AGENT = 'VPlayer/0.6.0 (https://github.com/veno/vplayer)';
+const USER_AGENT = 'VPlayer/0.6.1 (https://github.com/veno/vplayer)';
 const RATE_LIMIT_MS = 1100; // Slightly over 1 second to be safe
 
 // Storage keys for persistent caching

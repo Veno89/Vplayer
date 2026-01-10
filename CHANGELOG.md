@@ -2,6 +2,17 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.1] - 2026-01-10
+
+### Fixed
+- **Drag & Drop**: Enabled native Tauri drag-drop for dropping folders from Windows Explorer
+- **Library Search**: Fixed search/filter not working in Library window (now uses filtered tracks)
+- **Updater**: Added missing updater permission to capabilities for auto-update functionality
+- **Release Workflow**: Changed releases from draft to auto-publish
+
+### Changed
+- Removed confusing "Add Folder" message when dropping files
+
 ## [0.6.0] - 2026-01-09
 
 ### Added
