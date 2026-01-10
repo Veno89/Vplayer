@@ -2,6 +2,14 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.4] - 2026-01-10
+
+### Fixed
+- **Discography Refresh Button**: Fixed the refresh button in discography view
+  - Button now re-matches the artist using album verification instead of just re-fetching the same (potentially wrong) artist
+  - Allows correcting wrongly matched artists (e.g., "My Dream's Over" showing 115 wrong albums)
+  - Clears existing match and re-resolves using the improved album-based verification
+
 ## [0.6.3] - 2026-01-10
 
 ### Fixed
