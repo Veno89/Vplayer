@@ -76,10 +76,18 @@ where
         }
         
         self.input.next().map(|sample| {
-            let mut processor = self.processor.lock().unwrap();
-            // Convert sample to f32, process, then return
+            // Convert sample to f32 first
             let sample_f32: f32 = f32::from_sample_(sample);
-            let processed = processor.process(sample_f32);
+            
+            // Try to process through effects, but don't block or panic if lock unavailable
+            let processed = match self.processor.try_lock() {
+                Ok(mut processor) => processor.process(sample_f32),
+                Err(_) => {
+                    // Lock unavailable (contention) - pass through unprocessed
+                    // This prevents audio dropouts when EQ is being adjusted
+                    sample_f32
+                }
+            };
             
             // Send sample to visualizer buffer (don't block if lock fails)
             if let Ok(mut buffer) = self.visualizer_buffer.try_lock() {
@@ -683,7 +691,19 @@ impl AudioPlayer {
     
     pub fn is_playing(&self) -> bool {
         let sink = self.sink.lock().unwrap();
-        !sink.is_paused() && !sink.empty()
+        let is_paused = sink.is_paused();
+        let is_empty = sink.empty();
+        
+        // Log unexpected empty state when not paused
+        if is_empty && !is_paused {
+            // Check if we actually expected to be playing
+            if self.start_time.lock().unwrap().is_some() && 
+               self.current_path.lock().unwrap().is_some() {
+                warn!("Audio sink unexpectedly empty while track should be playing");
+            }
+        }
+        
+        !is_paused && !is_empty
     }
     
     pub fn is_finished(&self) -> bool {

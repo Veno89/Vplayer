@@ -135,6 +135,39 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
               if (onEnded) onEnded();
             }
           }
+          
+          // Periodic health check: verify audio is actually playing when we think it is
+          // This catches the case where audio stops unexpectedly mid-track
+          if (isPlaying && position < duration - 1) {
+            try {
+              const actuallyPlaying = await invoke('is_playing');
+              if (!actuallyPlaying) {
+                console.warn('[useAudio] Audio stopped unexpectedly at position:', position, '/', duration);
+                // Audio stopped but we think it's playing - try to recover
+                const isFinished = await invoke('is_finished');
+                if (isFinished && position < duration - 1) {
+                  // Audio finished prematurely - this is the bug!
+                  console.error('[useAudio] Audio finished prematurely, attempting recovery...');
+                  // Reload and seek to current position
+                  const currentPath = currentTrackRef.current?.path;
+                  if (currentPath) {
+                    try {
+                      await invoke('load_track', { path: currentPath });
+                      await invoke('seek_to', { position });
+                      await invoke('play_audio');
+                      console.log('[useAudio] Recovered from premature audio stop');
+                    } catch (recoveryErr) {
+                      console.error('[useAudio] Recovery failed:', recoveryErr);
+                      setIsPlaying(false);
+                    }
+                  }
+                }
+              }
+            } catch (healthErr) {
+              // Ignore health check errors
+              console.debug('[useAudio] Health check failed:', healthErr);
+            }
+          }
         } catch (err) {
           console.error('Failed to get position:', err);
           pollErrorCountRef.current++;

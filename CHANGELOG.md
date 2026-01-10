@@ -2,6 +2,20 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.6] - 2026-01-10
+
+### Fixed
+- **Audio Stability**: Fixed audio randomly stopping mid-track while UI continues showing playback
+  - Changed effects processor lock from blocking `.unwrap()` to non-blocking `try_lock()` to prevent audio thread deadlocks
+  - Added automatic recovery when audio stops unexpectedly - will reload and seek to current position
+  - Added logging to detect when audio sink becomes unexpectedly empty
+  - Prevents audio dropouts when EQ settings are being adjusted during playback
+
+## [0.6.5] - 2026-01-10
+
+### Changed
+- Updated signing keys for auto-updater functionality
+
 ## [0.6.4] - 2026-01-10
 
 ### Fixed
