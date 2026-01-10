@@ -407,6 +407,97 @@ export function useDiscography(tracks = []) {
   }, [updateAlbumMatchStatus]);
 
   /**
+   * Re-resolve a specific artist using album verification
+   * This clears the existing match and re-matches using the improved logic
+   */
+  const reResolveArtist = useCallback(async (artistName) => {
+    const normalizedName = artistName.toLowerCase().trim();
+    const artistData = libraryArtists.get(normalizedName);
+    
+    if (!artistData) {
+      setDiscographyError(`Artist not found in library: ${artistName}`);
+      return false;
+    }
+
+    // Clear existing resolution
+    removeResolvedArtist(artistName);
+    
+    setDiscographyLoading(true);
+    setDiscographyError(null);
+    setDiscographyProgress({ current: 0, total: 1, artist: artistName });
+
+    try {
+      // Search for candidates
+      const results = await MusicBrainzAPI.searchArtist(artistName, 10);
+      
+      if (results.length === 0) {
+        setDiscographyError(`No MusicBrainz results found for "${artistName}"`);
+        return false;
+      }
+
+      // Try to find the correct artist by verifying albums
+      let bestMatch = null;
+      let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
+
+      for (const candidate of results) {
+        if (candidate.score < 70) continue;
+
+        try {
+          const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
+            includeEPs: discographyConfig.includeEPs,
+            includeLive: discographyConfig.includeLive,
+            includeCompilations: discographyConfig.includeCompilations,
+            includeBootlegs: discographyConfig.includeBootlegs,
+            quickCheck: true,
+          });
+
+          const verification = DiscographyMatcher.verifyArtistByAlbums(
+            candidateAlbums,
+            artistData.albums
+          );
+
+          console.log(`[useDiscography] Re-resolve: Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
+
+          if (verification.verified && verification.confidence > bestVerification.confidence) {
+            bestMatch = candidate;
+            bestVerification = verification;
+          } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
+            bestMatch = candidate;
+            bestVerification = verification;
+          }
+
+          if (verification.verified && verification.confidence >= 90) {
+            break;
+          }
+        } catch (err) {
+          console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
+        }
+      }
+
+      // Accept the match if verified
+      if (bestMatch && (bestVerification.verified || 
+          (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
+        console.log(`[useDiscography] Re-resolved "${artistName}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums: ${bestVerification.matchedAlbums})`);
+        setResolvedArtist(artistName, bestMatch);
+        
+        // Fetch full discography
+        await fetchArtistDiscography(artistName, bestMatch.id);
+        setSelectedArtistMbid(bestMatch.id);
+        return true;
+      } else {
+        setDiscographyError(`Could not verify a matching artist for "${artistName}". Try manual matching.`);
+        return false;
+      }
+    } catch (err) {
+      console.error('[useDiscography] Re-resolve failed:', err);
+      setDiscographyError(`Failed to re-resolve: ${err.message}`);
+      return false;
+    } finally {
+      setDiscographyLoading(false);
+    }
+  }, [libraryArtists, discographyConfig, removeResolvedArtist, setDiscographyLoading, setDiscographyError, setDiscographyProgress, setResolvedArtist, fetchArtistDiscography, setSelectedArtistMbid]);
+
+  /**
    * Get currently selected artist's discography
    */
   const selectedDiscography = useMemo(() => {
@@ -441,6 +532,7 @@ export function useDiscography(tracks = []) {
     resolveArtist,
     removeResolvedArtist,
     fetchArtistDiscography,
+    reResolveArtist,
     autoResolveAllArtists,
     fetchAllDiscographies,
     cancelOperation,

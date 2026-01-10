@@ -331,6 +331,7 @@ export function DiscographyWindow({ tracks, currentColors }) {
     searchArtist,
     resolveArtist,
     fetchArtistDiscography,
+    reResolveArtist,
     autoResolveAllArtists,
     fetchAllDiscographies,
     cancelOperation,
@@ -620,12 +621,12 @@ export function DiscographyWindow({ tracks, currentColors }) {
           </div>
 
           <button
-            onClick={() => fetchArtistDiscography(selectedDiscography.artistName, selectedArtistMbid)}
+            onClick={() => reResolveArtist(selectedDiscography.artistName)}
             disabled={loading}
-            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
-            title="Refresh discography"
+            className="p-1.5 bg-orange-700/50 hover:bg-orange-700 rounded transition-colors"
+            title="Re-match with album verification (fixes wrong artist matches)"
           >
-            <RefreshCw className={`w-4 h-4 text-white ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-orange-300 ${loading ? 'animate-spin' : ''}`} />
           </button>
 
           <button
