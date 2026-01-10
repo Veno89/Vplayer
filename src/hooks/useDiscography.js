@@ -445,13 +445,19 @@ export function useDiscography(tracks = []) {
     // Clear existing resolution
     removeResolvedArtist(artistData.name);
     
+    // Clear the discography cache for this artist to force fresh data
+    MusicBrainzAPI.clearArtistSearchCache(artistData.name);
+    
     setDiscographyLoading(true);
     setDiscographyError(null);
     setDiscographyProgress({ current: 0, total: 1, artist: artistData.name });
 
     try {
-      // Search for candidates
-      const results = await MusicBrainzAPI.searchArtist(artistName, 10);
+      // Search for candidates - bypass cache to get fresh results
+      const results = await MusicBrainzAPI.searchArtist(artistName, 10, true);
+      
+      console.log(`[useDiscography] Re-resolve: Got ${results.length} candidates for "${artistName}":`, 
+        results.map(r => `${r.name} (${r.score})`));
       
       if (results.length === 0) {
         setDiscographyError(`No MusicBrainz results found for "${artistName}"`);
@@ -466,12 +472,14 @@ export function useDiscography(tracks = []) {
         if (candidate.score < 70) continue;
 
         try {
+          // Also bypass discography cache for re-resolution
           const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
             includeEPs: discographyConfig.includeEPs,
             includeLive: discographyConfig.includeLive,
             includeCompilations: discographyConfig.includeCompilations,
             includeBootlegs: discographyConfig.includeBootlegs,
             quickCheck: true,
+            bypassCache: true,
           });
 
           const verification = DiscographyMatcher.verifyArtistByAlbums(

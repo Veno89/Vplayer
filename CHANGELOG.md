@@ -2,6 +2,15 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.8] - 2026-01-10
+
+### Fixed
+- **Discography Rematch Button**: Fixed the rematch button completely
+  - Now bypasses the MusicBrainz cache to get fresh search results
+  - Clears both search and discography cache before re-resolving
+  - Added detailed logging to show candidates and verification results
+  - Previously the button was using cached (wrong) results instead of re-searching
+
 ## [0.6.7] - 2026-01-10
 
 ### Fixed

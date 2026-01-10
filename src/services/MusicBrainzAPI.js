@@ -8,7 +8,7 @@
  */
 
 const MB_BASE_URL = 'https://musicbrainz.org/ws/2';
-const USER_AGENT = 'VPlayer/0.6.6 (https://github.com/veno/vplayer)';
+const USER_AGENT = 'VPlayer/0.6.8 (https://github.com/veno/vplayer)';
 const RATE_LIMIT_MS = 1100; // Slightly over 1 second to be safe
 
 // Storage keys for persistent caching
@@ -152,18 +152,24 @@ class MusicBrainzAPIService {
    * @param {number} [limit=5] - Maximum number of results
    * @returns {Promise<MBArtistResult[]>}
    */
-  async searchArtist(artistName, limit = 5) {
+  async searchArtist(artistName, limit = 5, bypassCache = false) {
     if (!artistName || artistName.trim() === '') {
       return [];
     }
 
     const normalizedName = artistName.trim().toLowerCase();
     
-    // Check cache first
+    // Check cache first (unless bypassing)
     const cacheKey = `search:${normalizedName}`;
-    if (this.artistCache[cacheKey]) {
+    if (!bypassCache && this.artistCache[cacheKey]) {
       console.log('[MusicBrainzAPI] Artist search cache hit:', artistName);
       return this.artistCache[cacheKey];
+    }
+
+    if (bypassCache) {
+      console.log('[MusicBrainzAPI] Bypassing cache for artist search:', artistName);
+      // Also clear the cached entry
+      delete this.artistCache[cacheKey];
     }
 
     const encodedQuery = encodeURIComponent(artistName);
@@ -242,6 +248,7 @@ class MusicBrainzAPIService {
    * @param {boolean} [options.includeCompilations=false] - Include compilations
    * @param {boolean} [options.includeBootlegs=false] - Include bootlegs
    * @param {boolean} [options.quickCheck=false] - Only fetch first page for quick validation
+   * @param {boolean} [options.bypassCache=false] - Bypass and clear the cache
    * @returns {Promise<MBReleaseGroup[]>}
    */
   async getArtistDiscography(artistMbid, options = {}) {
@@ -253,14 +260,21 @@ class MusicBrainzAPIService {
       includeCompilations = false,
       includeBootlegs = false,
       quickCheck = false,
+      bypassCache = false,
     } = options;
 
-    // Create cache key with options (exclude quickCheck from cache key)
+    // Create cache key with options (exclude quickCheck and bypassCache from cache key)
     const optionsKey = `${includeEPs}-${includeLive}-${includeCompilations}-${includeBootlegs}`;
     const cacheKey = `discography:${artistMbid}:${optionsKey}`;
     
+    // Clear cache if bypassing
+    if (bypassCache) {
+      console.log('[MusicBrainzAPI] Bypassing discography cache for:', artistMbid);
+      delete this.discographyCache[cacheKey];
+    }
+    
     // Don't use cache for quick checks, and don't cache quick check results
-    if (!quickCheck && this.discographyCache[cacheKey]) {
+    if (!quickCheck && !bypassCache && this.discographyCache[cacheKey]) {
       console.log('[MusicBrainzAPI] Discography cache hit:', artistMbid);
       return this.discographyCache[cacheKey];
     }
@@ -334,6 +348,21 @@ class MusicBrainzAPIService {
     }
 
     return filteredAlbums;
+  }
+
+  /**
+   * Clear search cache for a specific artist
+   * @param {string} artistName - Artist name to clear from cache
+   */
+  clearArtistSearchCache(artistName) {
+    if (!artistName) return;
+    const normalizedName = artistName.trim().toLowerCase();
+    const cacheKey = `search:${normalizedName}`;
+    if (this.artistCache[cacheKey]) {
+      console.log('[MusicBrainzAPI] Clearing search cache for:', artistName);
+      delete this.artistCache[cacheKey];
+      this._saveCache(STORAGE_KEYS.ARTIST_CACHE, this.artistCache);
+    }
   }
 
   /**
