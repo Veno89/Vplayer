@@ -531,6 +531,119 @@ export function useDiscography(tracks = []) {
   }, [libraryArtists, discographyConfig, removeResolvedArtist, setDiscographyLoading, setDiscographyError, setDiscographyProgress, setResolvedArtist, fetchArtistDiscography, setSelectedArtistMbid]);
 
   /**
+   * Re-resolve ALL resolved artists using album verification
+   * This clears existing matches and re-matches using the improved logic
+   */
+  const reResolveAllArtists = useCallback(async () => {
+    const resolvedArtistsList = artistList.filter(a => a.isResolved);
+    
+    if (resolvedArtistsList.length === 0) {
+      setDiscographyError('No resolved artists to re-match');
+      return { resolved: 0, failed: 0 };
+    }
+
+    setDiscographyLoading(true);
+    setDiscographyError(null);
+    
+    let resolved = 0;
+    let failed = 0;
+    abortRef.current = { aborted: false };
+
+    try {
+      for (let i = 0; i < resolvedArtistsList.length; i++) {
+        if (abortRef.current.aborted) break;
+
+        const artist = resolvedArtistsList[i];
+        setDiscographyProgress({
+          current: i + 1,
+          total: resolvedArtistsList.length,
+          artist: artist.name,
+        });
+
+        // Clear existing resolution and cache
+        removeResolvedArtist(artist.name);
+        MusicBrainzAPI.clearArtistSearchCache(artist.name);
+
+        try {
+          // Search for candidates - bypass cache
+          const results = await MusicBrainzAPI.searchArtist(artist.name, 10, true);
+          
+          console.log(`[useDiscography] Re-resolve all: "${artist.name}" - Got ${results.length} candidates`);
+
+          if (results.length === 0) {
+            failed++;
+            continue;
+          }
+
+          // Try to find the correct artist by verifying albums
+          let bestMatch = null;
+          let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
+
+          for (const candidate of results) {
+            if (candidate.score < 70) continue;
+
+            try {
+              const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
+                includeEPs: discographyConfig.includeEPs,
+                includeLive: discographyConfig.includeLive,
+                includeCompilations: discographyConfig.includeCompilations,
+                includeBootlegs: discographyConfig.includeBootlegs,
+                quickCheck: true,
+                bypassCache: true,
+              });
+
+              const verification = DiscographyMatcher.verifyArtistByAlbums(
+                candidateAlbums,
+                artist.localAlbums
+              );
+
+              console.log(`[useDiscography] Re-resolve all: Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
+
+              if (verification.verified && verification.confidence > bestVerification.confidence) {
+                bestMatch = candidate;
+                bestVerification = verification;
+              } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
+                bestMatch = candidate;
+                bestVerification = verification;
+              }
+
+              if (verification.verified && verification.confidence >= 90) {
+                break;
+              }
+            } catch (err) {
+              console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
+            }
+          }
+
+          // Accept the match if verified
+          if (bestMatch && (bestVerification.verified || 
+              (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
+            console.log(`[useDiscography] Re-resolved "${artist.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums: ${bestVerification.matchedAlbums})`);
+            setResolvedArtist(artist.name, bestMatch);
+            resolved++;
+          } else if (bestMatch && results[0].score >= 98) {
+            // Very high name match - accept even without album verification
+            console.log(`[useDiscography] Re-resolved "${artist.name}" to "${bestMatch.name}" (high score: ${results[0].score})`);
+            setResolvedArtist(artist.name, bestMatch);
+            resolved++;
+          } else {
+            console.log(`[useDiscography] Could not verify artist: ${artist.name}`);
+            failed++;
+          }
+        } catch (err) {
+          console.warn(`[useDiscography] Failed to re-resolve artist: ${artist.name}`, err);
+          failed++;
+        }
+      }
+
+      return { resolved, failed };
+    } finally {
+      setDiscographyLoading(false);
+      abortRef.current = null;
+    }
+  }, [artistList, discographyConfig, removeResolvedArtist, setDiscographyLoading, setDiscographyError, setDiscographyProgress, setResolvedArtist]);
+
+  /**
    * Get currently selected artist's discography
    */
   const selectedDiscography = useMemo(() => {
@@ -566,6 +679,7 @@ export function useDiscography(tracks = []) {
     removeResolvedArtist,
     fetchArtistDiscography,
     reResolveArtist,
+    reResolveAllArtists,
     autoResolveAllArtists,
     fetchAllDiscographies,
     cancelOperation,

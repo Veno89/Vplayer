@@ -332,6 +332,7 @@ export function DiscographyWindow({ tracks, currentColors }) {
     resolveArtist,
     fetchArtistDiscography,
     reResolveArtist,
+    reResolveAllArtists,
     autoResolveAllArtists,
     fetchAllDiscographies,
     cancelOperation,
@@ -460,10 +461,20 @@ export function DiscographyWindow({ tracks, currentColors }) {
             onClick={autoResolveAllArtists}
             disabled={loading}
             className="px-3 py-1.5 bg-blue-700 text-white text-xs rounded hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center gap-1"
-            title="Auto-match all artists"
+            title="Auto-match all unresolved artists"
           >
             <Download className="w-3.5 h-3.5" />
             Auto-Match
+          </button>
+
+          <button
+            onClick={reResolveAllArtists}
+            disabled={loading || stats.resolvedArtists === 0}
+            className="px-3 py-1.5 bg-orange-700 text-white text-xs rounded hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+            title="Re-match all resolved artists using album verification (fixes wrong matches)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Re-Match All
           </button>
           
           <button

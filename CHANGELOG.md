@@ -2,6 +2,15 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.9] - 2026-01-10
+
+### Added
+- **Re-Match All Button**: Added "Re-Match All" button in discography view
+  - Re-matches ALL resolved artists using album verification in one click
+  - Bypasses cache and re-searches MusicBrainz for fresh results
+  - Shows progress as it works through each artist
+  - Orange button next to Auto-Match in the toolbar
+
 ## [0.6.8] - 2026-01-10
 
 ### Fixed
