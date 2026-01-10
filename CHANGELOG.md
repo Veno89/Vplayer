@@ -2,6 +2,14 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.7] - 2026-01-10
+
+### Fixed
+- **Discography Rematch Button**: Fixed the rematch button not properly re-resolving artists
+  - Added improved artist lookup in library that handles name mismatches
+  - Now logs debug information to help diagnose matching issues
+  - Uses consistent artist name from library data when storing resolved matches
+
 ## [0.6.6] - 2026-01-10
 
 ### Fixed
