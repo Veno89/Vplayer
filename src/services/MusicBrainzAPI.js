@@ -8,7 +8,7 @@
  */
 
 const MB_BASE_URL = 'https://musicbrainz.org/ws/2';
-const USER_AGENT = 'VPlayer/0.6.1 (https://github.com/veno/vplayer)';
+const USER_AGENT = 'VPlayer/0.6.2 (https://github.com/veno/vplayer)';
 const RATE_LIMIT_MS = 1100; // Slightly over 1 second to be safe
 
 // Storage keys for persistent caching
@@ -241,6 +241,7 @@ class MusicBrainzAPIService {
    * @param {boolean} [options.includeLive=false] - Include live albums
    * @param {boolean} [options.includeCompilations=false] - Include compilations
    * @param {boolean} [options.includeBootlegs=false] - Include bootlegs
+   * @param {boolean} [options.quickCheck=false] - Only fetch first page for quick validation
    * @returns {Promise<MBReleaseGroup[]>}
    */
   async getArtistDiscography(artistMbid, options = {}) {
@@ -251,13 +252,15 @@ class MusicBrainzAPIService {
       includeLive = false,
       includeCompilations = false,
       includeBootlegs = false,
+      quickCheck = false,
     } = options;
 
-    // Create cache key with options
+    // Create cache key with options (exclude quickCheck from cache key)
     const optionsKey = `${includeEPs}-${includeLive}-${includeCompilations}-${includeBootlegs}`;
     const cacheKey = `discography:${artistMbid}:${optionsKey}`;
     
-    if (this.discographyCache[cacheKey]) {
+    // Don't use cache for quick checks, and don't cache quick check results
+    if (!quickCheck && this.discographyCache[cacheKey]) {
       console.log('[MusicBrainzAPI] Discography cache hit:', artistMbid);
       return this.discographyCache[cacheKey];
     }
@@ -265,7 +268,7 @@ class MusicBrainzAPIService {
     // Fetch all release groups for artist, paginated
     const allReleaseGroups = [];
     let offset = 0;
-    const limit = 100;
+    const limit = quickCheck ? 25 : 100; // Smaller limit for quick checks
     let hasMore = true;
 
     while (hasMore) {
@@ -277,11 +280,16 @@ class MusicBrainzAPIService {
         
         allReleaseGroups.push(...releaseGroups);
         
-        hasMore = offset + releaseGroups.length < (data['release-group-count'] || 0);
-        offset += limit;
+        // For quick checks, only fetch first page
+        if (quickCheck) {
+          hasMore = false;
+        } else {
+          hasMore = offset + releaseGroups.length < (data['release-group-count'] || 0);
+          offset += limit;
 
-        // Safety limit to prevent infinite loops
-        if (offset > 1000) break;
+          // Safety limit to prevent infinite loops
+          if (offset > 1000) break;
+        }
       } catch (err) {
         console.error('[MusicBrainzAPI] Discography fetch failed:', err);
         break;
@@ -319,9 +327,11 @@ class MusicBrainzAPIService {
         return dateA.localeCompare(dateB);
       });
 
-    // Cache results
-    this.discographyCache[cacheKey] = filteredAlbums;
-    this._saveCache(STORAGE_KEYS.DISCOGRAPHY_CACHE, this.discographyCache);
+    // Cache results (but not quick checks)
+    if (!quickCheck) {
+      this.discographyCache[cacheKey] = filteredAlbums;
+      this._saveCache(STORAGE_KEYS.DISCOGRAPHY_CACHE, this.discographyCache);
+    }
 
     return filteredAlbums;
   }

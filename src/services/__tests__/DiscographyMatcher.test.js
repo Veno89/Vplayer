@@ -188,4 +188,73 @@ describe('MusicBrainzAPI', () => {
       expect(DiscographyMatcher.parseReleaseYear(null)).toBe(null);
     });
   });
+
+  describe('verifyArtistByAlbums', () => {
+    it('should verify artist when albums match', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      
+      const mbAlbums = [
+        { id: 'mb1', title: 'Tales & Travels', primaryType: 'Album' },
+        { id: 'mb2', title: 'Another Album', primaryType: 'Album' },
+      ];
+
+      const localAlbums = new Map([
+        ['tales & travels', { name: 'Tales & Travels', artist: "My Dream's Over", trackCount: 10, trackIds: [] }],
+      ]);
+
+      const result = DiscographyMatcher.verifyArtistByAlbums(mbAlbums, localAlbums);
+      
+      expect(result.verified).toBe(true);
+      expect(result.matchedAlbums).toBe(1);
+      expect(result.confidence).toBeGreaterThanOrEqual(85);
+    });
+
+    it('should not verify when no albums match', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      
+      const mbAlbums = [
+        { id: 'mb1', title: 'Completely Different Album', primaryType: 'Album' },
+        { id: 'mb2', title: 'Another Random Album', primaryType: 'Album' },
+      ];
+
+      const localAlbums = new Map([
+        ['tales & travels', { name: 'Tales & Travels', artist: "My Dream's Over", trackCount: 10, trackIds: [] }],
+      ]);
+
+      const result = DiscographyMatcher.verifyArtistByAlbums(mbAlbums, localAlbums);
+      
+      expect(result.verified).toBe(false);
+      expect(result.matchedAlbums).toBe(0);
+    });
+
+    it('should verify with multiple album matches', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      
+      const mbAlbums = [
+        { id: 'mb1', title: 'Abbey Road', primaryType: 'Album' },
+        { id: 'mb2', title: 'Let It Be', primaryType: 'Album' },
+        { id: 'mb3', title: 'Revolver', primaryType: 'Album' },
+      ];
+
+      const localAlbums = new Map([
+        ['abbey road', { name: 'Abbey Road', artist: 'The Beatles', trackCount: 17, trackIds: [] }],
+        ['let it be', { name: 'Let It Be', artist: 'The Beatles', trackCount: 12, trackIds: [] }],
+      ]);
+
+      const result = DiscographyMatcher.verifyArtistByAlbums(mbAlbums, localAlbums);
+      
+      expect(result.verified).toBe(true);
+      expect(result.matchedAlbums).toBe(2);
+    });
+
+    it('should return not verified for empty inputs', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      
+      const result1 = DiscographyMatcher.verifyArtistByAlbums([], new Map());
+      expect(result1.verified).toBe(false);
+
+      const result2 = DiscographyMatcher.verifyArtistByAlbums(null, null);
+      expect(result2.verified).toBe(false);
+    });
+  });
 });

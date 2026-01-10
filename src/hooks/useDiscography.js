@@ -213,6 +213,7 @@ export function useDiscography(tracks = []) {
 
   /**
    * Auto-resolve all unresolved artists
+   * Uses album verification to ensure correct artist match
    */
   const autoResolveAllArtists = useCallback(async () => {
     const unresolvedArtists = artistList.filter(a => !a.isResolved);
@@ -240,12 +241,71 @@ export function useDiscography(tracks = []) {
         });
 
         try {
-          const results = await MusicBrainzAPI.searchArtist(artist.name, 1);
+          // Search for multiple candidates
+          const results = await MusicBrainzAPI.searchArtist(artist.name, 10);
           
-          if (results.length > 0 && results[0].score >= 90) {
-            setResolvedArtist(artist.name, results[0]);
+          if (results.length === 0) {
+            failed++;
+            continue;
+          }
+
+          // Try to find the correct artist by verifying albums
+          let bestMatch = null;
+          let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
+
+          for (const candidate of results) {
+            // Only consider candidates with reasonable name match
+            if (candidate.score < 80) continue;
+
+            try {
+              // Quick fetch of albums to verify this is the right artist
+              const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
+                includeEPs: discographyConfig.includeEPs,
+                includeLive: discographyConfig.includeLive,
+                includeCompilations: discographyConfig.includeCompilations,
+                includeBootlegs: discographyConfig.includeBootlegs,
+                quickCheck: true, // Only fetch first page for verification
+              });
+
+              const verification = DiscographyMatcher.verifyArtistByAlbums(
+                candidateAlbums,
+                artist.localAlbums
+              );
+
+              console.log(`[useDiscography] Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
+
+              // If this candidate has matching albums, consider it
+              if (verification.verified && verification.confidence > bestVerification.confidence) {
+                bestMatch = candidate;
+                bestVerification = verification;
+              } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
+                // If no verified match yet, prefer candidates with more album matches
+                bestMatch = candidate;
+                bestVerification = verification;
+              }
+
+              // If we found a highly confident match, stop searching
+              if (verification.verified && verification.confidence >= 90) {
+                break;
+              }
+            } catch (err) {
+              console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
+            }
+          }
+
+          // Accept the match if verified, or if the name match is very high and we have some album matches
+          if (bestMatch && (bestVerification.verified || 
+              (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
+            console.log(`[useDiscography] Resolved "${artist.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums matched: ${bestVerification.matchedAlbums})`);
+            setResolvedArtist(artist.name, bestMatch);
+            resolved++;
+          } else if (bestMatch && results[0].score >= 98) {
+            // Very high name match score - accept even without album verification (single albums, etc.)
+            console.log(`[useDiscography] Resolved "${artist.name}" to "${bestMatch.name}" (high name score: ${results[0].score})`);
+            setResolvedArtist(artist.name, bestMatch);
             resolved++;
           } else {
+            console.log(`[useDiscography] Could not verify artist: ${artist.name}`);
             failed++;
           }
         } catch (err) {
@@ -259,7 +319,7 @@ export function useDiscography(tracks = []) {
       setDiscographyLoading(false);
       abortRef.current = null;
     }
-  }, [artistList, setDiscographyLoading, setDiscographyError, setDiscographyProgress, setResolvedArtist]);
+  }, [artistList, discographyConfig, setDiscographyLoading, setDiscographyError, setDiscographyProgress, setResolvedArtist]);
 
   /**
    * Fetch discographies for all resolved artists

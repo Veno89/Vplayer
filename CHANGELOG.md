@@ -2,6 +2,19 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.2] - 2026-01-10
+
+### Fixed
+- **Discography Matching**: Improved artist matching accuracy for non-unique artist names
+  - Now verifies artist by checking if their albums match albums in your local library
+  - Prevents matching wrong artists with similar names (e.g., "My Dream's Over" no longer shows 115 wrong albums)
+  - Searches multiple MusicBrainz candidates and picks the one whose discography matches your owned albums
+
+### Added
+- New `verifyArtistByAlbums()` method in DiscographyMatcher for album-based artist verification
+- `quickCheck` option for fast discography fetches during artist verification
+- 4 new tests for artist verification functionality
+
 ## [0.6.1] - 2026-01-10
 
 ### Fixed

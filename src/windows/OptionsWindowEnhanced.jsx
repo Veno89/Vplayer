@@ -187,7 +187,7 @@ export function OptionsWindowEnhanced({
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }) {
   const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = window.updater || {};
-  const currentVersion = '0.6.1';
+  const currentVersion = '0.6.2';
   const [checking, setChecking] = React.useState(false);
   const [message, setMessage] = React.useState('');
 

@@ -301,6 +301,60 @@ class DiscographyMatchingService {
   }
 
   /**
+   * Verify an artist by checking if any of their albums match our local library
+   * This helps disambiguate artists with similar names
+   * @param {Object[]} mbAlbums - MusicBrainz release groups for the candidate artist
+   * @param {Map<string, LocalAlbum>} localAlbums - Local albums for this artist
+   * @returns {{ verified: boolean, matchedAlbums: number, confidence: number }}
+   */
+  verifyArtistByAlbums(mbAlbums, localAlbums) {
+    if (!mbAlbums || mbAlbums.length === 0 || !localAlbums || localAlbums.size === 0) {
+      return { verified: false, matchedAlbums: 0, confidence: 0 };
+    }
+
+    let matchedCount = 0;
+    let totalConfidence = 0;
+
+    for (const [key, localAlbum] of localAlbums) {
+      let bestConfidence = 0;
+      
+      for (const mbAlbum of mbAlbums) {
+        const { matches, confidence } = this.matchAlbumNames(localAlbum.name, mbAlbum.title);
+        
+        if (confidence > bestConfidence) {
+          bestConfidence = confidence;
+        }
+        
+        // If we found a good match, no need to check more MB albums
+        if (matches && confidence >= 85) {
+          break;
+        }
+      }
+      
+      if (bestConfidence >= 75) {
+        matchedCount++;
+        totalConfidence += bestConfidence;
+      }
+    }
+
+    const localAlbumCount = localAlbums.size;
+    const matchRatio = matchedCount / localAlbumCount;
+    const avgConfidence = matchedCount > 0 ? totalConfidence / matchedCount : 0;
+    
+    // Consider verified if:
+    // - At least one album matches with high confidence (>=85), OR
+    // - Multiple albums match (helps with common album names)
+    const verified = matchedCount > 0 && (avgConfidence >= 85 || matchedCount >= 2);
+    
+    return {
+      verified,
+      matchedAlbums: matchedCount,
+      confidence: Math.round(avgConfidence),
+      matchRatio: Math.round(matchRatio * 100),
+    };
+  }
+
+  /**
    * Parse release year from MusicBrainz date string
    * @param {string} dateStr - Date string (YYYY or YYYY-MM-DD)
    * @returns {number|null}
