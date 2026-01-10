@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Trash2, RotateCw, Download, Upload, Bug, HardDrive, FileJson, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { useStore } from '../../store/useStore';
 import { SettingCard, SettingButton, SettingInfo, SettingToggle, SettingDivider } from './SettingsComponents';
 
@@ -13,9 +14,12 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [appVersion, setAppVersion] = useState('0.6.3');
 
   useEffect(() => {
     loadStats();
+    // Get actual version from Tauri
+    getVersion().then(v => setAppVersion(v)).catch(() => {});
   }, []);
 
   const loadStats = async () => {
@@ -77,7 +81,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
       // Get all settings from store
       const state = useStore.getState();
       const settings = {
-        version: '0.6.2',
+        version: appVersion,
         exportedAt: new Date().toISOString(),
         settings: {
           colorScheme: state.colorScheme,

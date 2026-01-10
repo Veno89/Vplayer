@@ -187,9 +187,23 @@ export function OptionsWindowEnhanced({
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }) {
   const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = window.updater || {};
-  const currentVersion = '0.6.2';
+  const [currentVersion, setCurrentVersion] = React.useState('0.6.3');
   const [checking, setChecking] = React.useState(false);
   const [message, setMessage] = React.useState('');
+
+  // Get actual version from Tauri on mount
+  React.useEffect(() => {
+    const getVersion = async () => {
+      try {
+        const { getVersion } = await import('@tauri-apps/api/app');
+        const version = await getVersion();
+        setCurrentVersion(version);
+      } catch (err) {
+        console.debug('Could not get app version from Tauri:', err);
+      }
+    };
+    getVersion();
+  }, []);
 
   const handleCheckForUpdates = async () => {
     if (!checkForUpdates) {

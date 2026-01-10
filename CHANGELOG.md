@@ -2,6 +2,13 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.6.3] - 2026-01-10
+
+### Fixed
+- **Version Display**: About tab and settings now show actual app version from Tauri instead of hardcoded value
+  - Version is fetched dynamically from `@tauri-apps/api/app` at runtime
+  - Fixes issue where "Check for Updates" showed wrong version number
+
 ## [0.6.2] - 2026-01-10
 
 ### Fixed
