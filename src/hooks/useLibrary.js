@@ -222,6 +222,8 @@ export function useLibrary() {
     try {
       const dbTracks = await TauriAPI.getAllTracks();
       setTracks(dbTracks);
+      // Also refresh folders when refreshing tracks
+      await loadAllFolders();
     } catch (err) {
       errorHandler.handle(err, 'Library - Load Tracks');
     }

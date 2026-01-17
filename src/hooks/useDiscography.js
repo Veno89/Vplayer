@@ -51,24 +51,57 @@ export function useDiscography(tracks = []) {
   }, [tracks]);
 
   // Get list of artists with their album counts
+  // Merges artists that resolve to the same MusicBrainz ID (handles band name changes)
   const artistList = useMemo(() => {
     const list = [];
+    const mbIdToArtistEntry = new Map(); // Track merged artists by MB ID
+
     for (const [key, data] of libraryArtists) {
       const resolved = resolvedArtists[key];
       const discography = resolved ? artistDiscographies[resolved.id] : null;
-      
-      list.push({
-        name: data.name,
+
+      // If resolved, check if we've already seen this MB artist
+      if (resolved && mbIdToArtistEntry.has(resolved.id)) {
+        // Merge with existing entry (handles name changes like "Eskimo Callboy" -> "Electric Callboy")
+        const existing = mbIdToArtistEntry.get(resolved.id);
+
+        // Merge albums from this variant
+        for (const [albumKey, albumData] of data.albums) {
+          if (!existing.localAlbums.has(albumKey)) {
+            existing.localAlbums.set(albumKey, albumData);
+            existing.localAlbumCount++;
+          }
+        }
+
+        // Track name variants
+        if (!existing.nameVariants) {
+          existing.nameVariants = new Set([existing.name]);
+        }
+        existing.nameVariants.add(data.name);
+
+        continue; // Skip adding a new entry
+      }
+
+      const entry = {
+        name: resolved?.name || data.name, // Prefer MB canonical name if resolved
         normalizedName: key,
         localAlbumCount: data.albumCount,
-        localAlbums: data.albums,
+        localAlbums: new Map(data.albums), // Copy to allow merging
         mbArtist: resolved || null,
         discography: discography || null,
         isResolved: !!resolved,
         hasMissingAlbums: discography?.albums?.some(a => a.status === 'missing') || false,
-      });
+        nameVariants: data.nameVariants || new Set([data.name]),
+      };
+
+      list.push(entry);
+
+      // Track by MB ID for potential merging
+      if (resolved) {
+        mbIdToArtistEntry.set(resolved.id, entry);
+      }
     }
-    
+
     // Sort by name
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [libraryArtists, resolvedArtists, artistDiscographies]);
@@ -132,7 +165,7 @@ export function useDiscography(tracks = []) {
    */
   const resolveArtist = useCallback(async (artistName, mbArtistData) => {
     setResolvedArtist(artistName, mbArtistData);
-    
+
     // Auto-fetch discography if configured
     if (discographyConfig.autoFetchOnOpen) {
       await fetchArtistDiscography(artistName, mbArtistData.id);
@@ -204,7 +237,7 @@ export function useDiscography(tracks = []) {
    */
   const fetchCoverArtInBackground = useCallback(async (albums) => {
     const releaseGroupIds = albums.map(a => a.mbReleaseGroupId);
-    
+
     // This runs in background, no need to await
     CoverArtArchive.batchGetCoverArt(releaseGroupIds).catch(err => {
       console.warn('[useDiscography] Background cover art fetch failed:', err);
@@ -217,14 +250,14 @@ export function useDiscography(tracks = []) {
    */
   const autoResolveAllArtists = useCallback(async () => {
     const unresolvedArtists = artistList.filter(a => !a.isResolved);
-    
+
     if (unresolvedArtists.length === 0) {
       return { resolved: 0, failed: 0 };
     }
 
     setDiscographyLoading(true);
     setDiscographyError(null);
-    
+
     let resolved = 0;
     let failed = 0;
     abortRef.current = { aborted: false };
@@ -243,7 +276,7 @@ export function useDiscography(tracks = []) {
         try {
           // Search for multiple candidates
           const results = await MusicBrainzAPI.searchArtist(artist.name, 10);
-          
+
           if (results.length === 0) {
             failed++;
             continue;
@@ -294,8 +327,8 @@ export function useDiscography(tracks = []) {
           }
 
           // Accept the match if verified, or if the name match is very high and we have some album matches
-          if (bestMatch && (bestVerification.verified || 
-              (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
+          if (bestMatch && (bestVerification.verified ||
+            (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
             console.log(`[useDiscography] Resolved "${artist.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums matched: ${bestVerification.matchedAlbums})`);
             setResolvedArtist(artist.name, bestMatch);
             resolved++;
@@ -326,7 +359,7 @@ export function useDiscography(tracks = []) {
    */
   const fetchAllDiscographies = useCallback(async () => {
     const resolvedArtistsList = artistList.filter(a => a.isResolved && a.mbArtist);
-    const needsRefresh = resolvedArtistsList.filter(a => 
+    const needsRefresh = resolvedArtistsList.filter(a =>
       !a.discography || needsDiscographyRefresh(a.mbArtist.id)
     );
 
@@ -336,7 +369,7 @@ export function useDiscography(tracks = []) {
 
     setDiscographyLoading(true);
     setDiscographyError(null);
-    
+
     let fetched = 0;
     let failed = 0;
     abortRef.current = { aborted: false };
@@ -382,13 +415,13 @@ export function useDiscography(tracks = []) {
    */
   const getCoverArtUrl = useCallback((releaseGroupId, size = 'small') => {
     if (!releaseGroupId) return null;
-    
+
     const sizeMap = {
       small: 'front-250',
       medium: 'front-500',
       large: 'front-1200',
     };
-    
+
     return `https://coverartarchive.org/release-group/${releaseGroupId}/${sizeMap[size] || 'front-250'}`;
   }, []);
 
@@ -412,27 +445,27 @@ export function useDiscography(tracks = []) {
    */
   const reResolveArtist = useCallback(async (artistName) => {
     console.log('[useDiscography] reResolveArtist called with:', artistName);
-    
+
     const normalizedName = artistName.toLowerCase().trim();
     let artistData = libraryArtists.get(normalizedName);
-    
+
     // If not found by normalized name, try to find by original name
     if (!artistData) {
       console.log('[useDiscography] Artist not found by normalized name, searching...');
       console.log('[useDiscography] Available artists:', Array.from(libraryArtists.keys()));
-      
+
       // Try to find a match by iterating
       for (const [key, data] of libraryArtists) {
-        if (data.name.toLowerCase() === normalizedName || 
-            key === normalizedName ||
-            data.name === artistName) {
+        if (data.name.toLowerCase() === normalizedName ||
+          key === normalizedName ||
+          data.name === artistName) {
           artistData = data;
           console.log('[useDiscography] Found artist by alternative lookup:', key);
           break;
         }
       }
     }
-    
+
     if (!artistData) {
       console.error('[useDiscography] Artist not found in library:', artistName);
       setDiscographyError(`Artist "${artistName}" not found in library. Available: ${Array.from(libraryArtists.keys()).slice(0, 5).join(', ')}...`);
@@ -444,10 +477,10 @@ export function useDiscography(tracks = []) {
 
     // Clear existing resolution
     removeResolvedArtist(artistData.name);
-    
+
     // Clear the discography cache for this artist to force fresh data
     MusicBrainzAPI.clearArtistSearchCache(artistData.name);
-    
+
     setDiscographyLoading(true);
     setDiscographyError(null);
     setDiscographyProgress({ current: 0, total: 1, artist: artistData.name });
@@ -455,10 +488,10 @@ export function useDiscography(tracks = []) {
     try {
       // Search for candidates - bypass cache to get fresh results
       const results = await MusicBrainzAPI.searchArtist(artistName, 10, true);
-      
-      console.log(`[useDiscography] Re-resolve: Got ${results.length} candidates for "${artistName}":`, 
+
+      console.log(`[useDiscography] Re-resolve: Got ${results.length} candidates for "${artistName}":`,
         results.map(r => `${r.name} (${r.score})`));
-      
+
       if (results.length === 0) {
         setDiscographyError(`No MusicBrainz results found for "${artistName}"`);
         return false;
@@ -506,13 +539,13 @@ export function useDiscography(tracks = []) {
       }
 
       // Accept the match if verified
-      if (bestMatch && (bestVerification.verified || 
-          (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
+      if (bestMatch && (bestVerification.verified ||
+        (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
         console.log(`[useDiscography] Re-resolved "${artistData.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums: ${bestVerification.matchedAlbums})`);
-        
+
         // Use artistData.name (the actual local library artist name) for storage
         setResolvedArtist(artistData.name, bestMatch);
-        
+
         // Fetch full discography with the local artist name
         await fetchArtistDiscography(artistData.name, bestMatch.id);
         setSelectedArtistMbid(bestMatch.id);
@@ -536,7 +569,7 @@ export function useDiscography(tracks = []) {
    */
   const reResolveAllArtists = useCallback(async () => {
     const resolvedArtistsList = artistList.filter(a => a.isResolved);
-    
+
     if (resolvedArtistsList.length === 0) {
       setDiscographyError('No resolved artists to re-match');
       return { resolved: 0, failed: 0 };
@@ -544,7 +577,7 @@ export function useDiscography(tracks = []) {
 
     setDiscographyLoading(true);
     setDiscographyError(null);
-    
+
     let resolved = 0;
     let failed = 0;
     abortRef.current = { aborted: false };
@@ -567,7 +600,7 @@ export function useDiscography(tracks = []) {
         try {
           // Search for candidates - bypass cache
           const results = await MusicBrainzAPI.searchArtist(artist.name, 10, true);
-          
+
           console.log(`[useDiscography] Re-resolve all: "${artist.name}" - Got ${results.length} candidates`);
 
           if (results.length === 0) {
@@ -616,8 +649,8 @@ export function useDiscography(tracks = []) {
           }
 
           // Accept the match if verified
-          if (bestMatch && (bestVerification.verified || 
-              (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
+          if (bestMatch && (bestVerification.verified ||
+            (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
             console.log(`[useDiscography] Re-resolved "${artist.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums: ${bestVerification.matchedAlbums})`);
             setResolvedArtist(artist.name, bestMatch);
             resolved++;
@@ -672,7 +705,7 @@ export function useDiscography(tracks = []) {
     progress: discographyProgress,
     error: discographyError,
     config: discographyConfig,
-    
+
     // Actions
     searchArtist,
     resolveArtist,

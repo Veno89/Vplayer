@@ -244,6 +244,19 @@ export function AlbumViewWindow({ tracks, currentColors, setCurrentTrack }) {
                 key={idx}
                 onClick={() => handleAlbumClick(album)}
                 onMouseDown={e => e.stopPropagation()}
+                draggable
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  const albumTracksData = album.tracks.map(t => ({
+                    id: t.id,
+                    path: t.path,
+                    title: t.title || t.name,
+                    artist: t.artist,
+                    album: t.album
+                  }));
+                  e.dataTransfer.setData('application/json', JSON.stringify(albumTracksData));
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
                 className="group cursor-pointer"
               >
                 <div className={`${albumSizes[gridSize]} rounded-lg overflow-hidden mb-2 relative bg-slate-800`}>
@@ -288,6 +301,19 @@ export function AlbumViewWindow({ tracks, currentColors, setCurrentTrack }) {
                 key={idx}
                 onClick={() => handleAlbumClick(album)}
                 onMouseDown={e => e.stopPropagation()}
+                draggable
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  const albumTracksData = album.tracks.map(t => ({
+                    id: t.id,
+                    path: t.path,
+                    title: t.title || t.name,
+                    artist: t.artist,
+                    album: t.album
+                  }));
+                  e.dataTransfer.setData('application/json', JSON.stringify(albumTracksData));
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
                 className="group flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
               >
                 <AlbumArt

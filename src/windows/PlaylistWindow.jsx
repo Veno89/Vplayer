@@ -249,18 +249,26 @@ export function PlaylistWindow({
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(false);
-    
+
     const data = e.dataTransfer.getData('application/json');
     if (!data) return;
-    
+
     try {
       const tracks = JSON.parse(data);
-      
+
       if (!playlists.currentPlaylist) {
         alert('Please select or create a playlist first');
         return;
       }
-      
+
+      // Limit the number of tracks to prevent freezing
+      const MAX_TRACKS_PER_DROP = 100;
+      if (tracks.length > MAX_TRACKS_PER_DROP) {
+        alert(`Too many tracks (${tracks.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
+        return;
+      }
+
+      console.log('Adding tracks to playlist:', tracks.length);
       await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
     } catch (err) {
       console.error('Drop failed:', err);
@@ -456,6 +464,21 @@ export function PlaylistWindow({
         isDraggingOver ? 'bg-blue-500/5 border-2 border-dashed border-blue-500' : ''
       }`}
       style={{ pointerEvents: 'auto' }}
+      onDrop={handleExternalDrop}
+      onDragOver={(e) => {
+        const types = Array.from(e.dataTransfer.types);
+        console.log('Playlist dragover, types:', types);
+        if (types.includes('application/json') || types.includes('Files')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDraggingOver(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+          setIsDraggingOver(false);
+        }
+      }}
     >
       {/* Playlist Selector */}
       <div className="flex items-center gap-2 px-3">

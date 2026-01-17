@@ -76,7 +76,6 @@ export function useWindowConfigs({
   handleAddFolder,
   handleRefreshFolders,
   handleRemoveFolder,
-  setDuplicatesWindowOpen,
   equalizer,
   setThemeEditorOpen,
   backgroundImage,
@@ -178,7 +177,6 @@ export function useWindowConfigs({
           setSortOrder={setSortOrder}
           advancedFilters={advancedFilters}
           setAdvancedFilters={setAdvancedFilters}
-          onOpenDuplicates={() => setDuplicatesWindowOpen(true)}
         />
       ),
     },
@@ -360,7 +358,7 @@ export function useWindowConfigs({
     equalizer, windows, colorScheme,
     setColorScheme, colorSchemes, debugVisible, setDebugVisible, loadingTrackIndex,
     layouts, currentLayout, applyLayout, handleRatingChange, handleRefreshFolders,
-    advancedFilters, setAdvancedFilters, setDuplicatesWindowOpen, audioBackendError,
+    advancedFilters, setAdvancedFilters, audioBackendError,
     setThemeEditorOpen, backgroundImage, setBackgroundImage, backgroundBlur,
     setBackgroundBlur, backgroundOpacity, setBackgroundOpacity, windowOpacity,
     setWindowOpacity, fontSize, setFontSize, customThemes, saveCustomTheme,

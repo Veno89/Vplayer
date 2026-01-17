@@ -358,13 +358,55 @@ impl Database {
     pub fn add_folder(&self, folder_id: &str, folder_path: &str, folder_name: &str, date_added: i64) -> Result<()> {
         self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT OR REPLACE INTO folders (id, path, name, date_added) VALUES (?1, ?2, ?3, ?4)",
-            params![folder_id, folder_path, folder_name, date_added],
-        )?;
+
+        // Check if folder with same path already exists
+        let mut stmt = conn.prepare("SELECT id FROM folders WHERE path = ?1")?;
+        let existing_id: Option<String> = stmt.query_row(params![folder_path], |row| row.get(0)).ok();
+
+        if let Some(existing_id) = existing_id {
+            // Update existing folder entry with new date_added
+            conn.execute(
+                "UPDATE folders SET date_added = ?1 WHERE id = ?2",
+                params![date_added, existing_id],
+            )?;
+        } else {
+            // Insert new folder
+            conn.execute(
+                "INSERT INTO folders (id, path, name, date_added) VALUES (?1, ?2, ?3, ?4)",
+                params![folder_id, folder_path, folder_name, date_added],
+            )?;
+        }
+
         Ok(())
     }
-    
+
+    pub fn remove_duplicate_folders(&self) -> Result<usize> {
+        self.invalidate_cache();
+        let conn = self.conn.lock().unwrap();
+
+        // First, count how many duplicates exist
+        let count_sql = "SELECT COUNT(*) FROM folders f WHERE EXISTS (SELECT 1 FROM folders f2 WHERE f2.path = f.path AND f2.id != f.id)";
+        let duplicate_count: i64 = conn.query_row(count_sql, [], |row| row.get(0)).unwrap_or(0);
+        info!("Found {} duplicate folder entries to remove", duplicate_count);
+
+        // Delete duplicate folders, keeping only one entry per path (the one with highest ID)
+        let sql = "
+            DELETE FROM folders
+            WHERE id IN (
+                SELECT f.id
+                FROM folders f
+                WHERE EXISTS (
+                    SELECT 1 FROM folders f2
+                    WHERE f2.path = f.path AND f2.id > f.id
+                )
+            )
+        ";
+
+        let affected_rows = conn.execute(sql, [])?;
+        info!("Removed {} duplicate folder entries", affected_rows);
+        Ok(affected_rows)
+    }
+
     #[allow(dead_code)]
     pub fn get_all_folders(&self) -> Result<Vec<(String, String, String, i64)>> {
         let conn = self.conn.lock().unwrap();

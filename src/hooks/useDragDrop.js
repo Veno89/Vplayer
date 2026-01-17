@@ -55,14 +55,17 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
               let foldersAdded = 0;
               let filesAdded = 0;
               
-              for (const path of paths) {
+              // Use Set to avoid duplicate paths
+              const uniquePaths = new Set(paths);
+              
+              for (const path of uniquePaths) {
                 // Check if path is a directory by seeing if it doesn't have a common audio extension
                 const isFolder = !path.match(/\.(mp3|flac|wav|ogg|m4a|aac|wma|opus)$/i);
                 
                 if (isFolder) {
-                  // Scan folder and collect new track IDs
+                  // Scan folder incrementally and collect new track IDs
                   try {
-                    const scannedTracks = await TauriAPI.scanFolder(path);
+                    const scannedTracks = await TauriAPI.scanFolderIncremental(path);
                     if (scannedTracks && Array.isArray(scannedTracks)) {
                       scannedTracks.forEach(track => {
                         if (track.id) newTrackIds.push(track.id);
@@ -77,6 +80,13 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
                   // For now just count them - full implementation would require single file import
                   filesAdded++;
                 }
+              }
+              
+              // Limit the number of tracks to prevent freezing
+              const MAX_TRACKS_PER_DROP = 100;
+              if (newTrackIds.length > MAX_TRACKS_PER_DROP) {
+                toast?.showError(`Too many tracks (${newTrackIds.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
+                return;
               }
               
               // Refresh library to get all tracks
@@ -181,22 +191,10 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
       }
     };
 
-    const handleGlobalDrop = (e) => {
-      const internalData = e.dataTransfer.getData('application/json');
-      if (internalData) {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
-          detail: { data: internalData }
-        }));
-      }
-    };
-
     document.addEventListener('dragover', handleGlobalDragOver);
-    document.addEventListener('drop', handleGlobalDrop);
 
     return () => {
       document.removeEventListener('dragover', handleGlobalDragOver);
-      document.removeEventListener('drop', handleGlobalDrop);
     };
   }, []);
 

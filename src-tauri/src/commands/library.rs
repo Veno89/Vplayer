@@ -144,6 +144,12 @@ pub fn remove_track(track_id: String, state: tauri::State<'_, AppState>) -> Resu
 }
 
 #[tauri::command]
+pub fn remove_duplicate_folders(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    info!("Removing duplicate folders");
+    state.db.remove_duplicate_folders().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn increment_play_count(track_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     state.db.increment_play_count(&track_id).map_err(|e| e.to_string())
 }

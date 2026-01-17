@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useToast } from '../hooks/useToast';
 import { FolderOpen, Search, RefreshCw, Trash2, X, Loader, AlertCircle, FileQuestion, Copy, ChevronDown, ChevronRight, Music, GripVertical } from 'lucide-react';
 import { AdvancedSearch } from '../components/AdvancedSearch';
 import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from '../components/StarRating';
 import { FixedSizeList } from 'react-window';
@@ -57,6 +59,7 @@ export function LibraryWindow({
   scanTotal,
   scanCurrentFile,
   handleAddFolder,
+  handleRefreshFolders,
   handleRemoveFolder,
   searchQuery,
   setSearchQuery,
@@ -66,7 +69,6 @@ export function LibraryWindow({
   setSortOrder,
   advancedFilters,
   setAdvancedFilters,
-  onOpenDuplicates,
   onTrackDragStart,
   onTrackDragEnd,
 }) {
@@ -77,6 +79,8 @@ export function LibraryWindow({
   const [checkingMissing, setCheckingMissing] = useState(false);
   const [isRefreshingFolders, setIsRefreshingFolders] = useState(false);
   const [expandedFolder, setExpandedFolder] = useState(null);
+  const [removingDuplicates, setRemovingDuplicates] = useState(false);
+  const { showSuccess, showError, showInfo } = useToast();
 
   // Memoize folder tracks calculations to prevent lag
   const folderTracksMap = React.useMemo(() => {
@@ -128,6 +132,57 @@ export function LibraryWindow({
     }
   };
 
+  const handleRemoveDuplicates = async () => {
+    setRemovingDuplicates(true);
+    try {
+      let totalRemoved = 0;
+      let foldersRemoved = 0;
+
+      // First, remove duplicate folders
+      try {
+        foldersRemoved = await TauriAPI.removeDuplicateFolders();
+      } catch (error) {
+        console.error('Failed to remove duplicate folders:', error);
+      }
+
+      // Then, remove duplicate tracks
+      const groups = await invoke('find_duplicates');
+      if (groups.length > 0) {
+        for (const group of groups) {
+          if (group.length > 1) {
+            // Keep the first track, remove the rest
+            const tracksToRemove = group.slice(1);
+            for (const track of tracksToRemove) {
+              await invoke('remove_track', { trackId: track.id });
+              totalRemoved++;
+            }
+          }
+        }
+      }
+
+      if (foldersRemoved > 0 || totalRemoved > 0) {
+        let message = '';
+        if (foldersRemoved > 0 && totalRemoved > 0) {
+          message = `Removed ${foldersRemoved} duplicate folder(s) and ${totalRemoved} duplicate track(s)`;
+        } else if (foldersRemoved > 0) {
+          message = `Removed ${foldersRemoved} duplicate folder(s)`;
+        } else {
+          message = `Removed ${totalRemoved} duplicate track(s)`;
+        }
+        showSuccess(message);
+        // Refresh the library
+        handleRefreshFolders();
+      } else {
+        showSuccess('No duplicates found!');
+      }
+    } catch (error) {
+      console.error('Failed to remove duplicates:', error);
+      showError('Failed to remove duplicates');
+    } finally {
+      setRemovingDuplicates(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 h-full">
       {/* Header with Actions */}
@@ -141,14 +196,18 @@ export function LibraryWindow({
             onMouseDown={e => e.stopPropagation()}
             onClick={e => {
               e.stopPropagation();
-              if (onOpenDuplicates) onOpenDuplicates();
+              handleRemoveDuplicates();
             }}
-            disabled={isScanning}
+            disabled={isScanning || removingDuplicates}
             className="px-3 py-1 bg-purple-700 text-white text-xs rounded hover:bg-purple-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-            title="Find Duplicate Tracks"
+            title="Remove Duplicate Tracks and Folders"
           >
-            <Copy className="w-3 h-3" />
-            Duplicates
+            {removingDuplicates ? (
+              <Loader className="w-3 h-3 animate-spin" />
+            ) : (
+              <Copy className="w-3 h-3" />
+            )}
+            {removingDuplicates ? 'Removing...' : 'Remove Duplicates'}
           </button>
           <button
             onMouseDown={e => e.stopPropagation()}

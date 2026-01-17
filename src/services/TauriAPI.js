@@ -191,6 +191,10 @@ class TauriAPIService {
     return this._invoke('find_duplicates');
   }
 
+  async removeDuplicateFolders() {
+    return this._invoke('remove_duplicate_folders');
+  }
+
   /**
    * Show a file in the system file explorer
    * @param {string} path - Full path to the file

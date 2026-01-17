@@ -97,11 +97,11 @@ describe('MusicBrainzAPI', () => {
       ];
 
       const artists = DiscographyMatcher.extractArtistsFromTracks(tracks);
-      
+
       expect(artists.size).toBe(2);
       expect(artists.has('the beatles')).toBe(true);
       expect(artists.has('pink floyd')).toBe(true);
-      
+
       const beatles = artists.get('the beatles');
       expect(beatles.albumCount).toBe(2);
       expect(beatles.albums.size).toBe(2);
@@ -115,16 +115,100 @@ describe('MusicBrainzAPI', () => {
       ];
 
       const artists = DiscographyMatcher.extractArtistsFromTracks(tracks);
-      
+
       expect(artists.size).toBe(1);
       expect(artists.has('real artist')).toBe(true);
+    });
+
+    it('should group collaborative tracks under primary artist', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const tracks = [
+        { id: '1', artist: 'Electric Callboy', album: 'TEKKNO' },
+        { id: '2', artist: 'Electric Callboy, Conquer Divide', album: 'Fuckboi' },
+        { id: '3', artist: 'Electric Callboy, Finch', album: 'Spaceman' },
+        { id: '4', artist: 'Electric Callboy feat. Finch', album: 'Another Song' },
+      ];
+
+      const artists = DiscographyMatcher.extractArtistsFromTracks(tracks);
+
+      // Should all be grouped under "Electric Callboy"
+      expect(artists.size).toBe(1);
+      expect(artists.has('electric callboy')).toBe(true);
+
+      const electricCallboy = artists.get('electric callboy');
+      expect(electricCallboy.albumCount).toBe(4);
+      expect(electricCallboy.collaborations.size).toBe(3); // The 3 collab tracks
+    });
+  });
+
+  describe('extractPrimaryArtist', () => {
+    it('should extract primary artist from comma-separated string', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Electric Callboy, Conquer Divide');
+      expect(result.primary).toBe('Electric Callboy');
+      expect(result.full).toBe('Electric Callboy, Conquer Divide');
+      expect(result.isCollaboration).toBe(true);
+    });
+
+    it('should extract primary artist from feat. string', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Artist1 feat. Artist2');
+      expect(result.primary).toBe('Artist1');
+      expect(result.isCollaboration).toBe(true);
+    });
+
+    it('should extract primary artist from ft. string', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Artist1 ft. Artist2');
+      expect(result.primary).toBe('Artist1');
+      expect(result.isCollaboration).toBe(true);
+    });
+
+    it('should extract primary artist from x collab string', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Artist1 x Artist2');
+      expect(result.primary).toBe('Artist1');
+      expect(result.isCollaboration).toBe(true);
+    });
+
+    it('should extract primary artist from & string', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Artist1 & Artist2');
+      expect(result.primary).toBe('Artist1');
+      expect(result.isCollaboration).toBe(true);
+    });
+
+    it('should extract primary artist from "with" string', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Artist1 with Artist2');
+      expect(result.primary).toBe('Artist1');
+      expect(result.isCollaboration).toBe(true);
+    });
+
+    it('should return full string for solo artists', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result = DiscographyMatcher.extractPrimaryArtist('Electric Callboy');
+      expect(result.primary).toBe('Electric Callboy');
+      expect(result.full).toBe('Electric Callboy');
+      expect(result.isCollaboration).toBe(false);
+    });
+
+    it('should handle empty/null input', async () => {
+      const { DiscographyMatcher } = await import('../DiscographyMatcher');
+      const result1 = DiscographyMatcher.extractPrimaryArtist('');
+      expect(result1.primary).toBe('');
+      expect(result1.isCollaboration).toBe(false);
+
+      const result2 = DiscographyMatcher.extractPrimaryArtist(null);
+      expect(result2.primary).toBe('');
+      expect(result2.isCollaboration).toBe(false);
     });
   });
 
   describe('matchDiscography', () => {
     it('should match albums correctly', async () => {
       const { DiscographyMatcher } = await import('../DiscographyMatcher');
-      
+
       const mbAlbums = [
         { id: 'mb1', title: 'Abbey Road', firstReleaseDate: '1969', primaryType: 'Album' },
         { id: 'mb2', title: 'Let It Be', firstReleaseDate: '1970', primaryType: 'Album' },
@@ -137,15 +221,15 @@ describe('MusicBrainzAPI', () => {
       ]);
 
       const results = DiscographyMatcher.matchDiscography(mbAlbums, localAlbums);
-      
+
       expect(results.length).toBe(3);
-      
+
       const abbeyRoad = results.find(r => r.mbTitle === 'Abbey Road');
       expect(abbeyRoad.status).toBe('present');
-      
+
       const letItBe = results.find(r => r.mbTitle === 'Let It Be');
       expect(letItBe.status).toBe('present');
-      
+
       const revolver = results.find(r => r.mbTitle === 'Revolver');
       expect(revolver.status).toBe('missing');
     });
@@ -154,7 +238,7 @@ describe('MusicBrainzAPI', () => {
   describe('getMatchSummary', () => {
     it('should calculate summary correctly', async () => {
       const { DiscographyMatcher } = await import('../DiscographyMatcher');
-      
+
       const matches = [
         { status: 'present' },
         { status: 'present' },
@@ -163,7 +247,7 @@ describe('MusicBrainzAPI', () => {
       ];
 
       const summary = DiscographyMatcher.getMatchSummary(matches);
-      
+
       expect(summary.total).toBe(4);
       expect(summary.present).toBe(2);
       expect(summary.missing).toBe(1);
@@ -192,7 +276,7 @@ describe('MusicBrainzAPI', () => {
   describe('verifyArtistByAlbums', () => {
     it('should verify artist when albums match', async () => {
       const { DiscographyMatcher } = await import('../DiscographyMatcher');
-      
+
       const mbAlbums = [
         { id: 'mb1', title: 'Tales & Travels', primaryType: 'Album' },
         { id: 'mb2', title: 'Another Album', primaryType: 'Album' },
@@ -203,7 +287,7 @@ describe('MusicBrainzAPI', () => {
       ]);
 
       const result = DiscographyMatcher.verifyArtistByAlbums(mbAlbums, localAlbums);
-      
+
       expect(result.verified).toBe(true);
       expect(result.matchedAlbums).toBe(1);
       expect(result.confidence).toBeGreaterThanOrEqual(85);
@@ -211,7 +295,7 @@ describe('MusicBrainzAPI', () => {
 
     it('should not verify when no albums match', async () => {
       const { DiscographyMatcher } = await import('../DiscographyMatcher');
-      
+
       const mbAlbums = [
         { id: 'mb1', title: 'Completely Different Album', primaryType: 'Album' },
         { id: 'mb2', title: 'Another Random Album', primaryType: 'Album' },
@@ -222,14 +306,14 @@ describe('MusicBrainzAPI', () => {
       ]);
 
       const result = DiscographyMatcher.verifyArtistByAlbums(mbAlbums, localAlbums);
-      
+
       expect(result.verified).toBe(false);
       expect(result.matchedAlbums).toBe(0);
     });
 
     it('should verify with multiple album matches', async () => {
       const { DiscographyMatcher } = await import('../DiscographyMatcher');
-      
+
       const mbAlbums = [
         { id: 'mb1', title: 'Abbey Road', primaryType: 'Album' },
         { id: 'mb2', title: 'Let It Be', primaryType: 'Album' },
@@ -242,14 +326,14 @@ describe('MusicBrainzAPI', () => {
       ]);
 
       const result = DiscographyMatcher.verifyArtistByAlbums(mbAlbums, localAlbums);
-      
+
       expect(result.verified).toBe(true);
       expect(result.matchedAlbums).toBe(2);
     });
 
     it('should return not verified for empty inputs', async () => {
       const { DiscographyMatcher } = await import('../DiscographyMatcher');
-      
+
       const result1 = DiscographyMatcher.verifyArtistByAlbums([], new Map());
       expect(result1.verified).toBe(false);
 

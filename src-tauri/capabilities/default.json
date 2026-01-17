@@ -16,7 +16,6 @@
     "dialog:allow-open",
     "dialog:allow-confirm",
     "fs:allow-read-dir",
-    "fs:allow-read-file",
-    "updater:default"
+    "fs:allow-read-file"
   ]
 }

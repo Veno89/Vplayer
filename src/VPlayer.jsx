@@ -299,10 +299,6 @@ const VPlayerInner = () => {
   }, [removeFolder, currentTrack, tracks, setCurrentTrack, setPlaying, toast]);
 
   const handleRatingChange = useCallback(() => { refreshTracks(); }, [refreshTracks]);
-  const handleDuplicateRemoved = useCallback(() => {
-    refreshTracks();
-    toast.showSuccess('Track removed successfully');
-  }, [refreshTracks, toast]);
 
   // Handle tag save from editor
   const handleTagsSaved = useCallback((updatedTrack) => {
@@ -323,13 +319,13 @@ const VPlayerInner = () => {
     currentColors, shuffle, repeatMode, audio, playerHook, setPlaying,
     setShuffle, setRepeatMode, toggleWindow: toggleWindowWithResize, setCurrentTrack, removeTrack,
     libraryFolders, isScanning, scanProgress, scanCurrent, scanTotal,
-    scanCurrentFile, handleAddFolder, handleRemoveFolder, searchQuery,
+    scanCurrentFile, handleAddFolder, handleRefreshFolders: refreshTracks, handleRemoveFolder, searchQuery,
     setSearchQuery, sortBy, setSortBy, sortOrder, setSortOrder, advancedFilters,
     setAdvancedFilters, equalizer, windows, colorScheme, setColorScheme,
     colorSchemes, debugVisible, setDebugVisible, loadingTrackIndex, layouts,
     currentLayout, applyLayout: applyLayoutWithResize, handleLibraryDragStart: dragDrop.handleLibraryDragStart,
     handleLibraryDragEnd: dragDrop.handleLibraryDragEnd, handleRatingChange,
-    handleDuplicateRemoved, setActivePlaybackTracks, crossfade, setThemeEditorOpen,
+    setActivePlaybackTracks, crossfade, setThemeEditorOpen,
     backgroundImage, setBackgroundImage, backgroundBlur, setBackgroundBlur,
     backgroundOpacity, setBackgroundOpacity, windowOpacity, setWindowOpacity,
     fontSize, setFontSize, setMiniPlayerMode,

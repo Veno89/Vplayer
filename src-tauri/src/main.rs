@@ -40,7 +40,7 @@ use commands::{
     // Library commands
     scan_folder, scan_folder_incremental, get_all_tracks, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
-    update_track_path, find_duplicates, remove_track, increment_play_count,
+    update_track_path, find_duplicates, remove_track, remove_duplicate_folders, increment_play_count,
     get_recently_played, get_most_played, get_album_art, extract_and_cache_album_art,
     update_track_tags, show_in_folder, reset_play_count, write_text_file,
     // Playlist commands
@@ -81,7 +81,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             info!("Initializing VPlayer application");
@@ -266,6 +266,7 @@ fn main() {
             update_track_path,
             find_duplicates,
             remove_track,
+            remove_duplicate_folders,
             get_album_art,
             extract_and_cache_album_art,
             update_track_tags,

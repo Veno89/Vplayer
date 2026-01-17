@@ -72,6 +72,77 @@ const SUBTITLE_PATTERNS = [
 
 class DiscographyMatchingService {
   /**
+   * Common patterns used to separate multiple artists in a single artist field
+   */
+  static ARTIST_SEPARATORS = [
+    /\s*,\s*/,           // Comma: "Artist1, Artist2"
+    /\s*;\s*/,           // Semicolon: "Artist1; Artist2"
+    /\s+feat\.?\s+/i,    // feat. or feat: "Artist1 feat. Artist2"
+    /\s+ft\.?\s+/i,      // ft. or ft: "Artist1 ft. Artist2"
+    /\s+featuring\s+/i,  // featuring: "Artist1 featuring Artist2"
+    /\s+with\s+/i,       // with: "Artist1 with Artist2"
+    /\s+&\s+/,           // Ampersand: "Artist1 & Artist2"
+    /\s+x\s+/i,          // x (common in collabs): "Artist1 x Artist2"
+    /\s+vs\.?\s+/i,      // vs or vs.: "Artist1 vs Artist2"
+    /\s+and\s+/i,        // and: "Artist1 and Artist2"
+  ];
+
+  /**
+   * Extract the primary (first) artist from a potentially multi-artist string
+   * @param {string} artistString - Full artist string which may contain multiple artists
+   * @returns {{ primary: string, full: string, isCollaboration: boolean }}
+   */
+  extractPrimaryArtist(artistString) {
+    if (!artistString) {
+      return { primary: '', full: '', isCollaboration: false };
+    }
+
+    const trimmed = artistString.trim();
+
+    // Try each separator pattern and find the one that splits earliest
+    let earliestSplit = trimmed;
+    let foundSeparator = false;
+
+    for (const separator of DiscographyMatchingService.ARTIST_SEPARATORS) {
+      const match = trimmed.match(separator);
+      if (match && match.index !== undefined) {
+        const potentialPrimary = trimmed.substring(0, match.index).trim();
+        // Only accept if the result is non-empty and shorter than current best
+        if (potentialPrimary.length > 0 && potentialPrimary.length < earliestSplit.length) {
+          earliestSplit = potentialPrimary;
+          foundSeparator = true;
+        }
+      }
+    }
+
+    return {
+      primary: earliestSplit,
+      full: trimmed,
+      isCollaboration: foundSeparator,
+    };
+  }
+
+  /**
+   * Normalize an artist name for grouping purposes
+   * More aggressive than normalizeString - strips all punctuation to catch variants
+   * like "Leave's Eyes" vs "Leaves' Eyes"
+   * @param {string} str - Artist name to normalize
+   * @returns {string} Normalized artist name
+   */
+  normalizeArtistName(str) {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .trim()
+      .replace(/[''`´]/g, '')     // Remove apostrophes entirely
+      .replace(/["""]/g, '')      // Remove quotes
+      .replace(/[–—-]/g, ' ')     // Dashes to spaces
+      .replace(/[.,:;!?]/g, '')   // Remove punctuation
+      .replace(/\s+/g, ' ')       // Multiple spaces to single
+      .trim();
+  }
+
+  /**
    * Normalize a string for comparison
    * @param {string} str - String to normalize
    * @returns {string} Normalized string
@@ -111,7 +182,7 @@ class DiscographyMatchingService {
 
     const lenA = a.length;
     const lenB = b.length;
-    
+
     // Quick length check
     if (Math.abs(lenA - lenB) > Math.max(lenA, lenB) * 0.5) {
       return 0;
@@ -186,47 +257,109 @@ class DiscographyMatchingService {
 
   /**
    * Extract unique artists from track list
+   * Groups by PRIMARY artist to avoid duplicates from collaborations
+   * Also uses fuzzy matching to group spelling variants (e.g., "Leave's Eyes" vs "Leaves' Eyes")
    * @param {Object[]} tracks - Track objects with artist property
-   * @returns {Map<string, { name: string, albumCount: number, albums: Map<string, LocalAlbum> }>}
+   * @returns {Map<string, { name: string, albumCount: number, albums: Map<string, LocalAlbum>, collaborations: Set<string>, nameVariants: Set<string> }>}
    */
   extractArtistsFromTracks(tracks) {
     const artistsMap = new Map();
+    // Secondary index for fuzzy matching - maps normalized names to their canonical key
+    const fuzzyIndex = new Map();
 
     for (const track of tracks) {
       const artistName = track.artist?.trim();
       if (!artistName || artistName.toLowerCase() === 'unknown artist') continue;
 
-      const normalizedArtist = artistName.toLowerCase();
+      // Extract the primary artist for grouping
+      const { primary, full, isCollaboration } = this.extractPrimaryArtist(artistName);
 
-      if (!artistsMap.has(normalizedArtist)) {
-        artistsMap.set(normalizedArtist, {
-          name: artistName,
-          albumCount: 0,
-          albums: new Map(),
-        });
+      if (!primary) continue;
+
+      const normalizedPrimary = primary.toLowerCase();
+
+      // Check for exact match first
+      let canonicalKey = normalizedPrimary;
+      let existingArtistData = artistsMap.get(normalizedPrimary);
+
+      // If no exact match, try punctuation-normalized matching for spelling variants
+      // This catches "Leave's Eyes" vs "Leaves' Eyes" without false positives
+      if (!existingArtistData) {
+        // Check if we've already mapped this name
+        if (fuzzyIndex.has(normalizedPrimary)) {
+          canonicalKey = fuzzyIndex.get(normalizedPrimary);
+          existingArtistData = artistsMap.get(canonicalKey);
+        } else {
+          const normalizedForComparison = this.normalizeArtistName(primary);
+
+          // Look for matching artists via punctuation-normalized names
+          for (const [existingKey, existingData] of artistsMap) {
+            const existingNormalized = this.normalizeArtistName(existingData.name);
+
+            // First check: exact match after punctuation normalization
+            if (normalizedForComparison === existingNormalized) {
+              canonicalKey = existingKey;
+              existingArtistData = existingData;
+              fuzzyIndex.set(normalizedPrimary, existingKey);
+              break;
+            }
+
+            // Second check: very high fuzzy threshold (95%) as fallback
+            // This is conservative to avoid grouping distinct artists
+            const similarity = this.calculateSimilarity(normalizedForComparison, existingNormalized);
+            if (similarity >= 95) {
+              canonicalKey = existingKey;
+              existingArtistData = existingData;
+              fuzzyIndex.set(normalizedPrimary, existingKey);
+              break;
+            }
+          }
+        }
       }
 
-      const artistData = artistsMap.get(normalizedArtist);
+      if (!existingArtistData) {
+        artistsMap.set(normalizedPrimary, {
+          name: primary,  // Use the primary artist name for display
+          fullNames: new Set([full]),  // Track all full artist strings seen
+          nameVariants: new Set([primary]),  // Track spelling variants
+          albumCount: 0,
+          albums: new Map(),
+          collaborations: new Set(),  // Track collaboration partners
+        });
+        existingArtistData = artistsMap.get(normalizedPrimary);
+        canonicalKey = normalizedPrimary;
+      }
+
+      // Track the full artist string, variants, and collaborations
+      existingArtistData.fullNames.add(full);
+      existingArtistData.nameVariants.add(primary);
+      if (isCollaboration) {
+        existingArtistData.collaborations.add(full);
+      }
+
       const albumName = track.album?.trim() || 'Unknown Album';
       const normalizedAlbum = albumName.toLowerCase();
 
-      if (!artistData.albums.has(normalizedAlbum)) {
-        artistData.albums.set(normalizedAlbum, {
+      if (!existingArtistData.albums.has(normalizedAlbum)) {
+        existingArtistData.albums.set(normalizedAlbum, {
           name: albumName,
-          artist: artistName,
+          artist: primary,  // Use primary artist
+          fullArtist: full,  // Keep full artist string for reference
           trackCount: 0,
           trackIds: [],
         });
-        artistData.albumCount++;
+        existingArtistData.albumCount++;
       }
 
-      const albumData = artistData.albums.get(normalizedAlbum);
+      const albumData = existingArtistData.albums.get(normalizedAlbum);
       albumData.trackCount++;
       albumData.trackIds.push(track.id);
     }
 
     return artistsMap;
   }
+
+
 
   /**
    * Match MusicBrainz discography against local library
@@ -317,20 +450,20 @@ class DiscographyMatchingService {
 
     for (const [key, localAlbum] of localAlbums) {
       let bestConfidence = 0;
-      
+
       for (const mbAlbum of mbAlbums) {
         const { matches, confidence } = this.matchAlbumNames(localAlbum.name, mbAlbum.title);
-        
+
         if (confidence > bestConfidence) {
           bestConfidence = confidence;
         }
-        
+
         // If we found a good match, no need to check more MB albums
         if (matches && confidence >= 85) {
           break;
         }
       }
-      
+
       if (bestConfidence >= 75) {
         matchedCount++;
         totalConfidence += bestConfidence;
@@ -340,12 +473,12 @@ class DiscographyMatchingService {
     const localAlbumCount = localAlbums.size;
     const matchRatio = matchedCount / localAlbumCount;
     const avgConfidence = matchedCount > 0 ? totalConfidence / matchedCount : 0;
-    
+
     // Consider verified if:
     // - At least one album matches with high confidence (>=85), OR
     // - Multiple albums match (helps with common album names)
     const verified = matchedCount > 0 && (avgConfidence >= 85 || matchedCount >= 2);
-    
+
     return {
       verified,
       matchedAlbums: matchedCount,

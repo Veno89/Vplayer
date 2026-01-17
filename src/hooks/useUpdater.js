@@ -1,6 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+
+// Conditional imports for updater functionality
+let check, relaunch;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const updater = require('@tauri-apps/plugin-updater');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const process = require('@tauri-apps/plugin-process');
+  check = updater.check;
+  relaunch = process.relaunch;
+} catch (e) {
+  // Updater not available, functions will remain undefined
+  console.warn('Updater plugin not available, updates disabled');
+  check = null;
+  relaunch = null;
+}
 
 /**
  * Hook for managing app updates
@@ -19,9 +33,17 @@ export function useUpdater() {
     try {
       setChecking(true);
       setError(null);
-      
+
+      // Check if updater is available
+      if (!check) {
+        if (!silent) {
+          console.info('Update checking disabled - updater plugin not available');
+        }
+        return false;
+      }
+
       const update = await check();
-      
+
       if (update) {
         setUpdateAvailable(true);
         setUpdateInfo({
@@ -38,8 +60,10 @@ export function useUpdater() {
       }
     } catch (err) {
       console.error('Failed to check for updates:', err);
-      if (!silent) {
-        setError(err.message || 'Failed to check for updates');
+      // Only show error if it's not a network/remote configuration issue
+      const errorMessage = err.message || 'Failed to check for updates';
+      if (!silent && !errorMessage.includes('Could not fetch a valid release JSON')) {
+        setError(errorMessage);
       }
       return false;
     } finally {
@@ -52,13 +76,18 @@ export function useUpdater() {
       setDownloading(true);
       setError(null);
       setDownloadProgress(0);
-      
+
+      // Check if updater is available
+      if (!check || !relaunch) {
+        throw new Error('Updater not available');
+      }
+
       const update = await check();
-      
+
       if (!update) {
         throw new Error('No update available');
       }
-      
+
       // Download with progress tracking
       await update.downloadAndInstall((event) => {
         switch (event.event) {
@@ -74,7 +103,7 @@ export function useUpdater() {
             break;
         }
       });
-      
+
       // Prompt to restart
       await relaunch();
     } catch (err) {
