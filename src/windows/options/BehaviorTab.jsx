@@ -1,9 +1,9 @@
 import React from 'react';
-import { Sliders, Monitor, Bell, Grid3X3, Layout, MousePointer } from 'lucide-react';
+import { Sliders, Monitor, Bell, Grid3X3, Layout, MousePointer, Keyboard } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { SettingToggle, SettingSlider, SettingCard, SettingDivider } from './SettingsComponents';
+import { SettingToggle, SettingSlider, SettingCard, SettingDivider, SettingButton } from './SettingsComponents';
 
-export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
+export function BehaviorTab({ layouts, currentLayout, applyLayout, toggleWindow }) {
   // Get settings from store
   const minimizeToTray = useStore(state => state.minimizeToTray);
   const setMinimizeToTray = useStore(state => state.setMinimizeToTray);
@@ -15,7 +15,7 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
   const setRememberWindowPositions = useStore(state => state.setRememberWindowPositions);
   const autoResizeWindow = useStore(state => state.autoResizeWindow);
   const setAutoResizeWindow = useStore(state => state.setAutoResizeWindow);
-  
+
   // New settings
   const confirmBeforeDelete = useStore(state => state.confirmBeforeDelete);
   const setConfirmBeforeDelete = useStore(state => state.setConfirmBeforeDelete);
@@ -46,14 +46,14 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
           checked={minimizeToTray}
           onChange={setMinimizeToTray}
         />
-        
+
         <SettingToggle
           label="Close to Tray"
           description="Keep app running in background when closing the window"
           checked={closeToTray}
           onChange={setCloseToTray}
         />
-        
+
         <SettingToggle
           label="Start Minimized"
           description="Launch the app minimized to system tray"
@@ -69,6 +69,20 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
           description="Display system notifications for track changes and events"
           checked={showNotifications}
           onChange={setShowNotifications}
+        />
+      </SettingCard>
+
+      {/* Keyboard Shortcuts */}
+      <SettingCard title="Keyboard Shortcuts" icon={Keyboard} accent="cyan">
+        <p className="text-xs text-slate-500 mb-4">
+          Customize keyboard shortcuts for common actions like play, pause, next track, and more.
+        </p>
+        <SettingButton
+          label="Open Keyboard Shortcuts"
+          description="View and customize all keyboard shortcuts"
+          onClick={() => toggleWindow?.('shortcuts')}
+          icon={Keyboard}
+          variant="primary"
         />
       </SettingCard>
 
@@ -90,16 +104,16 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
           checked={rememberWindowPositions}
           onChange={setRememberWindowPositions}
         />
-        
+
         <SettingToggle
           label="Auto-Resize Main Window"
           description="Automatically adjust main window to fit all visible panels"
           checked={autoResizeWindow}
           onChange={setAutoResizeWindow}
         />
-        
+
         <SettingDivider label="Snapping" />
-        
+
         <SettingToggle
           label="Snap Windows to Grid"
           description="Windows align to an invisible grid when dragging"
@@ -107,7 +121,7 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
           onChange={setSnapToGrid}
           icon={Grid3X3}
         />
-        
+
         {snapToGrid && (
           <SettingSlider
             label="Grid Size"
@@ -131,18 +145,17 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
           <p className="text-xs text-slate-500 mb-4">
             Quickly arrange windows using predefined layouts
           </p>
-          
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {layouts.map((layout) => (
               <button
                 key={layout.name}
                 onClick={() => applyLayout(layout.name)}
                 onMouseDown={e => e.stopPropagation()}
-                className={`p-3 rounded-xl border-2 text-left transition-all hover:scale-[1.02] ${
-                  currentLayout === layout.name
+                className={`p-3 rounded-xl border-2 text-left transition-all hover:scale-[1.02] ${currentLayout === layout.name
                     ? 'border-violet-500 bg-violet-500/10'
                     : 'border-slate-700/50 bg-slate-800/30 hover:border-slate-600'
-                }`}
+                  }`}
                 title={layout.description}
               >
                 {/* Layout Preview */}
@@ -160,9 +173,9 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout }) {
                     />
                   ))}
                 </div>
-                
+
                 <p className="text-white text-xs font-medium truncate">{layout.label}</p>
-                
+
                 {currentLayout === layout.name && (
                   <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-violet-500" />
                 )}

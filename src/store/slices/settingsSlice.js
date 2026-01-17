@@ -7,7 +7,6 @@ export const createSettingsSlice = (set) => ({
   gaplessPlayback: true,
   autoPlayOnStartup: false,
   resumeLastTrack: true,
-  skipSilence: false,
   replayGainMode: 'off', // 'off', 'track', 'album'
   replayGainPreamp: 0, // dB
   playbackSpeed: 1.0, // 0.5 - 2.0
@@ -49,7 +48,6 @@ export const createSettingsSlice = (set) => ({
   setGaplessPlayback: (enabled) => set({ gaplessPlayback: enabled }),
   setAutoPlayOnStartup: (enabled) => set({ autoPlayOnStartup: enabled }),
   setResumeLastTrack: (enabled) => set({ resumeLastTrack: enabled }),
-  setSkipSilence: (enabled) => set({ skipSilence: enabled }),
   setReplayGainMode: (mode) => set({ replayGainMode: mode }),
   setReplayGainPreamp: (preamp) => set({ replayGainPreamp: preamp }),
   setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
@@ -96,7 +94,6 @@ export const settingsPersistState = (state) => ({
   gaplessPlayback: state.gaplessPlayback,
   autoPlayOnStartup: state.autoPlayOnStartup,
   resumeLastTrack: state.resumeLastTrack,
-  skipSilence: state.skipSilence,
   replayGainMode: state.replayGainMode,
   replayGainPreamp: state.replayGainPreamp,
   // Note: crossfade settings are managed by useCrossfade hook with localStorage

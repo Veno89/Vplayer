@@ -11,17 +11,44 @@ import { PerformanceTab } from './options/PerformanceTab';
 import { AdvancedTab } from './options/AdvancedTab';
 import { WindowsTab } from './options/WindowsTab';
 
-// Tab configuration
+// Tab configuration with searchable keywords
 const TABS = [
-  { id: 'appearance', label: 'Appearance', icon: Palette, color: 'purple' },
-  { id: 'playback', label: 'Playback', icon: Play, color: 'cyan' },
-  { id: 'library', label: 'Library', icon: Music, color: 'amber' },
-  { id: 'audio', label: 'Audio', icon: Volume2, color: 'violet' },
-  { id: 'behavior', label: 'Behavior', icon: Sliders, color: 'emerald' },
-  { id: 'performance', label: 'Performance', icon: Zap, color: 'pink' },
-  { id: 'advanced', label: 'Advanced', icon: Database, color: 'red' },
-  { id: 'windows', label: 'Windows', icon: Layout, color: 'blue' },
-  { id: 'about', label: 'About', icon: Info, color: 'slate' },
+  {
+    id: 'appearance', label: 'Appearance', icon: Palette, color: 'purple',
+    keywords: ['theme', 'color', 'background', 'wallpaper', 'opacity', 'font', 'size', 'blur', 'dark', 'light']
+  },
+  {
+    id: 'playback', label: 'Playback', icon: Play, color: 'cyan',
+    keywords: ['gapless', 'autoplay', 'resume', 'fade', 'crossfade', 'replaygain', 'volume', 'normalization']
+  },
+  {
+    id: 'library', label: 'Library', icon: Music, color: 'amber',
+    keywords: ['folder', 'scan', 'watch', 'duplicate', 'album art', 'metadata', 'hidden', 'language']
+  },
+  {
+    id: 'audio', label: 'Audio', icon: Volume2, color: 'violet',
+    keywords: ['device', 'output', 'speaker', 'crossfade', 'speed', 'tempo', 'sample rate']
+  },
+  {
+    id: 'behavior', label: 'Behavior', icon: Sliders, color: 'emerald',
+    keywords: ['tray', 'minimize', 'close', 'notification', 'confirm', 'delete', 'grid', 'snap', 'layout', 'shortcut', 'keyboard']
+  },
+  {
+    id: 'performance', label: 'Performance', icon: Zap, color: 'pink',
+    keywords: ['cache', 'memory', 'buffer', 'cpu', 'hardware', 'acceleration', 'thumbnail', 'concurrent']
+  },
+  {
+    id: 'advanced', label: 'Advanced', icon: Database, color: 'red',
+    keywords: ['database', 'storage', 'export', 'import', 'backup', 'reset', 'debug', 'clear', 'optimize']
+  },
+  {
+    id: 'windows', label: 'Windows', icon: Layout, color: 'blue',
+    keywords: ['visible', 'hidden', 'show', 'hide', 'position', 'reset', 'layout']
+  },
+  {
+    id: 'about', label: 'About', icon: Info, color: 'slate',
+    keywords: ['version', 'update', 'credits', 'info', 'vplayer']
+  },
 ];
 
 export function OptionsWindowEnhanced({
@@ -51,15 +78,26 @@ export function OptionsWindowEnhanced({
   const [activeTab, setActiveTab] = useState('appearance');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter tabs based on search
+  // Filter tabs based on search - matches tab name, id, or keywords
   const filteredTabs = useMemo(() => {
     if (!searchQuery.trim()) return TABS;
     const query = searchQuery.toLowerCase();
-    return TABS.filter(tab => 
+    return TABS.filter(tab =>
       tab.label.toLowerCase().includes(query) ||
-      tab.id.toLowerCase().includes(query)
+      tab.id.toLowerCase().includes(query) ||
+      tab.keywords?.some(keyword => keyword.toLowerCase().includes(query))
     );
   }, [searchQuery]);
+
+  // Auto-switch to first matching tab when search finds a match
+  React.useEffect(() => {
+    if (searchQuery.trim() && filteredTabs.length > 0) {
+      const currentTabStillVisible = filteredTabs.some(t => t.id === activeTab);
+      if (!currentTabStillVisible) {
+        setActiveTab(filteredTabs[0].id);
+      }
+    }
+  }, [searchQuery, filteredTabs, activeTab]);
 
   // Render the active tab content
   const renderTabContent = () => {
@@ -83,28 +121,29 @@ export function OptionsWindowEnhanced({
             setFontSize={setFontSize}
           />
         );
-      
+
       case 'playback':
         return <PlaybackTab crossfade={crossfade} />;
-      
+
       case 'library':
         return <LibraryTab />;
-      
+
       case 'audio':
         return <AudioTab crossfade={crossfade} />;
-      
+
       case 'behavior':
         return (
           <BehaviorTab
             layouts={layouts}
             currentLayout={currentLayout}
             applyLayout={applyLayout}
+            toggleWindow={toggleWindow}
           />
         );
-      
+
       case 'performance':
         return <PerformanceTab />;
-      
+
       case 'advanced':
         return (
           <AdvancedTab
@@ -112,7 +151,7 @@ export function OptionsWindowEnhanced({
             setDebugVisible={setDebugVisible}
           />
         );
-      
+
       case 'windows':
         return (
           <WindowsTab
@@ -120,10 +159,10 @@ export function OptionsWindowEnhanced({
             toggleWindow={toggleWindow}
           />
         );
-      
+
       case 'about':
         return <AboutTab currentColors={currentColors} />;
-      
+
       default:
         return null;
     }
@@ -137,7 +176,7 @@ export function OptionsWindowEnhanced({
           <Settings className="w-4 h-4 text-white" />
         </div>
         <h3 className="text-white font-semibold flex-1">Settings</h3>
-        
+
         {/* Search Bar */}
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -157,17 +196,16 @@ export function OptionsWindowEnhanced({
         {filteredTabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
-          
+
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               onMouseDown={e => e.stopPropagation()}
-              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs transition-all whitespace-nowrap ${
-                isActive
-                  ? 'bg-cyan-600 text-white font-medium shadow-lg'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-              }`}
+              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs transition-all whitespace-nowrap ${isActive
+                ? 'bg-cyan-600 text-white font-medium shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                }`}
             >
               <Icon className="w-4 h-4" />
               <span>{tab.label}</span>
@@ -228,7 +266,7 @@ function AboutTab({ currentColors }) {
     <div className="space-y-6">
       {/* Hero Section */}
       <div className="text-center py-8">
-        <div 
+        <div
           className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-5 shadow-2xl"
           style={{ boxShadow: '0 12px 40px rgba(6, 182, 212, 0.4)' }}
         >

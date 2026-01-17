@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Play, SkipForward, Volume2, Gauge, Clock, Mic2, Activity, Loader } from 'lucide-react';
+import { Play, SkipForward, Volume2, Clock, Mic2, Activity, Loader } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../../store/useStore';
-import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingSection, SettingDivider, SettingButton, SettingInfo } from './SettingsComponents';
+import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingDivider, SettingButton } from './SettingsComponents';
 
 export function PlaybackTab({ crossfade }) {
   const [analyzingRG, setAnalyzingRG] = useState(false);
   const [rgProgress, setRgProgress] = useState({ current: 0, total: 0 });
-  
+
   // Get all playback settings from store
   const gaplessPlayback = useStore(state => state.gaplessPlayback);
   const setGaplessPlayback = useStore(state => state.setGaplessPlayback);
@@ -15,22 +15,14 @@ export function PlaybackTab({ crossfade }) {
   const setAutoPlayOnStartup = useStore(state => state.setAutoPlayOnStartup);
   const resumeLastTrack = useStore(state => state.resumeLastTrack);
   const setResumeLastTrack = useStore(state => state.setResumeLastTrack);
-  const skipSilence = useStore(state => state.skipSilence);
-  const setSkipSilence = useStore(state => state.setSkipSilence);
   const replayGainMode = useStore(state => state.replayGainMode);
   const setReplayGainMode = useStore(state => state.setReplayGainMode);
   const replayGainPreamp = useStore(state => state.replayGainPreamp);
   const setReplayGainPreamp = useStore(state => state.setReplayGainPreamp);
-  
-  // New settings
-  const playbackSpeed = useStore(state => state.playbackSpeed);
-  const setPlaybackSpeed = useStore(state => state.setPlaybackSpeed);
   const fadeOnPause = useStore(state => state.fadeOnPause);
   const setFadeOnPause = useStore(state => state.setFadeOnPause);
   const fadeDuration = useStore(state => state.fadeDuration);
   const setFadeDuration = useStore(state => state.setFadeDuration);
-  const defaultVolume = useStore(state => state.defaultVolume);
-  const setDefaultVolume = useStore(state => state.setDefaultVolume);
   const rememberTrackPosition = useStore(state => state.rememberTrackPosition);
   const setRememberTrackPosition = useStore(state => state.setRememberTrackPosition);
 
@@ -45,7 +37,7 @@ export function PlaybackTab({ crossfade }) {
           onChange={setGaplessPlayback}
           icon={SkipForward}
         />
-        
+
         <SettingToggle
           label="Auto-play on Startup"
           description="Automatically start playing when the app launches"
@@ -53,7 +45,7 @@ export function PlaybackTab({ crossfade }) {
           onChange={setAutoPlayOnStartup}
           icon={Play}
         />
-        
+
         <SettingToggle
           label="Resume Last Track"
           description="Continue playing from where you left off when reopening the app"
@@ -61,52 +53,13 @@ export function PlaybackTab({ crossfade }) {
           onChange={setResumeLastTrack}
           icon={Clock}
         />
-        
+
         <SettingToggle
           label="Remember Position (Long Tracks)"
           description="Save playback position for audiobooks, podcasts, and tracks over 10 minutes"
           checked={rememberTrackPosition}
           onChange={setRememberTrackPosition}
           icon={Mic2}
-        />
-        
-        <SettingToggle
-          label="Skip Silence"
-          description="Automatically skip silent sections at the beginning and end of tracks"
-          checked={skipSilence}
-          onChange={setSkipSilence}
-        />
-      </SettingCard>
-
-      {/* Speed & Volume */}
-      <SettingCard title="Speed & Volume" icon={Gauge} accent="amber">
-        <SettingSlider
-          label="Playback Speed"
-          description="Adjust the playback tempo (affects pitch)"
-          value={playbackSpeed}
-          onChange={setPlaybackSpeed}
-          min={0.5}
-          max={2.0}
-          step={0.1}
-          formatValue={v => `${v.toFixed(1)}x`}
-          minLabel="0.5x"
-          maxLabel="2.0x"
-          accentColor="amber"
-        />
-        
-        <SettingSlider
-          label="Default Volume"
-          description="Initial volume level when the app starts"
-          value={defaultVolume}
-          onChange={setDefaultVolume}
-          min={0}
-          max={100}
-          step={5}
-          formatValue={v => `${v}%`}
-          minLabel="0%"
-          maxLabel="100%"
-          icon={Volume2}
-          accentColor="amber"
         />
       </SettingCard>
 
@@ -118,7 +71,7 @@ export function PlaybackTab({ crossfade }) {
           checked={fadeOnPause}
           onChange={setFadeOnPause}
         />
-        
+
         {fadeOnPause && (
           <SettingSlider
             label="Fade Duration"
@@ -134,11 +87,11 @@ export function PlaybackTab({ crossfade }) {
             accentColor="purple"
           />
         )}
-        
+
         {crossfade && (
           <>
             <SettingDivider label="Crossfade" />
-            
+
             <SettingToggle
               label="Enable Crossfade"
               description="Fade between tracks for smooth DJ-style transitions"
@@ -194,39 +147,39 @@ export function PlaybackTab({ crossfade }) {
               maxLabel="+15 dB"
               accentColor="emerald"
             />
-            
+
             <SettingDivider label="Analysis" />
-            
+
             <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 mb-3">
               <p className="text-xs text-slate-400">
                 Tracks need to be analyzed before ReplayGain can be applied. Analysis measures the loudness of each track using the EBU R128 standard.
               </p>
             </div>
-            
+
             <SettingButton
               label={analyzingRG ? `Analyzing... (${rgProgress.current}/${rgProgress.total})` : "Analyze Library"}
               description="Scan all tracks without ReplayGain data"
               onClick={async () => {
                 if (analyzingRG) return;
-                
+
                 try {
                   setAnalyzingRG(true);
                   const tracks = await invoke('get_all_tracks');
-                  
+
                   // Filter tracks that need analysis (no loudness data)
                   const needsAnalysis = tracks.filter(t => t.loudness === null || t.loudness === undefined);
-                  
+
                   if (needsAnalysis.length === 0) {
                     alert('All tracks have already been analyzed!');
                     setAnalyzingRG(false);
                     return;
                   }
-                  
+
                   setRgProgress({ current: 0, total: needsAnalysis.length });
-                  
+
                   let analyzed = 0;
                   let failed = 0;
-                  
+
                   for (const track of needsAnalysis) {
                     try {
                       await invoke('analyze_replaygain', { trackPath: track.path });
@@ -237,7 +190,7 @@ export function PlaybackTab({ crossfade }) {
                     }
                     setRgProgress({ current: analyzed + failed, total: needsAnalysis.length });
                   }
-                  
+
                   alert(`Analysis complete!\n\nAnalyzed: ${analyzed} tracks\nFailed: ${failed} tracks`);
                 } catch (err) {
                   console.error('ReplayGain analysis failed:', err);

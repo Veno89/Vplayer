@@ -25,7 +25,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 960, y: 40, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   full: {
     name: 'full',
     label: 'Full Studio',
@@ -47,7 +47,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 1180, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   playlistFocus: {
     name: 'playlistFocus',
     label: 'Playlist Focus',
@@ -66,7 +66,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 860, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   djMode: {
     name: 'djMode',
     label: 'DJ Mode',
@@ -87,7 +87,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 900, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   libraryBrowser: {
     name: 'libraryBrowser',
     label: 'Library Browser',
@@ -107,7 +107,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 980, y: 460, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   visualizerMode: {
     name: 'visualizerMode',
     label: 'Visualizer Mode',
@@ -127,7 +127,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 880, y: 560, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   mini: {
     name: 'mini',
     label: 'Mini Player',
@@ -145,7 +145,7 @@ export const LAYOUT_TEMPLATES = {
       discography: { x: 480, y: 460, width: 450, height: 500, visible: false, minimized: false },
     }
   },
-  
+
   compact: {
     name: 'compact',
     label: 'Compact',
@@ -201,10 +201,10 @@ export const createUISlice = (set, get) => ({
   debugVisible: false,
 
   // === Window Actions ===
-  setWindows: (windowsOrUpdater) => 
+  setWindows: (windowsOrUpdater) =>
     set((state) => {
-      const windows = typeof windowsOrUpdater === 'function' 
-        ? windowsOrUpdater(state.windows) 
+      const windows = typeof windowsOrUpdater === 'function'
+        ? windowsOrUpdater(state.windows)
         : windowsOrUpdater;
       return { windows };
     }),
@@ -246,9 +246,9 @@ export const createUISlice = (set, get) => ({
           maxZIndex: state.maxZIndex + 1
         };
       }
-      
+
       const isBecomingVisible = !state.windows[id].visible;
-      
+
       if (isBecomingVisible) {
         const newZIndex = state.maxZIndex + 1;
         return {
@@ -259,7 +259,7 @@ export const createUISlice = (set, get) => ({
           }
         };
       }
-      
+
       return {
         windows: {
           ...state.windows,
@@ -355,6 +355,46 @@ export const createUISlice = (set, get) => ({
   setWindowOpacity: (opacity) => set({ windowOpacity: opacity }),
   setFontSize: (size) => set({ fontSize: size }),
   setDebugVisible: (visible) => set({ debugVisible: visible }),
+
+  // Reset all windows to default layout (classic)
+  resetWindowPositions: () => {
+    const template = LAYOUT_TEMPLATES.classic;
+    set((state) => {
+      const newWindows = {};
+      let zIndex = 10;
+
+      Object.keys(template.windows).forEach((windowId) => {
+        const templateWindow = template.windows[windowId];
+        const minSize = WINDOW_MIN_SIZES[windowId] || { width: 250, height: 150 };
+        newWindows[windowId] = {
+          ...templateWindow,
+          width: Math.max(templateWindow.width, minSize.width),
+          height: Math.max(templateWindow.height, minSize.height),
+          zIndex: zIndex++
+        };
+      });
+
+      // Keep any additional windows that aren't in the template
+      Object.keys(state.windows).forEach((windowId) => {
+        if (!newWindows[windowId]) {
+          newWindows[windowId] = {
+            ...state.windows[windowId],
+            x: 100,
+            y: 100,
+            visible: false,
+            minimized: false,
+            zIndex: zIndex++
+          };
+        }
+      });
+
+      return {
+        windows: newWindows,
+        maxZIndex: zIndex,
+        currentLayout: 'classic'
+      };
+    });
+  },
 });
 
 /**

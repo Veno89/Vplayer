@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layout, Eye, EyeOff, RotateCcw, Maximize2, Music, ListMusic, Library, Sliders, Radio, ListOrdered, Mic, Settings, BarChart3, Disc3 } from 'lucide-react';
 import { SettingCard, SettingButton, SettingDivider } from './SettingsComponents';
+import { useStore } from '../../store/useStore';
 
 // Window icon mapping
 const WINDOW_ICONS = {
@@ -31,6 +32,8 @@ const WINDOW_COLORS = {
 };
 
 export function WindowsTab({ windows, toggleWindow }) {
+  const resetWindowPositions = useStore(state => state.resetWindowPositions);
+
   const windowEntries = Object.entries(windows || {});
   const visibleCount = windowEntries.filter(([_, w]) => w.visible).length;
   const hiddenCount = windowEntries.length - visibleCount;
@@ -60,8 +63,9 @@ export function WindowsTab({ windows, toggleWindow }) {
   };
 
   const handleResetPositions = () => {
-    // This would need to trigger a layout reset
-    alert('Reset positions - would reset all windows to default positions');
+    if (confirm('Reset all windows to the Classic layout positions?')) {
+      resetWindowPositions();
+    }
   };
 
   return (
@@ -94,22 +98,20 @@ export function WindowsTab({ windows, toggleWindow }) {
           {windowEntries.map(([id, window]) => {
             const Icon = WINDOW_ICONS[id] || Layout;
             const colors = WINDOW_COLORS[id] || WINDOW_COLORS.options;
-            
+
             return (
               <button
                 key={id}
                 onClick={() => toggleWindow(id)}
                 onMouseDown={e => e.stopPropagation()}
-                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                  window.visible
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${window.visible
                     ? `${colors.border} bg-slate-800/50`
                     : 'border-slate-700/30 bg-slate-800/20 opacity-60'
-                } hover:opacity-100`}
+                  } hover:opacity-100`}
               >
                 {/* Icon */}
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                  window.visible ? colors.bg + '/20' : 'bg-slate-700/50'
-                }`}>
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${window.visible ? colors.bg + '/20' : 'bg-slate-700/50'
+                  }`}>
                   <Icon className={`w-5 h-5 ${window.visible ? colors.text : 'text-slate-500'}`} />
                 </div>
 
@@ -126,12 +128,10 @@ export function WindowsTab({ windows, toggleWindow }) {
                 </div>
 
                 {/* Toggle indicator */}
-                <div className={`w-10 h-6 rounded-full p-1 transition-colors ${
-                  window.visible ? colors.bg : 'bg-slate-700'
-                }`}>
-                  <div className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform ${
-                    window.visible ? 'translate-x-4' : 'translate-x-0'
-                  }`} />
+                <div className={`w-10 h-6 rounded-full p-1 transition-colors ${window.visible ? colors.bg : 'bg-slate-700'
+                  }`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform ${window.visible ? 'translate-x-4' : 'translate-x-0'
+                    }`} />
                 </div>
               </button>
             );
