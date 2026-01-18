@@ -35,29 +35,24 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Debug - Check signing env vars
-        run: |
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) { 
-            Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY is set (length: $($env:TAURI_SIGNING_PRIVATE_KEY.Length))" 
-          } else { 
-            Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set"
-          }
-          if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) { 
-            Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is set" 
-          } else { 
-            Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is NOT set"
-          }
-        shell: pwsh
+      - name: Build Tauri app with signing
+        run: npm run tauri build -- --verbose
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Build Tauri app
+      - name: List bundle contents
+        run: |
+          Write-Host "MSI folder:"
+          Get-ChildItem -Path src-tauri/target/release/bundle/msi -Recurse | ForEach-Object { Write-Host $_.FullName }
+          Write-Host "NSIS folder:"
+          Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Recurse | ForEach-Object { Write-Host $_.FullName }
+        shell: pwsh
+
+      - name: Create Release and Upload Assets
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'VPlayer ${{ github.ref_name }}'
@@ -65,3 +60,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+          tauriScript: echo "skip"
