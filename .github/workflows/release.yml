@@ -36,26 +36,9 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Build Tauri app with signing
-        run: |
-          # Decode the Base64 secret to a temporary file
-          $encoded = "$env:TAURI_SIGNING_PRIVATE_KEY_SECRET"
-          if ($encoded -match "^dW50") {
-            Write-Host "Detected Base64 encoded key. Decoding..."
-            $bytes = [System.Convert]::FromBase64String($encoded)
-            $decoded = [System.Text.Encoding]::UTF8.GetString($bytes)
-            # Set the decoded content to the environment variable for the next command
-            $env:TAURI_SIGNING_PRIVATE_KEY = $decoded
-            $env:TAURI_PRIVATE_KEY = $decoded
-          } else {
-             Write-Host "Key allows to be raw text."
-             $env:TAURI_SIGNING_PRIVATE_KEY = $encoded
-             $env:TAURI_PRIVATE_KEY = $encoded
-          }
-
-          # Run the build
-          npm run tauri build -- --verbose
+        run: npm run tauri build -- --verbose
         env:
-          TAURI_SIGNING_PRIVATE_KEY_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: List bundle contents
