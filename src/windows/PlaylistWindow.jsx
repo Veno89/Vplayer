@@ -1,6 +1,5 @@
-import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowDownToLine, Star, Play } from 'lucide-react';
+import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowUp, ArrowDownToLine, Star, Play } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
@@ -33,6 +32,7 @@ export function PlaylistWindow({
   const [showRatingDialog, setShowRatingDialog] = useState(null); // track for rating
   // Multi-select state
   const [selectedIndices, setSelectedIndices] = useState(new Set());
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [showBatchPlaylistPicker, setShowBatchPlaylistPicker] = useState(false); // for batch add to playlist
   const containerRef = useRef(null);
   const trackListRef = useRef(null);
@@ -95,30 +95,53 @@ export function PlaylistWindow({
     };
   }, [playlists.currentPlaylist, playlists.addTracksToPlaylist]);
 
-  // Fuzzy search filter
+  // Filter and Sort tracks
   const displayTracks = useMemo(() => {
-    const tracks = playlists.playlistTracks;
-    if (!searchQuery.trim()) return tracks;
+    let result = [...playlists.playlistTracks]; // Clone for sorting
 
-    const query = searchQuery.toLowerCase();
-    return tracks.filter(track => {
-      const searchableText = [
-        track.title,
-        track.artist,
-        track.album,
-        track.genre
-      ].filter(Boolean).join(' ').toLowerCase();
+    // 1. Filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(track => {
+        const searchableText = [
+          track.title,
+          track.artist,
+          track.album,
+          track.genre
+        ].filter(Boolean).join(' ').toLowerCase();
 
-      // Fuzzy match: check if all characters in query appear in order
-      let queryIndex = 0;
-      for (let i = 0; i < searchableText.length && queryIndex < query.length; i++) {
-        if (searchableText[i] === query[queryIndex]) {
-          queryIndex++;
+        // Fuzzy match
+        let queryIndex = 0;
+        for (let i = 0; i < searchableText.length && queryIndex < query.length; i++) {
+          if (searchableText[i] === query[queryIndex]) {
+            queryIndex++;
+          }
         }
-      }
-      return queryIndex === query.length;
-    });
-  }, [playlists.playlistTracks, searchQuery]);
+        return queryIndex === query.length;
+      });
+    }
+
+    // 2. Sort
+    if (sortConfig.key) {
+      result.sort((a, b) => {
+        const valA = (a[sortConfig.key] || '').toString().toLowerCase();
+        const valB = (b[sortConfig.key] || '').toString().toLowerCase();
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [playlists.playlistTracks, searchQuery, sortConfig]);
+
+  const handleSort = (key) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
 
   // Handle track selection
   const handleTrackSelect = useCallback((filteredIndex) => {
@@ -676,11 +699,35 @@ export function PlaylistWindow({
       </div>
 
       {/* Column Headers */}
-      <div className="flex items-center px-3 text-xs text-slate-500 font-medium border-b border-slate-700 pb-2">
+      <div className="flex items-center px-3 text-xs text-slate-500 font-medium border-b border-slate-700 pb-2 select-none">
         <span className="w-10 text-center">#</span>
-        <span className="flex-1">Title</span>
-        <span className="w-40">Artist</span>
-        <span className="w-40 hidden lg:block">Album</span>
+        <div
+          className="flex-1 flex items-center gap-1 cursor-pointer hover:text-cyan-400 transition-colors"
+          onClick={() => handleSort('title')}
+        >
+          Title
+          {sortConfig.key === 'title' && (
+            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+          )}
+        </div>
+        <div
+          className="w-40 flex items-center gap-1 cursor-pointer hover:text-cyan-400 transition-colors"
+          onClick={() => handleSort('artist')}
+        >
+          Artist
+          {sortConfig.key === 'artist' && (
+            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+          )}
+        </div>
+        <div
+          className="w-40 hidden lg:flex items-center gap-1 cursor-pointer hover:text-cyan-400 transition-colors"
+          onClick={() => handleSort('album')}
+        >
+          Album
+          {sortConfig.key === 'album' && (
+            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+          )}
+        </div>
         <span className="w-16 text-right">Duration</span>
         <span className="w-8"></span>
       </div>

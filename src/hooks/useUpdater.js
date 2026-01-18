@@ -62,7 +62,7 @@ export function useUpdater() {
       console.error('Failed to check for updates:', err);
       // Only show error if it's not a network/remote configuration issue
       const errorMessage = err.message || 'Failed to check for updates';
-      if (!silent && !errorMessage.includes('Could not fetch a valid release JSON')) {
+      if (!silent) {
         setError(errorMessage);
       }
       return false;
@@ -124,7 +124,7 @@ export function useUpdater() {
     const timer = setTimeout(() => {
       checkForUpdates(true);
     }, 5000);
-    
+
     return () => clearTimeout(timer);
   }, [checkForUpdates]);
 

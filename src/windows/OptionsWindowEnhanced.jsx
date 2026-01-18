@@ -253,7 +253,10 @@ function AboutTab({ currentColors }) {
     try {
       const hasUpdate = await checkForUpdates();
       if (!hasUpdate && !updateAvailable) {
-        setMessage(`You are up to date! (v${currentVersion})`);
+        // Check for error in the global updater object (since hook updates async)
+        if (!window.updater?.error) {
+          setMessage(`You are up to date! (v${currentVersion})`);
+        }
       }
     } catch (err) {
       setMessage(`Error: ${err.message}`);
@@ -316,9 +319,9 @@ function AboutTab({ currentColors }) {
               >
                 {checking ? 'Checking...' : 'Check for Updates'}
               </button>
-              {message && (
-                <div className={`text-xs ${error || message.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
-                  {message}
+              {(message || error) && (
+                <div className={`text-xs ${error || message?.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                  {error || message}
                 </div>
               )}
             </div>

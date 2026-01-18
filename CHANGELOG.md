@@ -2,6 +2,13 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.8.2.1] - 2026-01-18
+
+### Added
+- **Playlist Sorting**: Added ability to sort playlist by Title, Artist, and Album
+  - Click on column headers to sort ascending/descending
+  - Visual indicators for sort direction
+
 ## [0.8.2] - 2026-01-18
 
 ### Fixed
