@@ -98,6 +98,10 @@ export function useWindowConfigs({
   tagEditorTrack,
   setTagEditorTrack,
   onTagsSaved,
+  handleLibraryDragStart,
+  handleLibraryDragEnd,
+  isDraggingTracks,
+  setActivePlaybackTracks,
 }) {
   return React.useMemo(() => [
     {
@@ -125,7 +129,7 @@ export function useWindowConfigs({
           toggleWindow={toggleWindow}
           isLoading={audioIsLoading}
           isMuted={false}
-          toggleMute={() => {}}
+          toggleMute={() => { }}
           audioBackendError={audioBackendError}
           abRepeat={abRepeat}
           setPointA={setPointA}
@@ -148,6 +152,8 @@ export function useWindowConfigs({
           removeTrack={removeTrack}
           onRatingChange={handleRatingChange}
           onEditTags={(track) => setTagEditorTrack?.(track)}
+          isDraggingTracks={isDraggingTracks}
+          onActiveTracksChange={setActivePlaybackTracks}
         />
       ),
     },
@@ -177,6 +183,8 @@ export function useWindowConfigs({
           setSortOrder={setSortOrder}
           advancedFilters={advancedFilters}
           setAdvancedFilters={setAdvancedFilters}
+          onTrackDragStart={handleLibraryDragStart}
+          onTrackDragEnd={handleLibraryDragEnd}
         />
       ),
     },
@@ -363,6 +371,7 @@ export function useWindowConfigs({
     setBackgroundBlur, backgroundOpacity, setBackgroundOpacity, windowOpacity,
     setWindowOpacity, fontSize, setFontSize, customThemes, saveCustomTheme,
     deleteCustomTheme, applyCustomTheme, crossfade, tagEditorTrack, setTagEditorTrack,
-    onTagsSaved, abRepeat, setPointA, setPointB, clearABRepeat
+    onTagsSaved, abRepeat, setPointA, setPointB, clearABRepeat,
+    handleLibraryDragStart, handleLibraryDragEnd, isDraggingTracks
   ]);
 }

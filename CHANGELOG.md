@@ -2,6 +2,32 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.8.2] - 2026-01-18
+
+### Fixed
+- **Drag & Drop**: Fixed drag-and-drop functionality from Library to Playlist
+  - Resolved conflicts with Tauri's internal drag-drop handler by disabling `dragDropEnabled`
+  - Fixed "dialog.message not allowed" error when dropping folders
+  - Increased track drop limit from 100 to 10000 for large folders
+- **Playlist Playback**: Fixed player not respecting playlist boundaries
+  - Player now correctly loops within playlists instead of jumping to library tracks
+  - Fixed logic bug where library tracks were used instead of active playlist context
+- **Context Menu**: Unified context menu for tracks in Playlist
+  - Merged conflicting context menus
+  - Added "Remove from Playlist" option
+  - Added "Play Now", "Add to Queue", "Set Rating" options
+
+## [0.8.1] - 2026-01-15
+
+### Fixed
+- **Build System**: Fixed build issues related to private key handling
+- **Auto-Update**: Verified configuration and secrets setup
+
+## [0.8.0] - 2026-01-15
+
+### Changed
+- **Options Menu**: Redesigned options menu layout for better usability
+
 ## [0.7.0] - 2026-01-10
 
 ### Fixed

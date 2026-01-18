@@ -7,17 +7,18 @@ import { TauriAPI } from '../services/TauriAPI';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from '../components/StarRating';
 import { FixedSizeList } from 'react-window';
+import { notifyDragStart, notifyDragEnd } from '../hooks/useAutoResize';
 
 // Virtual list row component for track rendering
 const VirtualTrackRow = ({ index, style, data }) => {
-  const { tracks, onTrackDragStart, onTrackDragEnd } = data;
+  const { tracks, onTrackDragStart, onTrackDragEnd, setIsDragging } = data;
   const track = tracks[index];
-  
+
   return (
     <div
-      style={style}
       draggable
       onDragStart={(e) => {
+        console.log('[LibraryWindow] Track drag start:', track.title);
         const trackData = [{
           id: track.id,
           path: track.path,
@@ -25,17 +26,40 @@ const VirtualTrackRow = ({ index, style, data }) => {
           artist: track.artist,
           album: track.album
         }];
-        
+
         e.dataTransfer.setData('application/json', JSON.stringify(trackData));
+        // Add fallback for Windows/WebView2
+        e.dataTransfer.setData('text/plain', JSON.stringify(trackData));
         e.dataTransfer.effectAllowed = 'copy';
-        
+        console.log('[LibraryWindow] setData called, onTrackDragStart:', typeof onTrackDragStart);
+
+        // Set drag image explicitly (helps with Tauri webview)
+        const dragImg = document.createElement('div');
+        dragImg.textContent = `${trackData.length} track(s)`;
+        dragImg.style.position = 'absolute';
+        dragImg.style.top = '-1000px';
+        document.body.appendChild(dragImg);
+        e.dataTransfer.setDragImage(dragImg, 0, 0);
+        setTimeout(() => document.body.removeChild(dragImg), 0);
+
+        notifyDragStart(); // Prevent window resize during drag
         if (onTrackDragStart) onTrackDragStart(trackData);
+        console.log('[LibraryWindow] dragStart handler complete');
       }}
       onDragEnd={(e) => {
+        console.log('[LibraryWindow] Track drag end');
+        notifyDragEnd(); // Re-enable window resize
         if (onTrackDragEnd) onTrackDragEnd();
       }}
       className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800/50 cursor-move transition-colors border-b border-slate-800"
       title="Drag to add to playlist"
+      style={{
+        ...style,
+        userSelect: 'none',
+        WebkitUserDrag: 'element',
+        MozUserSelect: 'none',
+        msUserSelect: 'none'
+      }}
     >
       <Music className="w-3 h-3 text-slate-500 flex-shrink-0" />
       <span className="flex-1 truncate text-white">{track.title || track.name}</span>
@@ -80,6 +104,7 @@ export function LibraryWindow({
   const [isRefreshingFolders, setIsRefreshingFolders] = useState(false);
   const [expandedFolder, setExpandedFolder] = useState(null);
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const { showSuccess, showError, showInfo } = useToast();
 
   // Memoize folder tracks calculations to prevent lag
@@ -111,7 +136,7 @@ export function LibraryWindow({
     if (!confirm(`Remove "${folderName}" and all its tracks from library?`)) {
       return;
     }
-    
+
     setRemovingFolder(folderId);
     try {
       await handleRemoveFolder(folderId, folderPath);
@@ -184,7 +209,7 @@ export function LibraryWindow({
   };
 
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-3 h-full" data-library-dragging={isDragging}>
       {/* Header with Actions */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-white font-semibold flex items-center gap-2">
@@ -331,11 +356,10 @@ export function LibraryWindow({
                 e.stopPropagation();
                 handleSortClick(field);
               }}
-              className={`px-2 py-1 rounded transition-colors ${
-                sortBy === field
-                  ? `${currentColors.primary} text-white`
-                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-              }`}
+              className={`px-2 py-1 rounded transition-colors ${sortBy === field
+                ? `${currentColors.primary} text-white`
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
             >
               {field === 'dateAdded' ? 'Date' : field.charAt(0).toUpperCase() + field.slice(1)}
               {sortBy === field && (
@@ -399,7 +423,7 @@ export function LibraryWindow({
               >
                 <div className="p-3 hover:bg-slate-800 transition-colors">
                   <div className="flex items-start justify-between gap-2">
-                    <div 
+                    <div
                       onClick={(e) => {
                         if (e.target.closest('button')) return;
                         if (e.target.closest('[draggable="true"]')) return;
@@ -411,6 +435,7 @@ export function LibraryWindow({
                         <div
                           draggable={!isScanning && !isRemoving}
                           onDragStart={(e) => {
+                            console.log('[LibraryWindow] Folder drag start:', folder.name, 'tracks:', folderTracks.length);
                             const folderTracksData = folderTracks.map(t => ({
                               id: t.id,
                               path: t.path,
@@ -418,14 +443,21 @@ export function LibraryWindow({
                               artist: t.artist,
                               album: t.album
                             }));
-                            
+
                             // Set data FIRST
                             e.dataTransfer.setData('application/json', JSON.stringify(folderTracksData));
+                            // Add fallback for Windows/WebView2
+                            e.dataTransfer.setData('text/plain', JSON.stringify(folderTracksData));
                             e.dataTransfer.effectAllowed = 'copy';
-                            
+                            console.log('[LibraryWindow] Folder setData called, onTrackDragStart:', typeof onTrackDragStart);
+
+                            notifyDragStart(); // Prevent window resize during drag
                             if (onTrackDragStart) onTrackDragStart(folderTracksData);
+                            console.log('[LibraryWindow] Folder dragStart handler complete');
                           }}
                           onDragEnd={(e) => {
+                            console.log('[LibraryWindow] Folder drag end');
+                            notifyDragEnd(); // Re-enable window resize
                             if (onTrackDragEnd) onTrackDragEnd();
                           }}
                           className="cursor-move p-1 hover:bg-slate-700/50 rounded"
@@ -469,7 +501,7 @@ export function LibraryWindow({
                     </button>
                   </div>
                 </div>
-                
+
                 {/* Expanded Track List */}
                 {isExpanded && folderTracks.length > 0 && (
                   <div className="border-t border-slate-700 bg-slate-900/50">
@@ -479,7 +511,7 @@ export function LibraryWindow({
                       itemSize={36}
                       width="100%"
                       overscanCount={5}
-                      itemData={{ tracks: folderTracks, onTrackDragStart, onTrackDragEnd }}
+                      itemData={{ tracks: folderTracks, onTrackDragStart, onTrackDragEnd, setIsDragging }}
                     >
                       {VirtualTrackRow}
                     </FixedSizeList>

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowDownToLine, Star } from 'lucide-react';
+import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowDownToLine, Star, Play } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
@@ -9,16 +9,17 @@ import { useStore } from '../store/useStore';
 import { StarRating } from '../components/StarRating';
 import { TauriAPI } from '../services/TauriAPI';
 
-export function PlaylistWindow({ 
-  tracks, 
-  currentTrack, 
-  setCurrentTrack, 
-  currentColors, 
+export function PlaylistWindow({
+  tracks,
+  currentTrack,
+  setCurrentTrack,
+  currentColors,
   loadingTrackIndex,
   removeTrack,
   onRatingChange,
   onActiveTracksChange,
   onEditTags, // New prop for tag editor
+  isDraggingTracks, // Prop from useDragDrop via WindowManager
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
@@ -35,35 +36,36 @@ export function PlaylistWindow({
   const [showBatchPlaylistPicker, setShowBatchPlaylistPicker] = useState(false); // for batch add to playlist
   const containerRef = useRef(null);
   const trackListRef = useRef(null);
-  
+
   const playlists = usePlaylists();
+  const queue = useStore((state) => state.queue);
   const addToQueue = useStore(state => state.addToQueue);
   const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
   const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
-  
+
   // Listen for global track drop events from VPlayer (internal library drops)
   useEffect(() => {
     const handleGlobalDrop = (e) => {
       if (!e.detail?.data) return;
-      
+
       // Prevent duplicate handling with a flag
       if (e.detail.handled) return;
       e.detail.handled = true;
-      
+
       try {
         const tracks = JSON.parse(e.detail.data);
-        handleExternalDrop({ 
-          preventDefault: () => {}, 
-          stopPropagation: () => {},
+        handleExternalDrop({
+          preventDefault: () => { },
+          stopPropagation: () => { },
           dataTransfer: { getData: () => e.detail.data }
         });
       } catch (err) {
         console.error('Failed to handle global drop:', err);
       }
     };
-    
+
     window.addEventListener('vplayer-track-drop', handleGlobalDrop);
-    
+
     return () => {
       window.removeEventListener('vplayer-track-drop', handleGlobalDrop);
     };
@@ -77,7 +79,7 @@ export function PlaylistWindow({
         console.log('No active playlist to add external tracks to');
         return;
       }
-      
+
       try {
         console.log('Adding', e.detail.trackIds.length, 'externally dropped tracks to playlist');
         await playlists.addTracksToPlaylist(playlists.currentPlaylist, e.detail.trackIds);
@@ -85,14 +87,14 @@ export function PlaylistWindow({
         console.error('Failed to add external tracks to playlist:', err);
       }
     };
-    
+
     window.addEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
-    
+
     return () => {
       window.removeEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
     };
   }, [playlists.currentPlaylist, playlists.addTracksToPlaylist]);
-  
+
   // Fuzzy search filter
   const displayTracks = useMemo(() => {
     const tracks = playlists.playlistTracks;
@@ -118,34 +120,37 @@ export function PlaylistWindow({
     });
   }, [playlists.playlistTracks, searchQuery]);
 
-  // Handle track selection - map filtered index to original index
+  // Handle track selection
   const handleTrackSelect = useCallback((filteredIndex) => {
     const selectedTrack = displayTracks[filteredIndex];
     if (!selectedTrack) return;
-    
-    // Find the original index in the full tracks array
-    const originalIndex = tracks.findIndex(t => t.id === selectedTrack.id);
-    if (originalIndex !== -1) {
-      setCurrentTrack(originalIndex);
+
+    // When playing from playlist, set the playback context to the current display tracks
+    if (onActiveTracksChange) {
+      onActiveTracksChange(displayTracks);
     }
-  }, [displayTracks, tracks, setCurrentTrack]);
+
+    // Set the current track index within the playlist context
+    setCurrentTrack(filteredIndex);
+
+  }, [displayTracks, onActiveTracksChange, setCurrentTrack]);
 
   // Map current track index to filtered display index
   const displayCurrentTrack = useMemo(() => {
     if (currentTrack === null || currentTrack === undefined) return null;
     const currentTrackObj = tracks[currentTrack];
     if (!currentTrackObj) return null;
-    
+
     return displayTracks.findIndex(t => t.id === currentTrackObj.id);
   }, [currentTrack, tracks, displayTracks]);
-  
+
   // Auto-scroll to current track when it changes
   useEffect(() => {
     if (playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0 && trackListRef.current) {
       trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
     }
   }, [displayCurrentTrack, playlistAutoScroll]);
-  
+
   // Manual scroll to current track
   const scrollToCurrentTrack = useCallback(() => {
     if (displayCurrentTrack !== null && displayCurrentTrack >= 0 && trackListRef.current) {
@@ -156,7 +161,7 @@ export function PlaylistWindow({
   // Handle batch actions from multi-select
   const handleBatchAction = useCallback(async (action, selectedTracks) => {
     if (!selectedTracks || selectedTracks.length === 0) return;
-    
+
     switch (action) {
       case 'queue':
         // Add all selected tracks to queue
@@ -164,12 +169,12 @@ export function PlaylistWindow({
         // Clear selection
         setSelectedIndices(new Set());
         break;
-        
+
       case 'playlist':
         // Show playlist picker for batch add
         setShowBatchPlaylistPicker(true);
         break;
-        
+
       case 'delete':
         // Remove selected tracks from current playlist
         if (!playlists.currentPlaylist) return;
@@ -180,7 +185,7 @@ export function PlaylistWindow({
           setSelectedIndices(new Set());
         }
         break;
-        
+
       default:
         console.warn('Unknown batch action:', action);
     }
@@ -190,13 +195,6 @@ export function PlaylistWindow({
   const getSelectedTracks = useCallback(() => {
     return Array.from(selectedIndices).map(i => displayTracks[i]).filter(Boolean);
   }, [selectedIndices, displayTracks]);
-  
-  // Update active tracks when displayTracks changes
-  useEffect(() => {
-    if (onActiveTracksChange) {
-      onActiveTracksChange(displayTracks);
-    }
-  }, [displayTracks, onActiveTracksChange]);
 
   // Save current playlist to localStorage when it changes
   useEffect(() => {
@@ -219,7 +217,7 @@ export function PlaylistWindow({
 
   const handleDrop = async (e, dropIndex) => {
     e.preventDefault();
-    
+
     // Only handle internal reordering
     if (draggedIndex === null || draggedIndex === dropIndex) {
       setDraggedIndex(null);
@@ -233,7 +231,7 @@ export function PlaylistWindow({
     newTracks.splice(dropIndex, 0, draggedTrack);
 
     const trackPositions = newTracks.map((track, idx) => [track.id, idx]);
-    
+
     try {
       await playlists.reorderPlaylistTracks(playlists.currentPlaylist, trackPositions);
     } catch (err) {
@@ -244,27 +242,91 @@ export function PlaylistWindow({
     setDragOverIndex(null);
   };
 
+  // Remove track from playlist
+  const handleRemoveFromPlaylist = async (track) => {
+    if (!playlists.currentPlaylist) return;
+
+    try {
+      await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+    } catch (err) {
+      console.error('Failed to remove track from playlist:', err);
+    }
+  };
+
+  // Show context menu for track
+  const handleShowMenu = (index, e) => {
+    const track = displayTracks[index];
+    if (!track) return;
+
+    const items = [
+      {
+        icon: Play,
+        label: 'Play Now',
+        onClick: () => {
+          if (onActiveTracksChange) onActiveTracksChange(displayTracks);
+          setCurrentTrack(index);
+        },
+      },
+      {
+        icon: Plus,
+        label: 'Add to Queue',
+        onClick: () => queue.addToQueue(track),
+      },
+      {
+        type: 'separator'
+      },
+      {
+        icon: Star,
+        label: 'Set Rating...',
+        onClick: () => {
+          // Would open rating dialog here
+          console.log('Set rating for:', track.title);
+        },
+      },
+      {
+        type: 'separator'
+      },
+      {
+        icon: Trash2,
+        label: 'Remove from Playlist',
+        onClick: () => handleRemoveFromPlaylist(track),
+        danger: true,
+      },
+    ];
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items,
+    });
+  };
+
   // Handle external track drops
   const handleExternalDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(false);
 
-    const data = e.dataTransfer.getData('application/json');
+    console.log('[PlaylistWindow] handleExternalDrop called');
+    let data = e.dataTransfer.getData('application/json');
+    if (!data) {
+      data = e.dataTransfer.getData('text/plain');
+    }
+    console.log('[PlaylistWindow] drop data:', data ? `${data.substring(0, 50)}...` : 'EMPTY');
     if (!data) return;
 
     try {
       const tracks = JSON.parse(data);
 
       if (!playlists.currentPlaylist) {
-        alert('Please select or create a playlist first');
+        console.warn('Please select or create a playlist first');
         return;
       }
 
       // Limit the number of tracks to prevent freezing
-      const MAX_TRACKS_PER_DROP = 100;
+      const MAX_TRACKS_PER_DROP = 10000;
       if (tracks.length > MAX_TRACKS_PER_DROP) {
-        alert(`Too many tracks (${tracks.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
+        console.warn(`Too many tracks (${tracks.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
         return;
       }
 
@@ -277,11 +339,11 @@ export function PlaylistWindow({
   };
 
   // Memoize itemData to prevent recreating on every render
-  const itemData = useMemo(() => ({ 
-    tracks: displayTracks, 
-    currentTrack, 
-    onSelect: setCurrentTrack, 
-    currentColors, 
+  const itemData = useMemo(() => ({
+    tracks: displayTracks,
+    currentTrack,
+    onSelect: setCurrentTrack,
+    currentColors,
     loadingTrackIndex,
     onRatingChange,
     isDraggable: !!playlists.currentPlaylist,
@@ -310,26 +372,26 @@ export function PlaylistWindow({
   const handleRemoveTrack = (index) => {
     const track = displayTracks[index];
     if (!track || !playlists.currentPlaylist) return;
-    
+
     // Remove from playlist
     if (confirm(`Remove "${track.title}" from this playlist?`)) {
       playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
     }
-    
+
     // Adjust current track if needed
     if (currentTrack === index) {
       setCurrentTrack(Math.min(index, displayTracks.length - 2));
     } else if (currentTrack > index) {
       setCurrentTrack(currentTrack - 1);
     }
-    
+
     closeContextMenu();
   };
-  
+
   // Create new playlist
   const handleCreatePlaylist = async () => {
     if (!newPlaylistName.trim()) return;
-    
+
     try {
       const newPlaylist = await playlists.createPlaylist(newPlaylistName);
       setNewPlaylistName('');
@@ -342,13 +404,13 @@ export function PlaylistWindow({
       alert('Failed to create playlist');
     }
   };
-  
+
   // Delete playlist
   const handleDeletePlaylist = async (playlistId) => {
     console.log('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
     try {
       await playlists.deletePlaylist(playlistId);
-      
+
       // Clear saved playlist if we deleted it
       if (localStorage.getItem('vplayer_last_playlist') === playlistId) {
         localStorage.removeItem('vplayer_last_playlist');
@@ -357,7 +419,7 @@ export function PlaylistWindow({
       alert('Failed to delete playlist');
     }
   };
-  
+
   // Switch to playlist
   const handleSelectPlaylist = (playlistId) => {
     playlists.setCurrentPlaylist(playlistId);
@@ -375,7 +437,22 @@ export function PlaylistWindow({
   // Empty state
   if (playlists.playlistTracks.length === 0 && !searchQuery) {
     return (
-      <div className="flex flex-col h-full" ref={containerRef}>
+      <div
+        className="flex flex-col h-full"
+        ref={containerRef}
+        onDrop={handleExternalDrop}
+        onDragOver={(e) => {
+          console.log('[PlaylistWindow EMPTY] dragover event');
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDraggingOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+            setIsDraggingOver(false);
+          }
+        }}
+      >
         {/* Playlist Selector */}
         <div className="flex items-center gap-2 p-3 border-b border-slate-700">
           <div className="flex-1 overflow-x-auto flex gap-1">
@@ -383,11 +460,10 @@ export function PlaylistWindow({
               <button
                 key={pl.id}
                 onClick={() => handleSelectPlaylist(pl.id)}
-                className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${
-                  playlists.currentPlaylist === pl.id
-                    ? `${currentColors.accent} bg-slate-800`
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                }`}
+                className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${playlists.currentPlaylist === pl.id
+                  ? `${currentColors.accent} bg-slate-800`
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
               >
                 {pl.name}
               </button>
@@ -401,16 +477,15 @@ export function PlaylistWindow({
             <Plus className="w-4 h-4 text-slate-400" />
           </button>
         </div>
-        
+
         {/* Empty State with Drop Zone */}
-        <div 
-          className={`flex-1 flex flex-col items-center justify-center text-center p-4 transition-colors ${
-            isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''
-          }`}
+        <div
+          className={`flex-1 flex flex-col items-center justify-center text-center p-4 transition-colors ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''
+            }`}
         >
           <List className="w-12 h-12 text-slate-600 mb-3" />
           <p className="text-slate-400 text-sm mb-2">
-            {isDraggingOver 
+            {isDraggingOver
               ? 'Drop tracks here to add them'
               : 'No tracks in this playlist'}
           </p>
@@ -418,7 +493,7 @@ export function PlaylistWindow({
             Drag tracks from your library to this playlist
           </p>
         </div>
-        
+
         {/* New Playlist Dialog */}
         {showNewPlaylistDialog && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -458,21 +533,20 @@ export function PlaylistWindow({
   const listHeight = Math.min(500, displayTracks.length * itemSize);
 
   return (
-    <div 
+    <div
       ref={containerRef}
-      className={`flex flex-col h-full gap-3 ${
-        isDraggingOver ? 'bg-blue-500/5 border-2 border-dashed border-blue-500' : ''
-      }`}
+      className={`flex flex-col h-full gap-3 ${isDraggingOver ? 'bg-blue-500/5 border-2 border-dashed border-blue-500' : ''
+        }`}
       style={{ pointerEvents: 'auto' }}
-      onDrop={handleExternalDrop}
+      onDrop={(e) => {
+        console.log('[PlaylistWindow MAIN] DROP EVENT FIRED!', e.target.className);
+        handleExternalDrop(e);
+      }}
       onDragOver={(e) => {
-        const types = Array.from(e.dataTransfer.types);
-        console.log('Playlist dragover, types:', types);
-        if (types.includes('application/json') || types.includes('Files')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'copy';
-          setIsDraggingOver(true);
-        }
+        console.log('[PlaylistWindow MAIN] dragover event, target:', e.target.className);
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        setIsDraggingOver(true);
       }}
       onDragLeave={(e) => {
         if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
@@ -487,11 +561,10 @@ export function PlaylistWindow({
             <button
               key={pl.id}
               onClick={() => handleSelectPlaylist(pl.id)}
-              className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${
-                playlists.currentPlaylist === pl.id
-                  ? `${currentColors.accent} bg-slate-800`
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
+              className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${playlists.currentPlaylist === pl.id
+                ? `${currentColors.accent} bg-slate-800`
+                : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
             >
               {pl.name}
             </button>
@@ -558,11 +631,10 @@ export function PlaylistWindow({
           {/* Auto-scroll toggle */}
           <button
             onClick={() => setPlaylistAutoScroll(!playlistAutoScroll)}
-            className={`p-1.5 rounded transition-colors ${
-              playlistAutoScroll 
-                ? `${currentColors.accent} bg-slate-800` 
-                : 'text-slate-400 hover:bg-slate-700'
-            }`}
+            className={`p-1.5 rounded transition-colors ${playlistAutoScroll
+              ? `${currentColors.accent} bg-slate-800`
+              : 'text-slate-400 hover:bg-slate-700'
+              }`}
             title={playlistAutoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
           >
             <ArrowDown className="w-4 h-4" />
@@ -635,16 +707,7 @@ export function PlaylistWindow({
             onSelect={handleTrackSelect}
             currentColors={currentColors}
             loadingTrackIndex={loadingTrackIndex}
-            onShowMenu={(index, e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setContextMenu({
-                index,
-                track: displayTracks[index],
-                x: e.clientX || e.pageX,
-                y: e.clientY || e.pageY
-              });
-            }}
+            onShowMenu={handleShowMenu}
             isDraggable={!!playlists.currentPlaylist}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
@@ -704,43 +767,43 @@ export function PlaylistWindow({
       {/* Context Menu - Use Portal to render outside overflow container */}
       {contextMenu && contextMenu.track && createPortal(
         <ContextMenu
-              x={contextMenu.x}
-              y={contextMenu.y}
-              items={getTrackContextMenuItems({
-                track: contextMenu.track,
-                onPlay: () => {
-                  handleTrackSelect(contextMenu.index);
-                },
-                onPlayNext: () => {
-                  addToQueue(contextMenu.track, 'next');
-                },
-                onAddToQueue: () => {
-                  addToQueue(contextMenu.track, 'end');
-                },
-                onAddToPlaylist: () => {
-                  setShowPlaylistPicker(contextMenu.track);
-                  closeContextMenu();
-                },
-                onRemove: () => {
-                  handleRemoveTrack(contextMenu.index);
-                },
-                onEditTags: () => {
-                  if (onEditTags) {
-                    onEditTags(contextMenu.track);
-                  }
-                  closeContextMenu();
-                },
-                onShowInfo: () => {
-                  alert(`Track: ${contextMenu.track.title}\nArtist: ${contextMenu.track.artist}\nAlbum: ${contextMenu.track.album}\nPath: ${contextMenu.track.path}`);
-                },
-                onSetRating: () => {
-                  setShowRatingDialog(contextMenu.track);
-                  closeContextMenu();
-                },
-                currentTrack: currentTrack
-              })}
-              onClose={closeContextMenu}
-            />,
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={getTrackContextMenuItems({
+            track: contextMenu.track,
+            onPlay: () => {
+              handleTrackSelect(contextMenu.index);
+            },
+            onPlayNext: () => {
+              addToQueue(contextMenu.track, 'next');
+            },
+            onAddToQueue: () => {
+              addToQueue(contextMenu.track, 'end');
+            },
+            onAddToPlaylist: () => {
+              setShowPlaylistPicker(contextMenu.track);
+              closeContextMenu();
+            },
+            onRemove: () => {
+              handleRemoveTrack(contextMenu.index);
+            },
+            onEditTags: () => {
+              if (onEditTags) {
+                onEditTags(contextMenu.track);
+              }
+              closeContextMenu();
+            },
+            onShowInfo: () => {
+              alert(`Track: ${contextMenu.track.title}\nArtist: ${contextMenu.track.artist}\nAlbum: ${contextMenu.track.album}\nPath: ${contextMenu.track.path}`);
+            },
+            onSetRating: () => {
+              setShowRatingDialog(contextMenu.track);
+              closeContextMenu();
+            },
+            currentTrack: currentTrack
+          })}
+          onClose={closeContextMenu}
+        />,
         document.body
       )}
 
@@ -875,6 +938,16 @@ export function PlaylistWindow({
             Total: {Math.floor(displayTracks.reduce((sum, t) => sum + (t.duration || 0), 0) / 60)} minutes
           </span>
         </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

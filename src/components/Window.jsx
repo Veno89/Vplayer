@@ -6,9 +6,13 @@ import { notifyDragStart, notifyDragEnd } from '../hooks/useAutoResize';
 export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }) {
   if (!windowData.visible) return null;
 
+  // Check if this is the library window and if it's currently dragging
+  // If so, we want to send it to the back temporarily
+  const isLibraryDragging = id === 'library' && children?.props?.['data-library-dragging'];
+
   // Safety check for currentColors with comprehensive fallback
-  const colors = currentColors || { 
-    accent: 'text-cyan-400', 
+  const colors = currentColors || {
+    accent: 'text-cyan-400',
     primary: 'bg-cyan-500',
     windowBg: 'rgba(15, 23, 42, 0.95)',
     windowBorder: 'rgba(51, 65, 85, 0.8)',
@@ -17,7 +21,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
     textMuted: '#94a3b8',
     border: '#334155',
   };
-  
+
   // Get minimum sizes for this window type (with fallbacks)
   const minSizes = WINDOW_MIN_SIZES[id] || { width: 250, height: 150 };
 
@@ -129,17 +133,17 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
   if (windowData.minimized) {
     return (
       <div
-        style={{ 
-          left: windowData.x, 
-          top: windowData.y, 
+        style={{
+          left: windowData.x,
+          top: windowData.y,
           zIndex: windowData.zIndex,
           background: colors.windowBg || 'rgba(15, 23, 42, 0.95)',
           borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
         }}
         className="fixed border rounded-lg shadow-2xl backdrop-blur-xl"
       >
-        <div 
-          className="flex items-center justify-between px-3 py-2 cursor-move select-none" 
+        <div
+          className="flex items-center justify-between px-3 py-2 cursor-move select-none"
           onMouseDown={handleTitleBarMouseDown}
         >
           <div className="flex items-center gap-2">
@@ -162,24 +166,31 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
 
   return (
     <div
-      style={{ 
-        left: windowData.x, 
-        top: windowData.y, 
-        width: windowData.width, 
+      style={{
+        left: windowData.x,
+        top: windowData.y,
+        width: windowData.width,
         height: windowData.height,
-        zIndex: windowData.zIndex,
+        zIndex: isLibraryDragging ? 1 : windowData.zIndex,
         opacity: windowOpacity,
         background: colors.windowBg || 'rgba(15, 23, 42, 0.95)',
         borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
       }}
       className="fixed border rounded-lg shadow-2xl backdrop-blur-xl"
       onMouseDown={(e) => {
+        // Don't stopPropagation if clicking on a draggable element (let drag work)
+        const isDraggable = e.target.draggable || e.target.closest('[draggable="true"]');
+        console.log('[Window] onMouseDown - isDraggable:', isDraggable, 'target:', e.target.className);
+        if (isDraggable) {
+          // Don't bringToFront here - causes re-render that cancels drag!
+          return;
+        }
         e.stopPropagation();
         bringToFront(id);
       }}
     >
-      <div 
-        className="flex items-center justify-between px-3 py-2 border-b cursor-move rounded-t-lg select-none" 
+      <div
+        className="flex items-center justify-between px-3 py-2 border-b cursor-move rounded-t-lg select-none"
         style={{
           background: colors.headerBg || 'rgba(30, 41, 59, 0.8)',
           borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
@@ -207,9 +218,9 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           </button>
         </div>
       </div>
-      <div 
-        className={`p-4 overflow-auto ${className}`} 
-        style={{ 
+      <div
+        className={`p-4 overflow-auto ${className}`}
+        style={{
           height: 'calc(100% - 40px)',
           pointerEvents: 'auto',
           color: colors.text || '#f8fafc',
@@ -222,7 +233,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       <div
         className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize transition-colors hover:opacity-80"
         onMouseDown={handleResizeMouseDown}
-        style={{ 
+        style={{
           clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
           borderBottomRightRadius: '0.5rem',
           background: `${colors.border || '#334155'}50`,

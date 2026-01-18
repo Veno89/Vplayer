@@ -44,7 +44,7 @@ const VPlayerInner = () => {
   }, [updater]);
 
   const { currentTrack, setCurrentTrack, playing, setPlaying, progress, setProgress,
-    duration, setDuration, volume, setVolume, shuffle, setShuffle, repeatMode, 
+    duration, setDuration, volume, setVolume, shuffle, setShuffle, repeatMode,
     setRepeatMode, loadingTrackIndex, setLoadingTrackIndex, abRepeat, setPointA,
     setPointB, clearABRepeat } = usePlayerState();
 
@@ -66,13 +66,15 @@ const VPlayerInner = () => {
   const audio = useAudio({
     initialVolume: volume,
     onEnded: () => {
+      const playbackTracks = activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks;
+
       if (repeatMode === 'one') {
         audio.seek(0);
         audio.play().catch(err => {
           console.error('Failed to replay:', err);
           toast.showError('Failed to replay track');
         });
-      } else if (repeatMode === 'all' || currentTrack < tracks.length - 1) {
+      } else if (repeatMode === 'all' || currentTrack < playbackTracks.length - 1) {
         playerHook.handleNextTrack();
       } else {
         setPlaying(false);
@@ -85,19 +87,37 @@ const VPlayerInner = () => {
 
   const equalizer = useEqualizer();
   const crossfade = useCrossfade();
-  
-  const playerHook = usePlayerHook({ 
-    audio, 
-    player: { currentTrack, setCurrentTrack, shuffle, repeatMode, progress, duration, volume, setVolume }, 
+
+  const playerHook = usePlayerHook({
+    audio,
+    player: { currentTrack, setCurrentTrack, shuffle, repeatMode, progress, duration, volume, setVolume },
     tracks: activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks,
     toast,
     crossfade,
     store: useStore.getState()
   });
 
-  const trackLoading = useTrackLoading({ 
-    audio, tracks, currentTrack, playing, setDuration, setLoadingTrackIndex,
-    progress, toast, removeTrack, setCurrentTrack, handleNextTrack: playerHook.handleNextTrack
+  const playbackTracks = activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks;
+  console.log('[VPlayer] Using tracks for playback:', {
+    activePlaybackTracksCount: activePlaybackTracks.length,
+    libraryTracksCount: tracks.length,
+    usingPlaylist: activePlaybackTracks.length > 0,
+    firstTrack: playbackTracks[0]?.title,
+    currentTrackIndex: currentTrack
+  });
+
+  const trackLoading = useTrackLoading({
+    audio,
+    tracks: playbackTracks,
+    currentTrack,
+    playing,
+    setDuration,
+    setLoadingTrackIndex,
+    progress,
+    toast,
+    removeTrack,
+    setCurrentTrack,
+    handleNextTrack: playerHook.handleNextTrack
   });
 
   // Get auto-resize setting and hook
@@ -114,7 +134,7 @@ const VPlayerInner = () => {
           recalculateSize();
         }
       };
-      
+
       window.addEventListener('keydown', handleKeyPress);
       return () => window.removeEventListener('keydown', handleKeyPress);
     }
@@ -128,7 +148,7 @@ const VPlayerInner = () => {
         console.log('⏰ Late initialization resize check');
         recalculateSize();
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [autoResizeWindow, windows, isReady, recalculateSize]);
@@ -213,7 +233,7 @@ const VPlayerInner = () => {
     if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
       localStorage.setItem('vplayer_last_position', audio.progress.toString());
     }
-    
+
     // A-B Repeat: seek back to point A when reaching point B
     if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
       if (audio.progress >= abRepeat.pointB) {
@@ -226,21 +246,21 @@ const VPlayerInner = () => {
 
   useEffect(() => {
     if (trackLoading.hasRestoredTrack || tracks.length === 0) return;
-    
+
     if (resumeLastTrack) {
       const savedTrackId = localStorage.getItem('vplayer_last_track');
       if (savedTrackId) {
         const trackIndex = tracks.findIndex(t => t.id === savedTrackId);
         if (trackIndex !== -1) {
           setCurrentTrack(trackIndex);
-          
+
           if (autoPlayOnStartup) {
             setTimeout(() => setPlaying(true), 500);
           }
         }
       }
     }
-    
+
     trackLoading.setHasRestoredTrack(true);
   }, [tracks, trackLoading, setCurrentTrack, resumeLastTrack, autoPlayOnStartup, setPlaying]);
 
@@ -249,12 +269,12 @@ const VPlayerInner = () => {
       prevPlayingRef.current = playing;
       return;
     }
-    
+
     if (prevPlayingRef.current === playing) return;
-    
+
     const wasPlaying = prevPlayingRef.current;
     prevPlayingRef.current = playing;
-    
+
     if (playing && !wasPlaying) {
       audio.play().catch(err => {
         console.error('Failed to play:', err);
@@ -324,7 +344,9 @@ const VPlayerInner = () => {
     setAdvancedFilters, equalizer, windows, colorScheme, setColorScheme,
     colorSchemes, debugVisible, setDebugVisible, loadingTrackIndex, layouts,
     currentLayout, applyLayout: applyLayoutWithResize, handleLibraryDragStart: dragDrop.handleLibraryDragStart,
-    handleLibraryDragEnd: dragDrop.handleLibraryDragEnd, handleRatingChange,
+    handleLibraryDragEnd: dragDrop.handleLibraryDragEnd,
+    isDraggingTracks: dragDrop.isDraggingTracks,
+    handleRatingChange,
     setActivePlaybackTracks, crossfade, setThemeEditorOpen,
     backgroundImage, setBackgroundImage, backgroundBlur, setBackgroundBlur,
     backgroundOpacity, setBackgroundOpacity, windowOpacity, setWindowOpacity,
@@ -361,7 +383,7 @@ const VPlayerInner = () => {
           currentColors={currentColors}
         />
       )}
-      
+
       {miniPlayerMode ? (
         <div className="fixed top-4 right-4 z-[100]">
           <MiniPlayerWindow
@@ -404,7 +426,7 @@ const VPlayerInner = () => {
           />
         </>
       )}
-      
+
       {/* Onboarding for first-time users */}
       {showOnboarding && (
         <OnboardingWindow

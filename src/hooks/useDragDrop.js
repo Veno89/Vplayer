@@ -33,7 +33,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
   // Listen for Tauri file drop events
   useEffect(() => {
     let unlisten;
-    
+
     const setupDropListener = async () => {
       try {
         const currentWindow = getCurrentWindow();
@@ -45,23 +45,23 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
             setTauriDropHandled(true);
             // Reset the flag after a short delay
             setTimeout(() => setTauriDropHandled(false), 500);
-            
+
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
               console.log('Files dropped via Tauri:', paths);
-              
+
               // Collect all new tracks from scanning
               const newTrackIds = [];
               let foldersAdded = 0;
               let filesAdded = 0;
-              
+
               // Use Set to avoid duplicate paths
               const uniquePaths = new Set(paths);
-              
+
               for (const path of uniquePaths) {
                 // Check if path is a directory by seeing if it doesn't have a common audio extension
                 const isFolder = !path.match(/\.(mp3|flac|wav|ogg|m4a|aac|wma|opus)$/i);
-                
+
                 if (isFolder) {
                   // Scan folder incrementally and collect new track IDs
                   try {
@@ -81,26 +81,26 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
                   filesAdded++;
                 }
               }
-              
+
               // Limit the number of tracks to prevent freezing
               const MAX_TRACKS_PER_DROP = 100;
               if (newTrackIds.length > MAX_TRACKS_PER_DROP) {
                 toast?.showError(`Too many tracks (${newTrackIds.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
                 return;
               }
-              
+
               // Refresh library to get all tracks
               if (refreshTracks) {
                 await refreshTracks();
               }
-              
+
               // Emit event with new track IDs for playlist to handle
               if (newTrackIds.length > 0) {
                 window.dispatchEvent(new CustomEvent('vplayer-external-tracks-added', {
                   detail: { trackIds: newTrackIds }
                 }));
               }
-              
+
               // Show notification
               if (foldersAdded > 0) {
                 toast?.showSuccess(`Added ${foldersAdded} folder(s) to library`);
@@ -116,9 +116,9 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
         console.debug('Tauri drag-drop not available:', err);
       }
     };
-    
+
     setupDropListener();
-    
+
     return () => {
       if (unlisten) {
         unlisten();
@@ -129,20 +129,20 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     setIsDraggingExternal(false);
-    
+
     // If Tauri already handled this drop, don't show the message
     if (tauriDropHandled) {
       return;
     }
-    
+
     const internalData = e.dataTransfer.getData('application/json');
     if (internalData) {
-      window.dispatchEvent(new CustomEvent('vplayer-track-drop', { 
+      window.dispatchEvent(new CustomEvent('vplayer-track-drop', {
         detail: { data: internalData }
       }));
       return;
     }
-    
+
     // For web file drops (non-Tauri), the Tauri handler should have picked it up
     // Only show this if we're somehow in a browser-only context
     const files = e.dataTransfer.files;
@@ -159,7 +159,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
       e.dataTransfer.dropEffect = 'copy';
       return;
     }
-    
+
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     setIsDraggingExternal(true);
@@ -173,8 +173,11 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
   }, []);
 
   const handleLibraryDragStart = useCallback((data) => {
-    setIsDraggingTracks(true);
-    setDragData(data);
+    // Defer state updates to avoid re-render during drag initialization
+    setTimeout(() => {
+      setIsDraggingTracks(true);
+      setDragData(data);
+    }, 0);
   }, []);
 
   const handleLibraryDragEnd = useCallback(() => {
@@ -184,6 +187,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
 
   useEffect(() => {
     const handleGlobalDragOver = (e) => {
+      console.log('[useDragDrop] Global dragover fired');
       e.preventDefault();
       const types = Array.from(e.dataTransfer.types);
       if (types.includes('application/json')) {
