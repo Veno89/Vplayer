@@ -2,6 +2,14 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.8.9] - 2026-01-18
+
+### Fixed
+- **Auto-Updater**: Fixed updater signature generation by enabling `createUpdaterArtifacts` in Tauri configuration
+  - Signature files (`.sig`) are now properly generated during build
+  - `latest.json` updater manifest is now created with signature data
+  - Users can now receive automatic updates when new versions are released
+
 ## [0.8.3] - 2026-01-18
 
 ### Added

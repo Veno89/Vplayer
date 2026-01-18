@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "VPlayer",
-  "version": "0.8.8",
+  "version": "0.8.9",
   "identifier": "com.vplayer.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -33,6 +33,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
