@@ -1,6 +1,6 @@
 [package]
 name = "vplayer"
-version = "0.8.3"
+version = "0.8.5"
 description = "A native desktop music player"
 authors = ["you"]
 license = ""
