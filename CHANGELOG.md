@@ -2,6 +2,14 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.9.0] - 2026-01-19
+
+### Fixed
+- Fixed empty playlists not showing delete button
+- Fixed playlist track selection playing wrong song due to sort order mismatch
+- Fixed next/previous navigation not respecting playlist sort order
+- Fixed race condition where activePlaybackTracks updated after track index was set
+
 ## [0.8.9] - 2026-01-18
 
 ### Fixed

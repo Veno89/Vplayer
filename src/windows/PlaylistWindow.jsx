@@ -149,13 +149,19 @@ export function PlaylistWindow({
     const selectedTrack = displayTracks[filteredIndex];
     if (!selectedTrack) return;
 
-    // When playing from playlist, set the playback context to the current display tracks
+    // CRITICAL: Set the playback context BEFORE changing the track index
+    // This ensures activePlaybackTracks updates before useTrackLoading runs
+    // Without this, useTrackLoading would load tracks[index] from the OLD array
     if (onActiveTracksChange) {
       onActiveTracksChange(displayTracks);
+      // Use setTimeout to ensure React state update completes before track loads
+      setTimeout(() => {
+        setCurrentTrack(filteredIndex);
+      }, 0);
+    } else {
+      // Fallback if no playlist context (shouldn't happen in PlaylistWindow)
+      setCurrentTrack(filteredIndex);
     }
-
-    // Set the current track index within the playlist context
-    setCurrentTrack(filteredIndex);
 
   }, [displayTracks, onActiveTracksChange, setCurrentTrack]);
 
@@ -500,6 +506,15 @@ export function PlaylistWindow({
           >
             <Plus className="w-4 h-4 text-slate-400" />
           </button>
+          {playlists.currentPlaylist && (
+            <button
+              onClick={() => handleDeletePlaylist(playlists.currentPlaylist)}
+              className="p-1.5 hover:bg-red-900/50 rounded transition-colors"
+              title="Delete Playlist"
+            >
+              <Trash2 className="w-4 h-4 text-red-400" />
+            </button>
+          )}
         </div>
 
         {/* Empty State with Drop Zone */}
