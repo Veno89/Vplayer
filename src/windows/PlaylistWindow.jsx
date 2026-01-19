@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowUp, ArrowDownToLine, Star, Play } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
