@@ -2,6 +2,13 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.9.1] - 2026-01-20
+
+### Fixed
+- Fixed major playlist track desync bug where wrong songs would play after prolonged use
+- Fixed stale closure issue in audio callbacks causing incorrect track navigation
+- Fixed displayCurrentTrack mapping using wrong track array index
+
 ## [0.9.0] - 2026-01-19
 
 ### Fixed

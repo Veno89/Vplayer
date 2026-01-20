@@ -32,6 +32,10 @@ const VPlayerInner = () => {
   const [showOnboarding, setShowOnboarding] = React.useState(false);
   const prevPlayingRef = useRef(null);
 
+  // Refs to prevent stale closures in callbacks (especially onEnded)
+  const activePlaybackTracksRef = useRef([]);
+  const playerHookRef = useRef(null);
+
   // Auto-updater
   const updater = useUpdater();
 
@@ -66,7 +70,9 @@ const VPlayerInner = () => {
   const audio = useAudio({
     initialVolume: volume,
     onEnded: () => {
-      const playbackTracks = activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks;
+      // Use refs to get current values, avoiding stale closures
+      const currentActivePlaybackTracks = activePlaybackTracksRef.current;
+      const playbackTracks = currentActivePlaybackTracks.length > 0 ? currentActivePlaybackTracks : tracks;
 
       if (repeatMode === 'one') {
         audio.seek(0);
@@ -75,7 +81,10 @@ const VPlayerInner = () => {
           toast.showError('Failed to replay track');
         });
       } else if (repeatMode === 'all' || currentTrack < playbackTracks.length - 1) {
-        playerHook.handleNextTrack();
+        // Use ref to get latest playerHook
+        if (playerHookRef.current) {
+          playerHookRef.current.handleNextTrack();
+        }
       } else {
         setPlaying(false);
       }
@@ -96,6 +105,15 @@ const VPlayerInner = () => {
     crossfade,
     store: useStore.getState()
   });
+
+  // Keep refs in sync with state to prevent stale closures
+  useEffect(() => {
+    activePlaybackTracksRef.current = activePlaybackTracks;
+  }, [activePlaybackTracks]);
+
+  useEffect(() => {
+    playerHookRef.current = playerHook;
+  }, [playerHook]);
 
   const playbackTracks = activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks;
   console.log('[VPlayer] Using tracks for playback:', {

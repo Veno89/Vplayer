@@ -165,14 +165,16 @@ export function PlaylistWindow({
 
   }, [displayTracks, onActiveTracksChange, setCurrentTrack]);
 
-  // Map current track index to filtered display index
+  // The currentTrack index now directly refers to the displayTracks array
+  // (set by handleTrackSelect), so no mapping is needed
   const displayCurrentTrack = useMemo(() => {
     if (currentTrack === null || currentTrack === undefined) return null;
-    const currentTrackObj = tracks[currentTrack];
-    if (!currentTrackObj) return null;
-
-    return displayTracks.findIndex(t => t.id === currentTrackObj.id);
-  }, [currentTrack, tracks, displayTracks]);
+    // Validate the index is within bounds of displayTracks
+    if (currentTrack >= 0 && currentTrack < displayTracks.length) {
+      return currentTrack;
+    }
+    return null;
+  }, [currentTrack, displayTracks.length]);
 
   // Auto-scroll to current track when it changes
   useEffect(() => {
