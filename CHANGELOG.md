@@ -2,6 +2,12 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+## [0.9.2] - 2026-01-20
+
+### Fixed
+- Fixed auto-updater not working due to missing permissions and incorrect ES module imports
+- Added `updater:default` and `process:default` permissions to capabilities
+
 ## [0.9.1] - 2026-01-20
 
 ### Fixed

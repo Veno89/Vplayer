@@ -1,20 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-
-// Conditional imports for updater functionality
-let check, relaunch;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const updater = require('@tauri-apps/plugin-updater');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const process = require('@tauri-apps/plugin-process');
-  check = updater.check;
-  relaunch = process.relaunch;
-} catch (e) {
-  // Updater not available, functions will remain undefined
-  console.warn('Updater plugin not available, updates disabled');
-  check = null;
-  relaunch = null;
-}
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 /**
  * Hook for managing app updates
@@ -34,15 +20,15 @@ export function useUpdater() {
       setChecking(true);
       setError(null);
 
-      // Check if updater is available
-      if (!check) {
-        if (!silent) {
-          console.info('Update checking disabled - updater plugin not available');
-        }
-        return false;
-      }
-
       const update = await check();
+
+      // Debug logging
+      console.log('[useUpdater] check() result:', update);
+      console.log('[useUpdater] update available:', !!update);
+      if (update) {
+        console.log('[useUpdater] new version:', update.version);
+        console.log('[useUpdater] current version:', update.currentVersion);
+      }
 
       if (update) {
         setUpdateAvailable(true);
@@ -76,11 +62,6 @@ export function useUpdater() {
       setDownloading(true);
       setError(null);
       setDownloadProgress(0);
-
-      // Check if updater is available
-      if (!check || !relaunch) {
-        throw new Error('Updater not available');
-      }
 
       const update = await check();
 
