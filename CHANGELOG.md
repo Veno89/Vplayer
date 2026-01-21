@@ -2,6 +2,17 @@
 
 All notable changes to VPlayer will be documented in this file.
 
+
+## [0.9.3] - 2026-01-21
+
+### Changed
+- **Refactoring**: Major codebase maintenance and modernization
+  - **Typescript Migration**: Converted core services (`TauriAPI`, `ErrorHandler`) and store slices to TypeScript for better stability
+  - **Audio Backend**: Modularized the audio engine (`audio.rs` split into `visualizer`, `effects`, `device`)
+  - **Library Hook**: Split `useLibrary` into focused hooks (`useLibraryData`, `useLibraryScanner`, `useLibraryFilters`)
+  - **Playlist Code**: Extracted playlist components and logic into smaller, reusable units
+- **State Management**: Centralized active track state in global store, reducing prop drilling
+
 ## [0.9.2] - 2026-01-20
 
 ### Fixed

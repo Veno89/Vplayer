@@ -23,6 +23,15 @@ export interface Track {
     folder_id?: string;
 }
 
+export interface TrackFilter {
+    search_query?: string | null;
+    artist?: string | null;
+    album?: string | null;
+    genre?: string | null;
+    sort_by?: string | null;
+    sort_desc?: boolean;
+}
+
 // =============================================================================
 // Player Types
 // =============================================================================

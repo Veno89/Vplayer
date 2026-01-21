@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { Track, Playlist, PlaylistTrack } from '../types';
+import { Track, Playlist, PlaylistTrack, TrackFilter } from '../types';
 
 /**
  * Centralized Tauri API service with error handling and logging
@@ -166,6 +166,10 @@ class TauriAPIService {
 
     async getAllTracks(): Promise<Track[]> {
         return this._invoke('get_all_tracks');
+    }
+
+    async getFilteredTracks(filter: TrackFilter): Promise<Track[]> {
+        return this._invoke('get_filtered_tracks', { filter });
     }
 
     async getAllFolders(): Promise<[string, string, string, number][]> {

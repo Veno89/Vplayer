@@ -38,7 +38,7 @@ use commands::{
     is_audio_healthy, needs_audio_reinit, get_inactive_duration,
     has_audio_device_changed, is_audio_device_available,
     // Library commands
-    scan_folder, scan_folder_incremental, get_all_tracks, get_all_folders,
+    scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, remove_duplicate_folders, increment_play_count,
     get_recently_played, get_most_played, get_album_art, extract_and_cache_album_art,
@@ -243,6 +243,7 @@ fn main() {
             scan_folder,
             scan_folder_incremental,
             get_all_tracks,
+            get_filtered_tracks,
             get_all_folders,
             remove_folder,
             create_playlist,

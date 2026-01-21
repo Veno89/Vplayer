@@ -85,6 +85,11 @@ pub fn get_all_tracks(state: tauri::State<AppState>) -> Result<Vec<Track>, Strin
 }
 
 #[tauri::command]
+pub fn get_filtered_tracks(filter: crate::database::TrackFilter, state: tauri::State<AppState>) -> Result<Vec<Track>, String> {
+    state.db.get_filtered_tracks(filter).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_all_folders(state: tauri::State<AppState>) -> Result<Vec<(String, String, String, i64)>, String> {
     state.db.get_all_folders().map_err(|e| e.to_string())
 }
