@@ -16,6 +16,7 @@ struct CachedQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TrackFilter {
     pub search_query: Option<String>,
     pub artist: Option<String>,
@@ -23,6 +24,13 @@ pub struct TrackFilter {
     pub genre: Option<String>,
     pub sort_by: Option<String>,
     pub sort_desc: bool,
+    // New fields
+    pub play_count_min: Option<i32>,
+    pub play_count_max: Option<i32>,
+    pub min_rating: Option<i32>,
+    pub duration_from: Option<f64>,
+    pub duration_to: Option<f64>,
+    pub folder_id: Option<String>,
 }
 
 pub struct Database {
@@ -299,6 +307,49 @@ impl Database {
             // I will SKIP genre filtering in DB for now to avoid SQL error, 
             // OR I should check update_track_metadata implementation in database.rs to see if it supports genre.
             // Assuming NO genre column for now based on snippet.
+        }
+
+        // Additional filters
+        if let Some(min) = filter.play_count_min {
+            sql.push_str(" AND play_count >= ?");
+            params_values.push(Box::new(min));
+        }
+
+        if let Some(max) = filter.play_count_max {
+             sql.push_str(" AND play_count <= ?");
+             params_values.push(Box::new(max));
+        }
+
+        if let Some(min) = filter.min_rating {
+             sql.push_str(" AND rating >= ?");
+             params_values.push(Box::new(min));
+        }
+
+        if let Some(from) = filter.duration_from {
+             sql.push_str(" AND duration >= ?");
+             params_values.push(Box::new(from));
+        }
+
+        if let Some(to) = filter.duration_to {
+             sql.push_str(" AND duration <= ?");
+             params_values.push(Box::new(to));
+        }
+
+        if let Some(to) = filter.duration_to {
+             sql.push_str(" AND duration <= ?");
+             params_values.push(Box::new(to));
+        }
+
+        // Folder filtering
+        if let Some(folder_id) = &filter.folder_id {
+             // We need to query the folder path first
+             // Since we need to use the connection for this query, and we're building the main query
+             // We can use a subquery or separate query. Subquery is cleaner in SQL but we are building param list dynamically.
+             // Actually, we can use a subquery in WHERE clause: AND path LIKE (SELECT path FROM folders WHERE id = ?) || '%'
+             // But concatenation in SQLite: (SELECT path FROM folders WHERE id = ?) || '%'
+             
+             sql.push_str(" AND path LIKE (SELECT path FROM folders WHERE id = ?) || '%'");
+             params_values.push(Box::new(folder_id.clone()));
         }
 
         // Sorting

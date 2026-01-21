@@ -1,4 +1,5 @@
 import { ToastService } from '../types';
+import { useMemo } from 'react';
 
 /**
  * Centralized error handling service
@@ -138,5 +139,5 @@ export class ErrorHandler {
  */
 export function useErrorHandler(toast: ToastService): ErrorHandler {
     // Create error handler instance with toast service
-    return new ErrorHandler(toast);
+    return useMemo(() => new ErrorHandler(toast), [toast]);
 }

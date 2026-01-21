@@ -12,6 +12,13 @@ All notable changes to VPlayer will be documented in this file.
   - **Library Hook**: Split `useLibrary` into focused hooks (`useLibraryData`, `useLibraryScanner`, `useLibraryFilters`)
   - **Playlist Code**: Extracted playlist components and logic into smaller, reusable units
 - **State Management**: Centralized active track state in global store, reducing prop drilling
+- **Playlist UI**: Replaced fragile manual resizing with robust `AutoSizer` component
+- **Drag & Drop**: Fixed multiple drag-and-drop glitches in Playlist
+
+### Fixed
+- **Playlist Scrollbar**: Fixed issue where playlist tracks were clipped or unreachable
+- **React Crash**: Fixed "React is not defined" crash in PlaylistWindow
+- **Layout**: Fixed visual glitches with playlist container height
 
 ## [0.9.2] - 2026-01-20
 

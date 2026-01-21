@@ -119,13 +119,7 @@ const VPlayerInner = () => {
   }, [playerHook]);
 
   const playbackTracks = activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks;
-  console.log('[VPlayer] Using tracks for playback:', {
-    activePlaybackTracksCount: activePlaybackTracks.length,
-    libraryTracksCount: tracks.length,
-    usingPlaylist: activePlaybackTracks.length > 0,
-    firstTrack: playbackTracks[0]?.title,
-    currentTrackIndex: currentTrack
-  });
+
 
   const trackLoading = useTrackLoading({
     audio,

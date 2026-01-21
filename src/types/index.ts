@@ -24,12 +24,18 @@ export interface Track {
 }
 
 export interface TrackFilter {
-    search_query?: string | null;
+    searchQuery?: string | null;
     artist?: string | null;
     album?: string | null;
     genre?: string | null;
-    sort_by?: string | null;
-    sort_desc?: boolean;
+    sortBy?: string | null;
+    sortDesc?: boolean;
+    playCountMin?: number | null;
+    playCountMax?: number | null;
+    minRating?: number | null;
+    durationFrom?: number | null;
+    durationTo?: number | null;
+    folderId?: string | null;
 }
 
 // =============================================================================

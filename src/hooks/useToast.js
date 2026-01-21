@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 let toastId = 0;
 
@@ -8,16 +8,16 @@ export function useToast() {
   const addToast = useCallback((message, type = 'info', duration = 5000) => {
     const id = ++toastId;
     const newToast = { id, message, type, duration };
-    
+
     setToasts((prev) => [...prev, newToast]);
-    
+
     // Auto-remove after duration
     if (duration > 0) {
       setTimeout(() => {
         removeToast(id);
       }, duration);
     }
-    
+
     return id;
   }, []);
 
@@ -41,7 +41,7 @@ export function useToast() {
     return addToast(message, 'info', duration);
   }, [addToast]);
 
-  return {
+  const contextValue = useMemo(() => ({
     toasts,
     addToast,
     removeToast,
@@ -49,5 +49,7 @@ export function useToast() {
     showError,
     showWarning,
     showInfo,
-  };
+  }), [toasts, addToast, removeToast, showSuccess, showError, showWarning, showInfo]);
+
+  return contextValue;
 }

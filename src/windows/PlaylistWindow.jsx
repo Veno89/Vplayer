@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { List, Loader, Search } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
+import { AutoSizer } from '../components/AutoSizer';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
 import { usePlaylistActions } from '../hooks/usePlaylistActions';
@@ -19,7 +20,7 @@ import {
   BatchPlaylistPickerDialog
 } from '../components/playlist';
 
-export function PlaylistWindow({
+export const PlaylistWindow = React.memo(function PlaylistWindow({
   tracks,
   currentTrack,
   setCurrentTrack,
@@ -30,7 +31,9 @@ export function PlaylistWindow({
   onActiveTracksChange,
   onEditTags, // New prop for tag editor
   isDraggingTracks, // Prop from useDragDrop via WindowManager
-}) {
+}) { // Changed to standard function for memo wrapping below
+  /* eslint-disable no-unused-vars */
+  console.log('[PlaylistWindow] Rendered');
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -45,6 +48,7 @@ export function PlaylistWindow({
   const [selectedIndices, setSelectedIndices] = useState(new Set());
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [showBatchPlaylistPicker, setShowBatchPlaylistPicker] = useState(false); // for batch add to playlist
+
   const containerRef = useRef(null);
   const trackListRef = useRef(null);
 
@@ -177,6 +181,8 @@ export function PlaylistWindow({
     onActiveTracksChange,
   });
 
+
+
   // Handle track selection
   const handleTrackSelect = useCallback((filteredIndex) => {
     const selectedTrack = displayTracks[filteredIndex];
@@ -267,6 +273,43 @@ export function PlaylistWindow({
       localStorage.setItem('vplayer_last_playlist', playlists.currentPlaylist);
     }
   }, [playlists.currentPlaylist]);
+
+  // Handle Context Menu
+  const handleShowMenu = useCallback((index, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const track = displayTracks[index];
+    if (!track) return;
+
+    const items = getTrackContextMenuItems({
+      track,
+      currentTrack: displayCurrentTrack === index,
+      onPlay: () => {
+        if (onActiveTracksChange) {
+          onActiveTracksChange(displayTracks);
+          setTimeout(() => setCurrentTrack(index), 0);
+        } else {
+          setCurrentTrack(index);
+        }
+      },
+      onAddToQueue: () => addToQueue(track),
+      onAddToPlaylist: () => setShowPlaylistPicker(track),
+      onRemove: () => handleRemoveTrack(index),
+      onEditTags: () => onEditTags && onEditTags(track),
+      onSetRating: () => setShowRatingDialog(track),
+      onShowInfo: () => {
+        // Placeholder for info dialog
+        console.log('Show info for:', track);
+      }
+    });
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items
+    });
+  }, [displayTracks, displayCurrentTrack, onActiveTracksChange, setCurrentTrack, addToQueue, handleRemoveTrack, onEditTags, setContextMenu]);
 
   // Memoize itemData to prevent recreating on every render
   const itemData = useMemo(() => ({
@@ -383,7 +426,7 @@ export function PlaylistWindow({
   }
 
   const itemSize = 48;
-  const listHeight = Math.min(500, displayTracks.length * itemSize);
+  // const listHeight = Math.min(500, displayTracks.length * itemSize); // Removed static calculation
 
   return (
     <div
@@ -469,8 +512,8 @@ export function PlaylistWindow({
       />
 
       {/* Virtualized Track List */}
-      <div className="flex-1 overflow-hidden relative">
-        {displayTracks.length === 0 && searchQuery ? (
+      <AutoSizer className="flex-1 overflow-hidden relative">
+        {({ height, width }) => displayTracks.length === 0 && searchQuery ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
             <Search className="w-12 h-12 mb-3 opacity-50" />
             <p className="text-lg font-medium">No results found</p>
@@ -496,15 +539,16 @@ export function PlaylistWindow({
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             draggedIndex={draggedIndex}
-            height={listHeight}
+            height={height}
             itemSize={itemSize}
             enableMultiSelect={true}
             selectedIndices={selectedIndices}
             onSelectionChange={setSelectedIndices}
             onBatchAction={handleBatchAction}
           />
-        )}
-      </div>
+        )
+        }
+      </AutoSizer>
 
       {/* Drop Indicator Overlay */}
       {isDraggingOver && (
@@ -734,4 +778,4 @@ export function PlaylistWindow({
       )}
     </div>
   );
-}
+});

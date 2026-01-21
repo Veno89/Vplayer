@@ -12,11 +12,11 @@ export const TRACK_LIST_ITEM_SIZE_COMPACT = 40;
  * Unified track row component with configurable features
  */
 const TrackRow = React.memo(({ data, index, style }) => {
-  const { 
-    tracks, 
-    currentTrack, 
-    onSelect, 
-    currentColors, 
+  const {
+    tracks,
+    currentTrack,
+    onSelect,
+    currentColors,
     loadingTrackIndex,
     onRatingChange,
     onShowMenu,
@@ -89,26 +89,24 @@ const TrackRow = React.memo(({ data, index, style }) => {
           onShowMenu(index, menuEvent);
         }
       }}
-      className={`flex items-center px-3 py-2 text-sm cursor-pointer select-none transition-colors group ${
-        isSelected
-          ? 'bg-cyan-800/50 text-white'
-          : isActive 
-          ? `${currentColors.accent} bg-slate-800/80 font-semibold` 
+      className={`flex items-center px-3 py-2 text-sm cursor-pointer select-none transition-colors group ${isSelected
+        ? 'bg-cyan-800/50 text-white'
+        : isActive
+          ? `${currentColors.accent} bg-slate-800/80 font-semibold`
           : isFocused
-          ? 'bg-slate-700/80 text-slate-200 ring-1 ring-cyan-500/50'
-          : 'hover:bg-slate-700/60 text-slate-300'
-      } ${isLoading ? 'opacity-50' : ''} ${isDragging ? 'opacity-40' : ''}`}
+            ? 'bg-slate-700/80 text-slate-200 ring-1 ring-cyan-500/50'
+            : 'hover:bg-slate-700/60 text-slate-300'
+        } ${isLoading ? 'opacity-50' : ''} ${isDragging ? 'opacity-40' : ''}`}
       onClick={handleClick}
       title={`${track.title || 'Unknown'} - ${track.artist || 'Unknown Artist'}`}
     >
       {/* Selection Checkbox / Drag Handle */}
       {isMultiSelectMode ? (
         <div className="w-6 flex items-center justify-center">
-          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-            isSelected 
-              ? 'bg-cyan-500 border-cyan-500' 
-              : 'border-slate-500 hover:border-cyan-400'
-          }`}>
+          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${isSelected
+            ? 'bg-cyan-500 border-cyan-500'
+            : 'border-slate-500 hover:border-cyan-400'
+            }`}>
             {isSelected && <Check className="w-3 h-3 text-white" />}
           </div>
         </div>
@@ -151,10 +149,10 @@ const TrackRow = React.memo(({ data, index, style }) => {
       {/* Rating */}
       {showRating && (
         <span className="w-24 flex justify-center" onClick={(e) => e.stopPropagation()}>
-          <StarRating 
-            rating={track.rating || 0} 
-            onRatingChange={handleRatingChange} 
-            size="sm" 
+          <StarRating
+            rating={track.rating || 0}
+            onRatingChange={handleRatingChange}
+            size="sm"
           />
         </span>
       )}
@@ -199,7 +197,7 @@ const TrackRow = React.memo(({ data, index, style }) => {
 }, (prevProps, nextProps) => {
   const prevTrack = prevProps.data.tracks[prevProps.index];
   const nextTrack = nextProps.data.tracks[nextProps.index];
-  
+
   return (
     prevProps.index === nextProps.index &&
     prevProps.style === nextProps.style &&
@@ -290,7 +288,7 @@ export const TrackList = React.forwardRef(function TrackList({
   const handleToggleSelect = useCallback((index, isShift, isCtrl) => {
     setActualSelectedIndices(prev => {
       const newSet = new Set(prev);
-      
+
       if (isShift && lastSelectedIndex !== null) {
         // Range selection
         const start = Math.min(lastSelectedIndex, index);
@@ -319,16 +317,16 @@ export const TrackList = React.forwardRef(function TrackList({
           newSet.add(index);
         }
       }
-      
+
       setLastSelectedIndex(index);
-      
+
       // Enable/disable multi-select mode based on selection count
       if (newSet.size > 0) {
         setIsMultiSelectMode(true);
       } else {
         setIsMultiSelectMode(false);
       }
-      
+
       return newSet;
     });
   }, [lastSelectedIndex, isMultiSelectMode, setActualSelectedIndices]);
@@ -453,7 +451,7 @@ export const TrackList = React.forwardRef(function TrackList({
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -504,7 +502,9 @@ export const TrackList = React.forwardRef(function TrackList({
       )}
       <ListVirtual
         ref={listRef}
-        height={isMultiSelectMode && actualSelectedIndices.size > 0 ? height - 44 : height}
+        height={isMultiSelectMode && actualSelectedIndices.size > 0
+          ? (height || 300) - 44
+          : (height || 300)}
         itemCount={tracks.length}
         itemSize={itemSize}
         width="100%"
@@ -598,7 +598,7 @@ export function SimpleTrackList({
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}

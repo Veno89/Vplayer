@@ -8,21 +8,24 @@ import { useToast } from '../useToast';
  * Hook to manage raw library data (tracks and folders)
  * Handles CRUD operations and database interactions
  */
-export function useLibraryData() {
+export function useLibraryData(filterParams = null) {
     const toast = useToast();
     const errorHandler = useErrorHandler(toast);
 
     const [tracks, setTracks] = useState([]);
     const [libraryFolders, setLibraryFolders] = useState([]);
 
-    const loadAllTracks = useCallback(async () => {
+    const loadTracks = useCallback(async () => {
         try {
-            const dbTracks = await TauriAPI.getAllTracks();
+            // Use filtered query if params exist, otherwise get all (though getFilteredTracks handles empty/default too)
+            // We favor getFilteredTracks now to support sorting/filtering at DB level
+            const params = filterParams || {};
+            const dbTracks = await TauriAPI.getFilteredTracks(params);
             setTracks(dbTracks);
         } catch (err) {
             errorHandler.handle(err, 'Library - Load Tracks');
         }
-    }, [errorHandler]);
+    }, [errorHandler, filterParams]);
 
     const loadAllFolders = useCallback(async () => {
         try {
@@ -40,14 +43,27 @@ export function useLibraryData() {
         }
     }, [errorHandler]);
 
-    // Initial load
+    // Initial load and re-load when filters change
     useEffect(() => {
         const initLibrary = async () => {
-            await loadAllTracks();
-            await loadAllFolders();
+            await loadTracks();
+            await loadAllFolders(); // We might want to separate this from filter changes?
+            // If filters change, we only need to reload tracks, not folders.
+            // But useEffect runs on any dependency change.
+            // We can split effects if optimal.
         };
         initLibrary();
-    }, [loadAllTracks, loadAllFolders]);
+    }, [loadTracks]); // loadTracks depends on filterParams
+
+    // Separate effect for folders if we want to avoid reloading folders on filter change?
+    // Current loadAllFolders is stable (depends only on errorHandler).
+    // But initLibrary calls both.
+    // Ideally:
+    /*
+    useEffect(() => { loadAllFolders(); }, [loadAllFolders]);
+    useEffect(() => { loadTracks(); }, [loadTracks]);
+    */
+    // But `initLibrary` pattern is simple. Loading folders is cheap (few folders).
 
     const addFolder = useCallback(async () => {
         try {
@@ -97,13 +113,13 @@ export function useLibraryData() {
 
             await TauriAPI.removeFolder(folderId, folderPath);
             setLibraryFolders(prev => prev.filter(f => f.id !== folderId));
-            await loadAllTracks(); // Reload remaining tracks
+            await loadTracks(); // Reload remaining tracks (filtered)
             await loadAllFolders(); // Reload folders to stay in sync
         } catch (err) {
             console.error('Failed to remove folder:', err);
             throw err;
         }
-    }, [loadAllTracks, loadAllFolders]);
+    }, [loadTracks, loadAllFolders]);
 
     const removeTrack = useCallback(async (trackId) => {
         try {
@@ -120,7 +136,8 @@ export function useLibraryData() {
         setTracks, // Exposed for scanner updates
         libraryFolders,
         setLibraryFolders, // Exposed for updates
-        loadAllTracks,
+        loadTracks,
+        loadAllTracks: loadTracks, // Alias for backward compatibility
         loadAllFolders,
         addFolder,
         removeFolder,
