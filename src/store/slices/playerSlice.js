@@ -12,7 +12,11 @@ export const createPlayerSlice = (set, get) => ({
   volume: 0.7,
   shuffle: false,
   repeatMode: 'off', // 'off', 'one', 'all'
-  
+
+  // === Active Playback Tracks ===
+  // The tracks currently active for playback (from playlist or library)
+  activePlaybackTracks: [],
+
   // === A-B Repeat State ===
   abRepeat: {
     enabled: false,
@@ -29,46 +33,61 @@ export const createPlayerSlice = (set, get) => ({
   setCurrentTrack: (track) => {
     set({ currentTrack: track, progress: 0 });
   },
-  
-  setPlaying: (playingOrUpdater) => 
+
+  setPlaying: (playingOrUpdater) =>
     set((state) => ({
-      playing: typeof playingOrUpdater === 'function' 
-        ? playingOrUpdater(state.playing) 
+      playing: typeof playingOrUpdater === 'function'
+        ? playingOrUpdater(state.playing)
         : playingOrUpdater
     })),
-  
+
   setProgress: (progress) => set({ progress }),
   setDuration: (duration) => set({ duration }),
   setLoadingTrackIndex: (index) => set({ loadingTrackIndex: index }),
   setVolume: (volume) => set({ volume }),
-  
+
+  // Set active playback tracks (from playlist or library selection)
+  setActivePlaybackTracks: (tracks) => set({ activePlaybackTracks: tracks }),
+
+  // Get the current track data object (derived from activePlaybackTracks and currentTrack index)
+  getCurrentTrackData: () => {
+    const state = get();
+    if (state.currentTrack === null || state.currentTrack === undefined) return null;
+    return state.activePlaybackTracks[state.currentTrack] || null;
+  },
+
+  // Get the effective tracks for playback (activePlaybackTracks if set, otherwise empty)
+  getPlaybackTracks: () => {
+    return get().activePlaybackTracks;
+  },
+
   setShuffle: (shuffleOrUpdater) =>
     set((state) => ({
       shuffle: typeof shuffleOrUpdater === 'function'
         ? shuffleOrUpdater(state.shuffle)
         : shuffleOrUpdater
     })),
-  
+
   setRepeatMode: (mode) => set({ repeatMode: mode }),
 
   // === A-B Repeat Actions ===
   setPointA: (time) => set((state) => ({
     abRepeat: { ...state.abRepeat, pointA: time }
   })),
-  
+
   setPointB: (time) => set((state) => ({
     abRepeat: { ...state.abRepeat, pointB: time, enabled: time !== null && state.abRepeat.pointA !== null }
   })),
-  
+
   toggleABRepeat: () => set((state) => ({
-    abRepeat: { 
-      ...state.abRepeat, 
-      enabled: state.abRepeat.pointA !== null && state.abRepeat.pointB !== null 
-        ? !state.abRepeat.enabled 
-        : false 
+    abRepeat: {
+      ...state.abRepeat,
+      enabled: state.abRepeat.pointA !== null && state.abRepeat.pointB !== null
+        ? !state.abRepeat.enabled
+        : false
     }
   })),
-  
+
   clearABRepeat: () => set({
     abRepeat: { enabled: false, pointA: null, pointB: null }
   }),
@@ -96,8 +115,8 @@ export const createPlayerSlice = (set, get) => ({
     set((state) => {
       const newQueue = [...state.queue];
       newQueue.splice(index, 1);
-      const newQueueIndex = index < state.queueIndex 
-        ? Math.max(0, state.queueIndex - 1) 
+      const newQueueIndex = index < state.queueIndex
+        ? Math.max(0, state.queueIndex - 1)
         : state.queueIndex;
       return { queue: newQueue, queueIndex: newQueueIndex };
     }),

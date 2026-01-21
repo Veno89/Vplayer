@@ -27,10 +27,13 @@ const VPlayerInner = () => {
   const toast = useToast();
   const [themeEditorOpen, setThemeEditorOpen] = React.useState(false);
   const [miniPlayerMode, setMiniPlayerMode] = React.useState(false);
-  const [activePlaybackTracks, setActivePlaybackTracks] = React.useState([]);
   const [tagEditorTrack, setTagEditorTrack] = React.useState(null);
   const [showOnboarding, setShowOnboarding] = React.useState(false);
   const prevPlayingRef = useRef(null);
+
+  // Get activePlaybackTracks from store instead of local state
+  const activePlaybackTracks = useStore(state => state.activePlaybackTracks);
+  const setActivePlaybackTracks = useStore(state => state.setActivePlaybackTracks);
 
   // Refs to prevent stale closures in callbacks (especially onEnded)
   const activePlaybackTracksRef = useRef([]);
