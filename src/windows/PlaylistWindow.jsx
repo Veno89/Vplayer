@@ -4,6 +4,7 @@ import { List, Loader, Search } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
+import { usePlaylistActions } from '../hooks/usePlaylistActions';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
 import { useStore } from '../store/useStore';
 import { TauriAPI } from '../services/TauriAPI';
@@ -146,12 +147,35 @@ export function PlaylistWindow({
     return result;
   }, [playlists.playlistTracks, searchQuery, sortConfig]);
 
-  const handleSort = (key) => {
-    setSortConfig(current => ({
-      key,
-      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
-    }));
-  };
+  // Use the extracted playlist actions hook
+  const {
+    handleSort,
+    handleDragStart,
+    handleDragOver,
+    handleDrop,
+    handleRemoveFromPlaylist,
+    handleExternalDrop,
+    handleRemoveTrack,
+    handleCreatePlaylist,
+    handleDeletePlaylist,
+    handleSelectPlaylist,
+    closeContextMenu,
+  } = usePlaylistActions({
+    playlists,
+    displayTracks,
+    currentTrack,
+    setCurrentTrack,
+    draggedIndex,
+    setDraggedIndex,
+    setDragOverIndex,
+    setIsDraggingOver,
+    setContextMenu,
+    setShowNewPlaylistDialog,
+    newPlaylistName,
+    setNewPlaylistName,
+    setSortConfig,
+    onActiveTracksChange,
+  });
 
   // Handle track selection
   const handleTrackSelect = useCallback((filteredIndex) => {
@@ -244,141 +268,6 @@ export function PlaylistWindow({
     }
   }, [playlists.currentPlaylist]);
 
-  // Drag and drop handlers for playlist reordering
-  const handleDragStart = (e, index) => {
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverIndex(index);
-  };
-
-  const handleDrop = async (e, dropIndex) => {
-    e.preventDefault();
-
-    // Only handle internal reordering
-    if (draggedIndex === null || draggedIndex === dropIndex) {
-      setDraggedIndex(null);
-      setDragOverIndex(null);
-      return;
-    }
-
-    const newTracks = [...displayTracks];
-    const draggedTrack = newTracks[draggedIndex];
-    newTracks.splice(draggedIndex, 1);
-    newTracks.splice(dropIndex, 0, draggedTrack);
-
-    const trackPositions = newTracks.map((track, idx) => [track.id, idx]);
-
-    try {
-      await playlists.reorderPlaylistTracks(playlists.currentPlaylist, trackPositions);
-    } catch (err) {
-      console.error('Failed to reorder tracks:', err);
-    }
-
-    setDraggedIndex(null);
-    setDragOverIndex(null);
-  };
-
-  // Remove track from playlist
-  const handleRemoveFromPlaylist = async (track) => {
-    if (!playlists.currentPlaylist) return;
-
-    try {
-      await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
-    } catch (err) {
-      console.error('Failed to remove track from playlist:', err);
-    }
-  };
-
-  // Show context menu for track
-  const handleShowMenu = (index, e) => {
-    const track = displayTracks[index];
-    if (!track) return;
-
-    const items = [
-      {
-        icon: Play,
-        label: 'Play Now',
-        onClick: () => {
-          if (onActiveTracksChange) onActiveTracksChange(displayTracks);
-          setCurrentTrack(index);
-        },
-      },
-      {
-        icon: Plus,
-        label: 'Add to Queue',
-        onClick: () => queue.addToQueue(track),
-      },
-      {
-        type: 'separator'
-      },
-      {
-        icon: Star,
-        label: 'Set Rating...',
-        onClick: () => {
-          // Would open rating dialog here
-          console.log('Set rating for:', track.title);
-        },
-      },
-      {
-        type: 'separator'
-      },
-      {
-        icon: Trash2,
-        label: 'Remove from Playlist',
-        onClick: () => handleRemoveFromPlaylist(track),
-        danger: true,
-      },
-    ];
-
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items,
-    });
-  };
-
-  // Handle external track drops
-  const handleExternalDrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOver(false);
-
-    console.log('[PlaylistWindow] handleExternalDrop called');
-    let data = e.dataTransfer.getData('application/json');
-    if (!data) {
-      data = e.dataTransfer.getData('text/plain');
-    }
-    console.log('[PlaylistWindow] drop data:', data ? `${data.substring(0, 50)}...` : 'EMPTY');
-    if (!data) return;
-
-    try {
-      const tracks = JSON.parse(data);
-
-      if (!playlists.currentPlaylist) {
-        console.warn('Please select or create a playlist first');
-        return;
-      }
-
-      // Limit the number of tracks to prevent freezing
-      const MAX_TRACKS_PER_DROP = 10000;
-      if (tracks.length > MAX_TRACKS_PER_DROP) {
-        console.warn(`Too many tracks (${tracks.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
-        return;
-      }
-
-      console.log('Adding tracks to playlist:', tracks.length);
-      await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
-    } catch (err) {
-      console.error('Drop failed:', err);
-      alert('Failed to add tracks to playlist');
-    }
-  };
-
   // Memoize itemData to prevent recreating on every render
   const itemData = useMemo(() => ({
     tracks: displayTracks,
@@ -402,69 +291,7 @@ export function PlaylistWindow({
         y: e.clientY || e.pageY
       });
     }
-  }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, playlists.currentPlaylist, draggedIndex]);
-
-  // Close context menu
-  const closeContextMenu = () => {
-    setContextMenu(null);
-  };
-
-  // Handle track removal
-  const handleRemoveTrack = (index) => {
-    const track = displayTracks[index];
-    if (!track || !playlists.currentPlaylist) return;
-
-    // Remove from playlist
-    if (confirm(`Remove "${track.title}" from this playlist?`)) {
-      playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
-    }
-
-    // Adjust current track if needed
-    if (currentTrack === index) {
-      setCurrentTrack(Math.min(index, displayTracks.length - 2));
-    } else if (currentTrack > index) {
-      setCurrentTrack(currentTrack - 1);
-    }
-
-    closeContextMenu();
-  };
-
-  // Create new playlist
-  const handleCreatePlaylist = async () => {
-    if (!newPlaylistName.trim()) return;
-
-    try {
-      const newPlaylist = await playlists.createPlaylist(newPlaylistName);
-      setNewPlaylistName('');
-      setShowNewPlaylistDialog(false);
-      // Auto-select the new playlist
-      if (newPlaylist && newPlaylist.id) {
-        await playlists.setCurrentPlaylist(newPlaylist.id);
-      }
-    } catch (err) {
-      alert('Failed to create playlist');
-    }
-  };
-
-  // Delete playlist
-  const handleDeletePlaylist = async (playlistId) => {
-    console.log('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
-    try {
-      await playlists.deletePlaylist(playlistId);
-
-      // Clear saved playlist if we deleted it
-      if (localStorage.getItem('vplayer_last_playlist') === playlistId) {
-        localStorage.removeItem('vplayer_last_playlist');
-      }
-    } catch (err) {
-      alert('Failed to delete playlist');
-    }
-  };
-
-  // Switch to playlist
-  const handleSelectPlaylist = (playlistId) => {
-    playlists.setCurrentPlaylist(playlistId);
-  };
+  }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, playlists.currentPlaylist, draggedIndex, handleDragStart, handleDragOver, handleDrop]);
 
   // Close context menu on outside click
   useEffect(() => {
