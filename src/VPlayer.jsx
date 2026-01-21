@@ -350,7 +350,7 @@ const VPlayerInner = () => {
   }, [libraryFolders]);
 
   const windowConfigs = useWindowConfigs({
-    currentTrack, tracks, filteredTracks, playing, progress, duration, volume,
+    currentTrack, tracks: playbackTracks, filteredTracks, playing, progress, duration, volume,
     currentColors, shuffle, repeatMode, audio, playerHook, setPlaying,
     setShuffle, setRepeatMode, toggleWindow: toggleWindowWithResize, setCurrentTrack, removeTrack,
     libraryFolders, isScanning, scanProgress, scanCurrent, scanTotal,
@@ -397,60 +397,64 @@ const VPlayerInner = () => {
           onDismiss={updater.dismissUpdate}
           currentColors={currentColors}
         />
-      )}
+      )
+      }
 
-      {miniPlayerMode ? (
-        <div className="fixed top-4 right-4 z-[100]">
-          <MiniPlayerWindow
-            currentTrack={currentTrack}
-            tracks={tracks}
-            playing={playing}
-            progress={progress}
-            duration={duration}
-            volume={volume}
-            togglePlay={() => setPlaying(p => !p)}
-            nextTrack={playerHook.handleNextTrack}
-            prevTrack={playerHook.handlePrevTrack}
-            onMaximize={() => setMiniPlayerMode(false)}
-            onClose={() => setMiniPlayerMode(false)}
-            currentColors={currentColors}
-            isMuted={audio.isMuted}
-            toggleMute={playerHook.handleToggleMute}
-          />
-        </div>
-      ) : (
-        <>
-          <WindowManager
-            windowConfigs={windowConfigs}
-            windows={windows}
-            currentColors={currentColors}
-            bringToFront={bringToFront}
-            setWindows={setWindowsWithResize}
-            toggleWindow={toggleWindowWithResize}
-            windowOpacity={windowOpacity}
-            updateWindow={updateWindowWithResize}
-          />
-          <ThemeEditorWindow
-            isOpen={themeEditorOpen}
-            onClose={() => setThemeEditorOpen(false)}
-            currentColors={currentColors}
-            colorSchemes={colorSchemes}
-            onSaveTheme={saveCustomTheme}
-            onDeleteTheme={deleteCustomTheme}
-            onApplyTheme={applyCustomTheme}
-          />
-        </>
-      )}
+      {
+        miniPlayerMode ? (
+          <div className="fixed top-4 right-4 z-[100]" >
+            <MiniPlayerWindow
+              currentTrack={currentTrack}
+              tracks={playbackTracks}
+              playing={playing}
+              progress={progress}
+              duration={duration}
+              volume={volume}
+              togglePlay={() => setPlaying(p => !p)}
+              nextTrack={playerHook.handleNextTrack}
+              prevTrack={playerHook.handlePrevTrack}
+              onMaximize={() => setMiniPlayerMode(false)}
+              onClose={() => setMiniPlayerMode(false)}
+              currentColors={currentColors}
+              isMuted={audio.isMuted}
+              toggleMute={playerHook.handleToggleMute}
+            />
+          </div >
+        ) : (
+          <>
+            <WindowManager
+              windowConfigs={windowConfigs}
+              windows={windows}
+              currentColors={currentColors}
+              bringToFront={bringToFront}
+              setWindows={setWindowsWithResize}
+              toggleWindow={toggleWindowWithResize}
+              windowOpacity={windowOpacity}
+              updateWindow={updateWindowWithResize}
+            />
+            <ThemeEditorWindow
+              isOpen={themeEditorOpen}
+              onClose={() => setThemeEditorOpen(false)}
+              currentColors={currentColors}
+              colorSchemes={colorSchemes}
+              onSaveTheme={saveCustomTheme}
+              onDeleteTheme={deleteCustomTheme}
+              onApplyTheme={applyCustomTheme}
+            />
+          </>
+        )}
 
       {/* Onboarding for first-time users */}
-      {showOnboarding && (
-        <OnboardingWindow
-          onComplete={() => setShowOnboarding(false)}
-          onAddFolder={handleAddFolder}
-          currentColors={currentColors}
-        />
-      )}
-    </AppContainer>
+      {
+        showOnboarding && (
+          <OnboardingWindow
+            onComplete={() => setShowOnboarding(false)}
+            onAddFolder={handleAddFolder}
+            currentColors={currentColors}
+          />
+        )
+      }
+    </AppContainer >
   );
 };
 

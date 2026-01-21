@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES, STORAGE_KEYS } from '../utils/constants';
 import { useReplayGain } from './useReplayGain';
+import { useStore } from '../store/useStore';
 
-export function useTrackLoading({ 
-  audio, 
-  tracks, 
+export function useTrackLoading({
+  audio,
+  tracks,
   currentTrack,
   playing,
   setDuration,
@@ -19,14 +20,14 @@ export function useTrackLoading({
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
   const lastToastTrackId = useRef(null);
   const shouldRestorePosition = useRef(true); // Track if we should restore position on next load
-  
+
   // ReplayGain hook for volume normalization
   const replayGain = useReplayGain();
 
   // Restore last played track on mount
   useEffect(() => {
     if (hasRestoredTrack || tracks.length === 0) return;
-    
+
     const savedTrackId = localStorage.getItem('vplayer_last_track');
     if (savedTrackId) {
       const trackIndex = tracks.findIndex(t => t.id === savedTrackId);
@@ -40,39 +41,54 @@ export function useTrackLoading({
   // Load track when currentTrack changes
   useEffect(() => {
     const loadTrack = async () => {
-      if (currentTrack !== null && tracks[currentTrack]) {
-        const track = tracks[currentTrack];
-        
+      // CRITICAL FIX: Get fresh tracks from store to avoid React render race conditions
+      // When clicking a playlist track, store updates immediately but props might be stale
+      const state = useStore.getState();
+      const activeTracks = state.activePlaybackTracks;
+
+      // Use fresh active tracks if available, otherwise fall back to props (Library)
+      const currentTracks = activeTracks && activeTracks.length > 0 ? activeTracks : tracks;
+
+      if (currentTrack !== null && currentTracks[currentTrack]) {
+        const track = currentTracks[currentTrack];
+
+        // Defensive: validate track has a path before loading
+        if (!track.path || typeof track.path !== 'string') {
+          console.error('[useTrackLoading] Track is missing path:', track);
+          toast.showError('Cannot play track: invalid file path');
+          return;
+        }
+
         // Don't reload if already loaded
         if (loadedTrackId === track.id) {
           // Position will be saved by the separate progress effect
           return;
         }
-        
+
         // Save last played track
         localStorage.setItem('vplayer_last_track', track.id);
-        
+
         // Check if we should restore position for this track
         const savedTrackId = localStorage.getItem('vplayer_last_track');
         const shouldRestore = shouldRestorePosition.current && track.id === savedTrackId;
-        
+
         if (!shouldRestore) {
           // Reset position only if not restoring
           localStorage.setItem('vplayer_last_position', '0');
         }
-        
+
         console.log('Loading track:', track.name);
         setLoadingTrackIndex(currentTrack);
-        
+
         try {
           await audio.loadTrack(track);
           setLoadedTrackId(track.id);
           setLoadingTrackIndex(null);
           setDuration(track.duration || 0);
-          
+
           // Apply ReplayGain if enabled
           await replayGain.applyReplayGain(track);
-          
+
           // Restore last position if we should
           const savedTrackId = localStorage.getItem('vplayer_last_track');
           if (shouldRestorePosition.current && track.id === savedTrackId) {
@@ -87,12 +103,12 @@ export function useTrackLoading({
             // Mark that we've restored, so subsequent track changes don't restore
             shouldRestorePosition.current = false;
           }
-          
+
           // Auto-play if playing state is true
           if (playing) {
             await audio.play();
           }
-          
+
           // Only show toast if we haven't already shown it for this track
           if (lastToastTrackId.current !== track.id) {
             toast.showSuccess(`Now playing: ${track.title || track.name}`, 2000);
@@ -102,10 +118,10 @@ export function useTrackLoading({
           console.error('Failed to load track:', err);
           setLoadingTrackIndex(null);
           setLoadedTrackId(null);
-          
+
           // Check if this is a decode error (corrupted file)
           const isDecodeError = err.message && err.message.includes('Decode error');
-          
+
           // Get user preferences
           const preferences = (() => {
             try {
@@ -115,7 +131,7 @@ export function useTrackLoading({
               return DEFAULT_PREFERENCES;
             }
           })();
-          
+
           if (isDecodeError && preferences.autoRemoveCorruptedFiles) {
             // Show confirmation dialog if enabled
             if (preferences.confirmCorruptedFileRemoval) {
@@ -124,20 +140,20 @@ export function useTrackLoading({
                 `Would you like to remove it from your library?\n\n` +
                 `(You can disable this prompt in Settings)`
               );
-              
+
               if (!confirmed) {
                 toast.showError(`Failed to load track: ${track.name}`);
                 return;
               }
             }
-            
+
             toast.showWarning(`${ERROR_MESSAGES.CORRUPTED_FILE_DETECTED}: ${track.name}`, 4000);
-            
+
             // Remove the corrupted track from the database
             try {
               await removeTrack(track.id);
               console.log('Removed corrupted track:', track.name);
-              
+
               // Skip to next track if there are more tracks
               if (tracks.length > 1 && handleNextTrack) {
                 setTimeout(() => {
@@ -158,7 +174,7 @@ export function useTrackLoading({
         }
       }
     };
-    
+
     loadTrack();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack, loadedTrackId]);

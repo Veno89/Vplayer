@@ -3,6 +3,13 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.5] - 2026-01-21
+
+### Fixed
+- **Playlist Navigation**: Fixed player ignoring playlist sort order when skipping tracks
+- **Track Selection**: Fixed clicking a track playing the wrong song due to race conditions
+- **Player UI**: Fixed player window showing metadata for the wrong track index when playing from sorted playlists
+
 ## [0.9.4] - 2026-01-21
 
 ### Added

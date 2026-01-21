@@ -67,6 +67,11 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
   const addToQueue = useStore(state => state.addToQueue);
   const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
   const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
+  const getCurrentTrackData = useStore(state => state.getCurrentTrackData);
+  const activePlaybackTracks = useStore(state => state.activePlaybackTracks);
+
+  // Track the previous displayTracks to detect sort/filter changes
+  const prevDisplayTracksRef = useRef(null);
 
   // Listen for global track drop events from VPlayer (internal library drops)
   useEffect(() => {
@@ -217,7 +222,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
       // Use setTimeout to ensure React state update completes before track loads
       setTimeout(() => {
         setCurrentTrack(filteredIndex);
-      }, 0);
+      }, 50);
     } else {
       // Fallback if no playlist context (shouldn't happen in PlaylistWindow)
       setCurrentTrack(filteredIndex);
@@ -242,6 +247,55 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
       trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
     }
   }, [displayCurrentTrack, playlistAutoScroll]);
+
+  // CRITICAL: Sync activePlaybackTracks when displayTracks changes (sorting/filtering)
+  // This ensures next/previous navigation respects the visible playlist order
+  useEffect(() => {
+    // Skip if no active track or no callback
+    if (currentTrack === null || currentTrack === undefined) return;
+    if (!onActiveTracksChange) return;
+
+    // Check if displayTracks actually changed (not just a re-render)
+    const prevTracks = prevDisplayTracksRef.current;
+
+    // On first render (prevTracks is null), just initialize and return
+    if (prevTracks === null) {
+      prevDisplayTracksRef.current = displayTracks;
+      return;
+    }
+
+    const tracksChanged = prevTracks !== displayTracks &&
+      (prevTracks.length !== displayTracks.length ||
+        prevTracks.some((t, i) => t?.id !== displayTracks[i]?.id));
+
+    if (!tracksChanged) {
+      prevDisplayTracksRef.current = displayTracks;
+      return;
+    }
+
+    // Get the currently playing track from the store
+    const currentlyPlayingTrack = getCurrentTrackData();
+    if (!currentlyPlayingTrack) {
+      prevDisplayTracksRef.current = displayTracks;
+      return;
+    }
+
+    // Find where this track is in the new displayTracks order
+    const newIndex = displayTracks.findIndex(t => t?.id === currentlyPlayingTrack.id);
+
+    // Update the active playback tracks to match the new display order
+    onActiveTracksChange(displayTracks);
+
+    // Remap the current track index if the track is still in the list
+    if (newIndex !== -1 && newIndex !== currentTrack) {
+      // Use setTimeout to ensure state update ordering
+      setTimeout(() => {
+        setCurrentTrack(newIndex);
+      }, 0);
+    }
+
+    prevDisplayTracksRef.current = displayTracks;
+  }, [displayTracks, currentTrack, onActiveTracksChange, getCurrentTrackData, setCurrentTrack]);
 
   // Manual scroll to current track
   const scrollToCurrentTrack = useCallback(() => {
