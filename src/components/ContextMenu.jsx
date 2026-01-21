@@ -1,48 +1,85 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Play, Pause, Plus, Trash2, Edit3, Copy, Info, Star, 
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Play, Pause, Plus, Trash2, Edit3, Copy, Info, Star,
   Music, FolderOpen, ListPlus, Eye, EyeOff, ListEnd, RotateCcw
 } from 'lucide-react';
 import { TauriAPI } from '../services/TauriAPI';
 
 export function ContextMenu({ x, y, items, onClose }) {
   const menuRef = useRef(null);
+  const [position, setPosition] = useState({ x, y });
+
+  // Update position when props change
+  useEffect(() => {
+    setPosition({ x, y });
+  }, [x, y]);
+
+  useLayoutEffect(() => {
+    if (menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      let newX = x;
+      let newY = y;
+
+      // Horizontal check (right edge)
+      if (newX + rect.width > window.innerWidth) {
+        newX = Math.max(0, x - rect.width);
+      }
+
+      // Vertical check (bottom edge)
+      if (newY + rect.height > window.innerHeight) {
+        newY = Math.max(0, y - rect.height);
+      }
+
+      setPosition({ x: newX, y: newY });
+    }
+  }, [x, y, items]);
 
   useEffect(() => {
+    // ... (existing handlers)
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         onClose();
       }
     };
-
+    // ...
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         onClose();
       }
     };
 
+    // Block scroll on body while menu is open to prevent detaching
+    // or we can attach listener to reposition? For now, close on scroll.
+    const handleScroll = () => {
+      // Optional: Close on scroll?
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleEscape);
+    window.addEventListener('scroll', handleScroll, true);
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('scroll', handleScroll, true);
     };
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[10000] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl py-2 min-w-[200px]"
-      style={{ 
-        left: `${x}px`, 
-        top: `${y}px`,
+      className="fixed z-[10000] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl py-2 min-w-[200px] text-white"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
         maxHeight: '400px',
         overflowY: 'auto'
       }}
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((item, index) => {
+        // ... (existing items map)
         if (item.type === 'separator') {
           return <div key={index} className="h-px bg-slate-700 my-2" />;
         }
@@ -59,8 +96,8 @@ export function ContextMenu({ x, y, items, onClose }) {
             className={`
               w-full flex items-center gap-3 px-4 py-2 text-sm text-left
               transition-colors
-              ${item.disabled 
-                ? 'text-slate-500 cursor-not-allowed' 
+              ${item.disabled
+                ? 'text-slate-500 cursor-not-allowed'
                 : 'text-white hover:bg-slate-700 cursor-pointer'
               }
               ${item.danger ? 'hover:bg-red-600/20 hover:text-red-400' : ''}
@@ -74,41 +111,39 @@ export function ContextMenu({ x, y, items, onClose }) {
           </button>
         );
       })}
-    </div>
+    </div>,
+    document.body
   );
 }
 
 // Track context menu items generator
-export function getTrackContextMenuItems({ 
-  track, 
-  onPlay, 
-  onAddToQueue, 
-  onPlayNext,
-  onAddToPlaylist, 
-  onRemove, 
-  onEditTags, 
+// Track context menu items generator
+export function getTrackContextMenuItems({
+  track,
+  onPlay,
+  onAddToQueue,
+  // onPlayNext removed
+  onAddToPlaylist,
+  onRemove,
+  // onEditTags removed (merged into onShowInfo)
   onShowInfo,
   onSetRating,
-  onResetPlayCount,
   currentTrack,
+  isPlaylist = false,
 }) {
-  return [
+  const items = [
     {
       icon: Play,
       label: 'Play Now',
       onClick: onPlay,
     },
     {
-      icon: ListEnd,
-      label: 'Play Next',
-      onClick: onPlayNext,
-    },
-    {
       icon: Plus,
       label: 'Add to Queue',
       onClick: onAddToQueue,
     },
-    {
+    // Only show "Add to Playlist" if NOT in a playlist
+    !isPlaylist && {
       icon: ListPlus,
       label: 'Add to Playlist...',
       onClick: onAddToPlaylist,
@@ -122,14 +157,9 @@ export function getTrackContextMenuItems({
       onClick: onSetRating,
     },
     {
-      icon: Edit3,
-      label: 'Edit Tags',
-      onClick: onEditTags,
-    },
-    {
       icon: Info,
-      label: 'Show Info',
-      onClick: onShowInfo,
+      label: 'Track Info & Editor',
+      onClick: onShowInfo, // Merged handler
     },
     {
       type: 'separator'
@@ -152,31 +182,19 @@ export function getTrackContextMenuItems({
         }
       },
     },
-    {
-      icon: RotateCcw,
-      label: 'Reset Play Count',
-      onClick: async () => {
-        if (onResetPlayCount) {
-          onResetPlayCount(track.id);
-        } else {
-          try {
-            await TauriAPI.resetPlayCount(track.id);
-          } catch (err) {
-            console.error('Failed to reset play count:', err);
-          }
-        }
-      },
-    },
+    // Removed Reset Play Count
     {
       type: 'separator'
     },
     {
       icon: Trash2,
-      label: 'Remove from Library',
+      label: isPlaylist ? 'Remove from Playlist' : 'Remove from Library',
       onClick: onRemove,
       danger: true,
     },
   ];
+
+  return items.filter(Boolean); // Filter out false/null values
 }
 
 // Playlist context menu items generator

@@ -34,7 +34,8 @@ const TrackRow = React.memo(({ data, index, style }) => {
     // Multi-select
     selectedIndices = new Set(),
     onToggleSelect,
-    isMultiSelectMode = false
+    isMultiSelectMode = false,
+    columnWidths, // New
   } = data;
 
   const track = tracks[index];
@@ -118,7 +119,10 @@ const TrackRow = React.memo(({ data, index, style }) => {
 
       {/* Track Number */}
       {showNumber && (
-        <span className="w-10 text-center text-slate-500 text-xs">
+        <span
+          className="text-center text-slate-500 text-xs flex-shrink-0"
+          style={{ width: columnWidths?.number || 40 }}
+        >
           {isLoading ? (
             <Loader className="w-3 h-3 animate-spin mx-auto" />
           ) : (
@@ -128,27 +132,43 @@ const TrackRow = React.memo(({ data, index, style }) => {
       )}
 
       {/* Title */}
-      <span className="flex-1 truncate font-medium" title={track.title || 'Unknown'}>
+      <span
+        className="truncate font-medium px-1"
+        style={{ width: columnWidths?.title || 200, minWidth: 80 }}
+        title={track.title || 'Unknown'}
+      >
         {track.title || 'Unknown'}
       </span>
 
       {/* Artist */}
       {showArtist && (
-        <span className="w-40 truncate text-slate-400" title={track.artist || 'Unknown Artist'}>
+        <span
+          className="truncate text-slate-400 px-1"
+          style={{ width: columnWidths?.artist || 160 }}
+          title={track.artist || 'Unknown Artist'}
+        >
           {track.artist || 'Unknown Artist'}
         </span>
       )}
 
       {/* Album */}
       {showAlbum && (
-        <span className="w-40 truncate text-slate-500 hidden lg:block" title={track.album || 'Unknown Album'}>
+        <span
+          className="truncate text-slate-500 hidden lg:block px-1"
+          style={{ width: columnWidths?.album || 160 }}
+          title={track.album || 'Unknown Album'}
+        >
           {track.album || 'Unknown Album'}
         </span>
       )}
 
       {/* Rating */}
       {showRating && (
-        <span className="w-24 flex justify-center" onClick={(e) => e.stopPropagation()}>
+        <span
+          className="flex justify-center px-1"
+          style={{ width: columnWidths?.rating || 100 }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <StarRating
             rating={track.rating || 0}
             onRatingChange={handleRatingChange}
@@ -159,8 +179,11 @@ const TrackRow = React.memo(({ data, index, style }) => {
 
       {/* Duration */}
       {showDuration && (
-        <span className="w-16 text-right text-slate-400">
-          {track.duration ? formatDuration(track.duration) : '0:00'}
+        <span
+          className="text-right px-1 text-slate-400"
+          style={{ width: columnWidths?.duration || 64 }}
+        >
+          {track.duration ? formatDuration(track.duration) : '--:--'}
         </span>
       )}
 
@@ -198,7 +221,20 @@ const TrackRow = React.memo(({ data, index, style }) => {
   const prevTrack = prevProps.data.tracks[prevProps.index];
   const nextTrack = nextProps.data.tracks[nextProps.index];
 
+  // Compare columnWidths object
+  const prevWidths = prevProps.data.columnWidths;
+  const nextWidths = nextProps.data.columnWidths;
+  const widthsEqual = prevWidths === nextWidths || (
+    prevWidths?.number === nextWidths?.number &&
+    prevWidths?.title === nextWidths?.title &&
+    prevWidths?.artist === nextWidths?.artist &&
+    prevWidths?.album === nextWidths?.album &&
+    prevWidths?.rating === nextWidths?.rating &&
+    prevWidths?.duration === nextWidths?.duration
+  );
+
   return (
+    widthsEqual &&
     prevProps.index === nextProps.index &&
     prevProps.style === nextProps.style &&
     prevTrack?.id === nextTrack?.id &&
@@ -218,6 +254,7 @@ const TrackRow = React.memo(({ data, index, style }) => {
 
 TrackRow.displayName = 'TrackRow';
 
+// Force HMR update
 /**
  * Virtualized track list component with keyboard navigation and multi-select
  */
@@ -247,6 +284,7 @@ export const TrackList = React.forwardRef(function TrackList({
   selectedIndices,
   onSelectionChange,
   onBatchAction, // Callback when batch action is requested
+  columnWidths, // New prop
 }, ref) {
   const [focusedIndex, setFocusedIndex] = useState(currentTrack ?? 0);
   const [localSelectedIndices, setLocalSelectedIndices] = useState(new Set());
@@ -426,7 +464,7 @@ export const TrackList = React.forwardRef(function TrackList({
     }
   }, [tracks, focusedIndex, onSelect, onPlayTrack, enableMultiSelect, handleToggleSelect, isMultiSelectMode, actualSelectedIndices, onBatchAction, setActualSelectedIndices]);
 
-  const itemData = {
+  const itemData = React.useMemo(() => ({
     tracks,
     currentTrack,
     onSelect,
@@ -441,6 +479,7 @@ export const TrackList = React.forwardRef(function TrackList({
     draggedIndex,
     focusedIndex,
     showRating,
+    columnWidths, // New prop
     showAlbum,
     showArtist,
     showNumber,
@@ -448,7 +487,31 @@ export const TrackList = React.forwardRef(function TrackList({
     selectedIndices: actualSelectedIndices,
     onToggleSelect: enableMultiSelect ? handleToggleSelect : undefined,
     isMultiSelectMode
-  };
+  }), [
+    tracks,
+    currentTrack,
+    onSelect,
+    currentColors,
+    loadingTrackIndex,
+    onRatingChange,
+    onShowMenu,
+    isDraggable,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    draggedIndex,
+    focusedIndex,
+    showRating,
+    columnWidths,
+    showAlbum,
+    showArtist,
+    showNumber,
+    showDuration,
+    actualSelectedIndices,
+    enableMultiSelect,
+    handleToggleSelect,
+    isMultiSelectMode
+  ]);
 
   return (
     <div
@@ -502,6 +565,7 @@ export const TrackList = React.forwardRef(function TrackList({
       )}
       <ListVirtual
         ref={listRef}
+        key={columnWidths ? JSON.stringify(columnWidths) : 'default'}
         height={isMultiSelectMode && actualSelectedIndices.size > 0
           ? (height || 300) - 44
           : (height || 300)}

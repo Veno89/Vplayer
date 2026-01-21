@@ -19,6 +19,9 @@ class TauriAPIService {
     private _log(method: string, params: any, result: any, error?: any) {
         if (!this.debug) return;
 
+        // Filter out noisy logs
+        if (method === 'get_visualizer_data' || method === 'get_position' || method === 'get_duration') return;
+
         if (error) {
             console.error(`[TauriAPI] ${method} failed:`, { params, error });
         } else {

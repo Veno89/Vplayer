@@ -180,7 +180,6 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       onMouseDown={(e) => {
         // Don't stopPropagation if clicking on a draggable element (let drag work)
         const isDraggable = e.target.draggable || e.target.closest('[draggable="true"]');
-        console.log('[Window] onMouseDown - isDraggable:', isDraggable, 'target:', e.target.className);
         if (isDraggable) {
           // Don't bringToFront here - causes re-render that cancels drag!
           return;

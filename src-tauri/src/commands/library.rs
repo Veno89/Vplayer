@@ -15,13 +15,7 @@ pub async fn scan_folder(
     // Scan with progress events and database for failed tracks tracking
     let tracks = Scanner::scan_directory(&folder_path, Some(&window), None, Some(&state.db))?;
     
-    info!("Scan complete, adding {} tracks to database", tracks.len());
-    // Save tracks to database
-    for track in &tracks {
-        state.db.add_track(track).map_err(|e| e.to_string())?;
-    }
-    
-    // Save folder info
+    // Save folder info FIRST to ensure it exists even if track saving fails partiallly
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -35,8 +29,24 @@ pub async fn scan_folder(
         .unwrap_or(&folder_path)
         .to_string();
     
-    state.db.add_folder(&folder_id, &folder_path, &folder_name, now)
-        .map_err(|e| e.to_string())?;
+    if let Err(e) = state.db.add_folder(&folder_id, &folder_path, &folder_name, now) {
+        log::error!("Failed to add folder to database: {}", e);
+        // We continue anyway, hoping tracks will be added, but they might be orphaned if logic depends on folder?
+        // Actually tracks have `path` but no `folder_id` column in DB (from schema check).
+        // Folder association is by path prefix. So it's fine.
+    }
+
+    info!("Scan complete, adding {} tracks to database", tracks.len());
+    // Save tracks to database in a transaction if possible, or just loop
+    // To safe guard against "0 tracks" if we abort, we just log errors instead of aborting the whole function?
+    // User requested "0 folders" fix.
+    
+    for track in &tracks {
+        if let Err(e) = state.db.add_track(track) {
+             log::warn!("Failed to add track {}: {}", track.path, e);
+             // Continue adding other tracks
+        }
+    }
     
     Ok(tracks)
 }

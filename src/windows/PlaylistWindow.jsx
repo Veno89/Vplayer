@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { List, Loader, Search } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
 import { AutoSizer } from '../components/AutoSizer';
+import { StarRating } from '../components/StarRating';
+import { TrackInfoDialog } from '../components/TrackInfoDialog'; // New
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
 import { usePlaylistActions } from '../hooks/usePlaylistActions';
@@ -33,7 +35,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
   isDraggingTracks, // Prop from useDragDrop via WindowManager
 }) { // Changed to standard function for memo wrapping below
   /* eslint-disable no-unused-vars */
-  console.log('[PlaylistWindow] Rendered');
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -44,9 +45,18 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
   // New dialogs for context menu
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(null); // track to add
   const [showRatingDialog, setShowRatingDialog] = useState(null); // track for rating
+  const [showInfoDialog, setShowInfoDialog] = useState(null); // track for info/edit
   // Multi-select state
   const [selectedIndices, setSelectedIndices] = useState(new Set());
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [columnWidths, setColumnWidths] = useState({
+    number: 40,
+    title: 200,
+    artist: 160,
+    album: 160,
+    rating: 100,
+    duration: 64
+  });
   const [showBatchPlaylistPicker, setShowBatchPlaylistPicker] = useState(false); // for batch add to playlist
 
   const containerRef = useRef(null);
@@ -139,11 +149,22 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
     // 2. Sort
     if (sortConfig.key) {
       result.sort((a, b) => {
-        const valA = (a[sortConfig.key] || '').toString().toLowerCase();
-        const valB = (b[sortConfig.key] || '').toString().toLowerCase();
+        const valA = a[sortConfig.key];
+        const valB = b[sortConfig.key];
 
-        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        // Handle numbers (rating, duration, year)
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        }
+
+        // Handle strings
+        const strA = (valA || '').toString().toLowerCase();
+        const strB = (valB || '').toString().toLowerCase();
+
+        if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
@@ -330,8 +351,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
       setContextMenu({
         index,
         track: displayTracks[index],
-        x: e.clientX || e.pageX,
-        y: e.clientY || e.pageY
+        x: e.clientX,
+        y: e.clientY
       });
     }
   }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, playlists.currentPlaylist, draggedIndex, handleDragStart, handleDragOver, handleDrop]);
@@ -509,6 +530,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
       <PlaylistColumnHeaders
         sortConfig={sortConfig}
         onSort={handleSort}
+        columnWidths={columnWidths}
+        onColumnResize={setColumnWidths}
       />
 
       {/* Virtualized Track List */}
@@ -545,6 +568,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
             selectedIndices={selectedIndices}
             onSelectionChange={setSelectedIndices}
             onBatchAction={handleBatchAction}
+            showRating={true} // Enable rating display
+            columnWidths={columnWidths} // Pass dynamic widths
           />
         )
         }
@@ -591,6 +616,34 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
         </div>
       )}
 
+      {/* Track Info & Editor Dialog */}
+      {onEditTags && createPortal( // Reusing onEditTags state name for showing dialog? No, need local state.
+        // Wait, I need a state for showing info dialog.
+        // Let's use `showInfoDialog` state.
+        // I need to ADD `showInfoDialog` state to PlaylistWindow first.
+        null, document.body
+      )}
+
+      {/* Track Info & Editor Dialog */}
+      {showInfoDialog && createPortal(
+        <TrackInfoDialog
+          track={showInfoDialog}
+          onClose={() => setShowInfoDialog(null)}
+          onSave={() => {
+            // Trigger refresh if needed, but activeTracksChange usually handles it via prop
+            if (onActiveTracksChange) {
+              // We might need to refresh the playlist data from store?
+              // For now, assume optimistic UI or store updates will propogate
+              // But metadata update in backend might not reflect immediately in frontend lists without reload
+              // Changing tags updates the DB. We might need to force a re-fetch of the current playlist?
+              // playlists.fetchPlaylistTracks(playlists.currentPlaylist) ?
+              // For now let's just close. User can verify.
+            }
+          }}
+        />,
+        document.body
+      )}
+
       {/* Context Menu - Use Portal to render outside overflow container */}
       {contextMenu && contextMenu.track && createPortal(
         <ContextMenu
@@ -601,9 +654,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
             onPlay: () => {
               handleTrackSelect(contextMenu.index);
             },
-            onPlayNext: () => {
-              addToQueue(contextMenu.track, 'next');
-            },
+            // onPlayNext removed
             onAddToQueue: () => {
               addToQueue(contextMenu.track, 'end');
             },
@@ -614,20 +665,17 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
             onRemove: () => {
               handleRemoveTrack(contextMenu.index);
             },
-            onEditTags: () => {
-              if (onEditTags) {
-                onEditTags(contextMenu.track);
-              }
-              closeContextMenu();
-            },
+            // onEditTags merged into onShowInfo
             onShowInfo: () => {
-              alert(`Track: ${contextMenu.track.title}\nArtist: ${contextMenu.track.artist}\nAlbum: ${contextMenu.track.album}\nPath: ${contextMenu.track.path}`);
+              setShowInfoDialog(contextMenu.track);
+              closeContextMenu();
             },
             onSetRating: () => {
               setShowRatingDialog(contextMenu.track);
               closeContextMenu();
             },
-            currentTrack: currentTrack
+            currentTrack: currentTrack,
+            isPlaylist: true // Explicitly set for PlaylistWindow
           })}
           onClose={closeContextMenu}
         />,

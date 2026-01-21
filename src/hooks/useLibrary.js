@@ -49,7 +49,8 @@ export function useLibrary() {
     refreshFolders
   } = useLibraryScanner({
     libraryFolders,
-    loadAllTracks: loadTracks // Alias for scanner usage
+    loadAllTracks: loadTracks, // Alias for scanner usage
+    loadAllFolders // Pass full reload function
   });
 
   // 4. Expose Unified API

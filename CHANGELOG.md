@@ -3,6 +3,22 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.4] - 2026-01-21
+
+### Added
+- **Resizable Playlist Columns**: All playlist columns (including #, Title, Artist, Album, Rating, Duration) are now resizable with Excel-like drag handles
+- **Functional Separators**: Column separators are always visible and respond to hover with cyan highlight
+
+### Fixed
+- **Library "0 Folders" Bug**: Fixed issue where added folders wouldn't appear in the library sidebar
+- **Playlist Crash**: Fixed `ReferenceError: isValidDuration is not defined` crash
+- **Duplicate Duration Column**: Removed duplicate duration display in playlist rows
+- **Column Resize Sync**: Fixed issue where resizing headers didn't update the playlist rows
+
+### Changed
+- All playlist columns now use fixed widths for consistent resizing behavior
+- Improved column resize handle visibility and grab area
+
 ## [0.9.3] - 2026-01-21
 
 ### Changed

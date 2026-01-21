@@ -13,7 +13,7 @@ import { useStore } from '../../store/useStore';
  * @param {Array} libraryData.libraryFolders - Current library folders
  * @param {Function} libraryData.loadAllTracks - Function to reload tracks
  */
-export function useLibraryScanner({ libraryFolders, loadAllTracks }) {
+export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolders }) {
     const autoScanOnStartup = useStore(state => state.autoScanOnStartup);
     const watchFolderChanges = useStore(state => state.watchFolderChanges);
 
@@ -197,8 +197,9 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks }) {
                 console.error('Failed to start folder watch:', err);
             }
 
-            // Reload tracks
+            // Reload tracks AND folders to ensure UI update
             await loadAllTracks();
+            if (loadAllFolders) await loadAllFolders();
         } catch (err) {
             console.error('Failed to scan new folder:', err);
         } finally {
