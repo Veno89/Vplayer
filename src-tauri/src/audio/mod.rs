@@ -1,135 +1,27 @@
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source, DeviceTrait};
-use rodio::source::SeekError;
-use rodio::cpal::traits::HostTrait;
-use rodio::cpal::{SampleFormat, FromSample};
+//! Audio playback module
+//!
+//! This module provides the main AudioPlayer struct and submodules for:
+//! - visualizer: Audio visualization buffer
+//! - effects: EQ and effects processing
+//! - device: Device detection and management
+
+pub mod visualizer;
+pub mod effects;
+pub mod device;
+
+use rodio::{Decoder, OutputStream, Sink, Source};
 use rodio::mixer::Mixer;
 use std::fs::File;
 use std::io::BufReader;
 use log::{info, error, warn};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::VecDeque;
-use serde::Serialize;
+
 use crate::error::{AppError, AppResult};
 use crate::effects::{EffectsConfig, EffectsProcessor};
-
-/// Ring buffer for visualizer samples - shared between audio thread and main thread
-pub struct VisualizerBuffer {
-    samples: VecDeque<f32>,
-    capacity: usize,
-}
-
-impl VisualizerBuffer {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            samples: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-    
-    /// Add a sample to the buffer (called from audio thread)
-    pub fn push(&mut self, sample: f32) {
-        if self.samples.len() >= self.capacity {
-            self.samples.pop_front();
-        }
-        self.samples.push_back(sample);
-    }
-    
-    /// Get a copy of current samples for visualization
-    pub fn get_samples(&self) -> Vec<f32> {
-        self.samples.iter().copied().collect()
-    }
-    
-    /// Clear the buffer
-    pub fn clear(&mut self) {
-        self.samples.clear();
-    }
-}
-
-/// EffectsSource wraps a Source and applies audio effects (EQ, etc.) to each sample
-struct EffectsSource<I>
-where
-    I: Source,
-    f32: FromSample<I::Item>,
-{
-    input: I,
-    processor: Arc<Mutex<EffectsProcessor>>,
-    visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
-    sample_rate_initialized: bool,
-}
-
-impl<I> Iterator for EffectsSource<I>
-where
-    I: Source,
-    f32: FromSample<I::Item>,
-{
-    type Item = f32;
-
-    fn next(&mut self) -> Option<f32> {
-        // Initialize effects processor with actual source sample rate on first sample
-        if !self.sample_rate_initialized {
-            let source_sample_rate = self.input.sample_rate();
-            if let Ok(mut processor) = self.processor.lock() {
-                processor.set_sample_rate(source_sample_rate);
-            }
-            self.sample_rate_initialized = true;
-        }
-        
-        self.input.next().map(|sample| {
-            // Convert sample to f32 first
-            let sample_f32: f32 = f32::from_sample_(sample);
-            
-            // Try to process through effects, but don't block or panic if lock unavailable
-            let processed = match self.processor.try_lock() {
-                Ok(mut processor) => processor.process(sample_f32),
-                Err(_) => {
-                    // Lock unavailable (contention) - pass through unprocessed
-                    // This prevents audio dropouts when EQ is being adjusted
-                    sample_f32
-                }
-            };
-            
-            // Send sample to visualizer buffer (don't block if lock fails)
-            if let Ok(mut buffer) = self.visualizer_buffer.try_lock() {
-                buffer.push(processed);
-            }
-            
-            processed
-        })
-    }
-}
-
-impl<I> Source for EffectsSource<I>
-where
-    I: Source,
-    f32: FromSample<I::Item>,
-{
-    fn current_span_len(&self) -> Option<usize> {
-        self.input.current_span_len()
-    }
-
-    fn channels(&self) -> u16 {
-        self.input.channels()
-    }
-
-    fn sample_rate(&self) -> u32 {
-        self.input.sample_rate()
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        self.input.total_duration()
-    }
-
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.input.try_seek(pos)
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AudioDevice {
-    pub name: String,
-    pub is_default: bool,
-}
+use visualizer::VisualizerBuffer;
+use effects::EffectsSource;
+pub use device::AudioDevice;
 
 /// Threshold for considering a pause "long" - after this duration, we proactively
 /// reinitialize the audio stream to prevent stale device issues
@@ -174,7 +66,7 @@ impl AudioPlayer {
         info!("Initializing audio player with high-quality settings");
         
         // Try to create output with optimal settings for quality
-        let (stream, mixer, device_name) = Self::create_high_quality_output_with_device_name()?;
+        let (stream, mixer, device_name) = device::create_high_quality_output_with_device_name()?;
         
         let sink = Sink::connect_new(&mixer);
         
@@ -205,123 +97,19 @@ impl AudioPlayer {
         })
     }
     
-    /// Create high quality output and return the device name we connected to
-    fn create_high_quality_output_with_device_name() -> AppResult<(OutputStream, Arc<Mixer>, Option<String>)> {
-        let host = rodio::cpal::default_host();
-        let device = host.default_output_device()
-            .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
-        
-        let device_name = device.name().ok();
-        info!("Using audio device: {:?}", device_name);
-        
-        // Try to get supported configs
-        let supported_configs = device.supported_output_configs()
-            .map_err(|e| AppError::Audio(format!("Failed to get supported configs: {}", e)))?;
-        
-        // Find the best config: prefer 32-bit float, highest sample rate
-        let best_config = supported_configs
-            .filter(|config| config.sample_format() == SampleFormat::F32)
-            .max_by_key(|config| config.max_sample_rate().0)
-            .or_else(|| {
-                // Fallback to any config if F32 not available
-                device.supported_output_configs()
-                    .ok()
-                    .and_then(|mut configs| configs.next())
-            })
-            .ok_or_else(|| AppError::Audio("No supported audio config found".to_string()))?;
-        
-        // Use maximum sample rate supported
-        let sample_rate = best_config.max_sample_rate();
-        let config_with_rate = best_config.with_sample_rate(sample_rate);
-        
-        info!("Using audio config: sample_rate={:?}, channels={}, format={:?}", 
-              config_with_rate.sample_rate(), 
-              config_with_rate.channels(),
-              config_with_rate.sample_format());
-        
-        // Create output stream
-        let stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|e| AppError::Audio(format!("Failed to create audio output: {}", e)))?;
-        let mixer = Arc::new(stream.mixer().clone());
-        
-        Ok((stream, mixer, device_name))
-    }
-    
     /// Check if the default audio device has changed since we connected
-    /// This detects when external DACs/headphones are disconnected/reconnected
     pub fn has_device_changed(&self) -> bool {
-        let host = rodio::cpal::default_host();
-        
-        // Get current default device name
-        let current_default = host.default_output_device()
-            .and_then(|d| d.name().ok());
-        
-        // Get the device we originally connected to
         let connected = self.connected_device_name.lock().unwrap().clone();
-        
-        // If we don't know what we connected to, assume it hasn't changed
-        if connected.is_none() {
-            return false;
-        }
-        
-        // Check if device changed
-        let changed = current_default != connected;
-        
-        if changed {
-            info!("Audio device changed: {:?} -> {:?}", connected, current_default);
-        }
-        
-        changed
+        device::has_device_changed(&connected)
     }
     
     /// Check if our connected audio device is still available
     pub fn is_device_available(&self) -> bool {
-        let host = rodio::cpal::default_host();
-        
-        // Check if there's any default output device
-        if host.default_output_device().is_none() {
-            warn!("No default audio output device available");
-            return false;
-        }
-        
-        // The device is available (even if it changed)
-        true
+        device::is_device_available()
     }
     
     pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
-        let host = rodio::cpal::default_host();
-        let mut devices = Vec::new();
-        
-        // Get default device name
-        let default_device = host.default_output_device();
-        let default_name = default_device
-            .as_ref()
-            .and_then(|d| d.name().ok())
-            .unwrap_or_else(|| "Default".to_string());
-        
-        // Enumerate all output devices
-        let output_devices = host.output_devices()
-            .map_err(|e| AppError::Audio(format!("Failed to enumerate devices: {}", e)))?;
-        
-        for device in output_devices {
-            if let Ok(name) = device.name() {
-                let is_default = name == default_name;
-                devices.push(AudioDevice {
-                    name,
-                    is_default,
-                });
-            }
-        }
-        
-        // If no devices found, add default
-        if devices.is_empty() {
-            devices.push(AudioDevice {
-                name: default_name,
-                is_default: true,
-            });
-        }
-        
-        Ok(devices)
+        device::get_audio_devices()
     }
     
     pub fn load(&self, path: String) -> AppResult<()> {
@@ -350,12 +138,11 @@ impl AudioPlayer {
         }
         
         // Wrap source with effects processor for EQ and visualizer
-        let effects_source = EffectsSource {
-            input: source,
-            processor: self.effects_processor.clone(),
-            visualizer_buffer: self.visualizer_buffer.clone(),
-            sample_rate_initialized: false,
-        };
+        let effects_source = EffectsSource::new(
+            source,
+            self.effects_processor.clone(),
+            self.visualizer_buffer.clone(),
+        );
         
         let sink = self.sink.lock().unwrap();
         sink.clear();
@@ -383,10 +170,10 @@ impl AudioPlayer {
             .map(|start| start.elapsed())
             .unwrap_or(Duration::ZERO);
         
-        // Also check time since last active audio (covers cases where pause_start wasn't set)
+        // Also check time since last active audio
         let time_since_active = self.last_active.lock().unwrap().elapsed();
         
-        // Check if the audio device has changed (e.g., external DAC disconnected/reconnected)
+        // Check if the audio device has changed
         let device_changed = self.has_device_changed();
         
         // Check if the device is even available
@@ -415,7 +202,7 @@ impl AudioPlayer {
             let volume = *self.last_volume.lock().unwrap();
             
             // Reinitialize audio output
-            match Self::create_high_quality_output_with_device_name() {
+            match device::create_high_quality_output_with_device_name() {
                 Ok((new_stream, new_mixer, new_device_name)) => {
                     info!("Audio stream reinitialized successfully on device: {:?}", new_device_name);
                     
@@ -440,7 +227,6 @@ impl AudioPlayer {
                     if let Some(path) = current_path {
                         info!("Reloading track after audio reinit: {}", path);
                         
-                        // Load the track fresh
                         if let Err(e) = self.load(path.clone()) {
                             error!("Failed to reload track after reinit: {}", e);
                             return Err(e);
@@ -450,7 +236,6 @@ impl AudioPlayer {
                         if current_position > 0.5 {
                             if let Err(e) = self.seek(current_position) {
                                 warn!("Failed to restore position after reinit: {}", e);
-                                // Continue anyway - better to play from start than not at all
                             }
                         }
                     }
@@ -516,13 +301,9 @@ impl AudioPlayer {
     }
     
     /// Set the ReplayGain adjustment in dB
-    /// Converts dB to linear multiplier and applies to current volume
     pub fn set_replaygain(&self, gain_db: f32, preamp_db: f32) -> AppResult<()> {
-        // Convert dB to linear multiplier: 10^(dB/20)
         let total_gain_db = gain_db + preamp_db;
         let multiplier = 10_f32.powf(total_gain_db / 20.0);
-        
-        // Clamp to reasonable range (prevent extreme amplification)
         let clamped_multiplier = multiplier.max(0.1).min(3.0);
         
         info!("Setting ReplayGain: {}dB + {}dB preamp = {}dB (multiplier: {:.3})", 
@@ -530,16 +311,13 @@ impl AudioPlayer {
         
         *self.replaygain_multiplier.lock().unwrap() = clamped_multiplier;
         
-        // Re-apply current volume with new multiplier
         let current_volume = *self.last_volume.lock().unwrap();
         self.set_volume(current_volume)
     }
     
-    /// Clear ReplayGain adjustment (reset to 1.0 multiplier)
+    /// Clear ReplayGain adjustment
     pub fn clear_replaygain(&self) {
         *self.replaygain_multiplier.lock().unwrap() = 1.0;
-        
-        // Re-apply current volume without ReplayGain
         let current_volume = *self.last_volume.lock().unwrap();
         let _ = self.set_volume(current_volume);
     }
@@ -549,8 +327,7 @@ impl AudioPlayer {
         *self.replaygain_multiplier.lock().unwrap()
     }
     
-    /// Set stereo balance
-    /// -1.0 = full left, 0.0 = center, 1.0 = full right
+    /// Set stereo balance (-1.0 = full left, 0.0 = center, 1.0 = full right)
     pub fn set_balance(&self, balance: f32) -> AppResult<()> {
         let clamped = balance.clamp(-1.0, 1.0);
         *self.balance.lock().unwrap() = clamped;
@@ -566,7 +343,6 @@ impl AudioPlayer {
     pub fn seek(&self, position: f64) -> AppResult<()> {
         info!("Seeking to position: {}s", position);
         
-        // Get current state before locking sink
         let current_pos = self.get_position();
         info!("Current position before seek: {}s, target: {}s", current_pos, position);
         
@@ -574,19 +350,15 @@ impl AudioPlayer {
         let was_playing = !sink.is_paused();
         let current_volume = sink.volume();
         
-        // Try to seek - rodio 0.19 supports this
         match sink.try_seek(Duration::from_secs_f64(position)) {
             Ok(_) => {
                 info!("Seek successful to {}s", position);
-                // Update timing: reset start time and adjust offset
                 let was_paused = sink.is_paused();
                 
-                // Reset timing state
                 *self.start_time.lock().unwrap() = Some(Instant::now());
                 *self.seek_offset.lock().unwrap() = Duration::from_secs_f64(position);
                 *self.paused_duration.lock().unwrap() = Duration::ZERO;
                 
-                // If paused, mark pause start
                 if was_paused {
                     *self.pause_start.lock().unwrap() = Some(Instant::now());
                 } else {
@@ -596,41 +368,33 @@ impl AudioPlayer {
                 Ok(())
             },
             Err(e) => {
-                // Direct seek failed (likely backward seek) - reload and seek forward
                 warn!("Direct seek failed: {:?}, attempting reload method", e);
                 
-                // Get the current file path
                 let path = self.current_path.lock().unwrap().clone();
                 let total_dur = *self.total_duration.lock().unwrap();
                 
                 if let Some(path) = path {
-                    // Drop the sink lock before reloading
                     drop(sink);
                     
                     info!("Reloading file for backward seek: {}", path);
                     
-                    // Reload the file
                     let file = File::open(&path)
                         .map_err(|e| AppError::NotFound(format!("Failed to open file: {}", e)))?;
                     
                     let source = Decoder::new(BufReader::new(file))
                         .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
                     
-                    // Wrap source with effects processor for EQ and visualizer
-                    let effects_source = EffectsSource {
-                        input: source,
-                        processor: self.effects_processor.clone(),
-                        visualizer_buffer: self.visualizer_buffer.clone(),
-                        sample_rate_initialized: false,
-                    };
+                    let effects_source = EffectsSource::new(
+                        source,
+                        self.effects_processor.clone(),
+                        self.visualizer_buffer.clone(),
+                    );
                     
-                    // Get a new lock on sink
                     let sink = self.sink.lock().unwrap();
                     sink.clear();
                     sink.append(effects_source);
                     sink.set_volume(current_volume);
                     
-                    // Now seek forward to the target position
                     if position > 0.0 {
                         match sink.try_seek(Duration::from_secs_f64(position)) {
                             Ok(_) => info!("Forward seek after reload successful to {}s", position),
@@ -638,13 +402,11 @@ impl AudioPlayer {
                         }
                     }
                     
-                    // Update state
                     *self.total_duration.lock().unwrap() = total_dur;
                     *self.start_time.lock().unwrap() = Some(Instant::now());
                     *self.seek_offset.lock().unwrap() = Duration::from_secs_f64(position);
                     *self.paused_duration.lock().unwrap() = Duration::ZERO;
                     
-                    // Resume playing if it was playing
                     if was_playing {
                         sink.play();
                         *self.pause_start.lock().unwrap() = None;
@@ -670,7 +432,6 @@ impl AudioPlayer {
             let paused = *self.paused_duration.lock().unwrap();
             let offset = *self.seek_offset.lock().unwrap();
             
-            // If currently paused, don't count time since pause started
             let additional_pause = if sink.is_paused() {
                 if let Some(pause_start) = *self.pause_start.lock().unwrap() {
                     pause_start.elapsed()
@@ -681,7 +442,6 @@ impl AudioPlayer {
                 Duration::ZERO
             };
             
-            // Position = offset (from seeks) + playing time (elapsed - paused time)
             let playing_time = elapsed.saturating_sub(paused + additional_pause);
             (offset + playing_time).as_secs_f64()
         } else {
@@ -694,9 +454,7 @@ impl AudioPlayer {
         let is_paused = sink.is_paused();
         let is_empty = sink.empty();
         
-        // Log unexpected empty state when not paused
         if is_empty && !is_paused {
-            // Check if we actually expected to be playing
             if self.start_time.lock().unwrap().is_some() && 
                self.current_path.lock().unwrap().is_some() {
                 warn!("Audio sink unexpectedly empty while track should be playing");
@@ -722,16 +480,18 @@ impl AudioPlayer {
     
     pub fn set_output_device(&self, device_name: &str) -> AppResult<()> {
         let host = rodio::cpal::default_host();
+        use rodio::cpal::traits::HostTrait;
         
-        // Find the device by name
         let mut output_devices = host.output_devices()
             .map_err(|e| AppError::Audio(format!("Failed to enumerate devices: {}", e)))?;
         
         let _device = output_devices
-            .find(|d| d.name().ok().as_deref() == Some(device_name))
+            .find(|d| {
+                use rodio::DeviceTrait;
+                d.name().ok().as_deref() == Some(device_name)
+            })
             .ok_or_else(|| AppError::NotFound(format!("Device '{}' not found", device_name)))?;
         
-        // Get current state before recreating
         let was_playing = self.is_playing();
         let current_position = self.get_position();
         let current_volume = {
@@ -740,31 +500,27 @@ impl AudioPlayer {
         };
         let current_path = self.current_path.lock().unwrap().clone();
         
-        // Create new stream and sink with the selected device
-        let _new_stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|e| AppError::Audio(format!("Failed to create output stream: {}", e)))?;
-        let new_mixer = _new_stream.mixer().clone();
+        let (new_stream, new_mixer, new_device_name) = device::create_high_quality_output_with_device_name()?;
         
         let new_sink = Sink::connect_new(&new_mixer);
-        
         new_sink.set_volume(current_volume);
         
-        // Replace the old sink and stream
+        *self._stream.lock().unwrap() = Some(new_stream);
+        *self.mixer.lock().unwrap() = Some(new_mixer);
+        *self.connected_device_name.lock().unwrap() = new_device_name;
+        
         {
             let mut sink = self.sink.lock().unwrap();
             *sink = new_sink;
         }
         
-        // Reload current track if there was one
         if let Some(path) = current_path {
             self.load(path)?;
             
-            // Restore position if there was one
             if current_position > 0.0 {
                 self.seek(current_position)?;
             }
             
-            // Resume playing if it was playing
             if was_playing {
                 self.play()?;
             }
@@ -783,18 +539,10 @@ impl AudioPlayer {
         let source = Decoder::new(BufReader::new(file))
             .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
         
-        // Get stream handle from current sink
-        let host = rodio::cpal::default_host();
-        let _device = host.default_output_device()
-            .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
+        let (_, new_mixer, _) = device::create_high_quality_output_with_device_name()?;
         
-        let _stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|e| AppError::Audio(format!("Failed to create stream: {}", e)))?;
-        let mixer = _stream.mixer().clone();
+        let new_sink = Sink::connect_new(&new_mixer);
         
-        let new_sink = Sink::connect_new(&mixer);
-        
-        // Copy volume from current sink
         let current_volume = {
             let sink = self.sink.lock().unwrap();
             sink.volume()
@@ -802,7 +550,7 @@ impl AudioPlayer {
         new_sink.set_volume(current_volume);
         
         new_sink.append(source);
-        new_sink.pause(); // Keep paused until we swap
+        new_sink.pause();
         
         *self.preload_sink.lock().unwrap() = Some(new_sink);
         *self.preload_path.lock().unwrap() = Some(path);
@@ -818,26 +566,22 @@ impl AudioPlayer {
         let mut preload_path = self.preload_path.lock().unwrap();
         
         if let (Some(new_sink), Some(new_path)) = (preload_sink.take(), preload_path.take()) {
-            // Stop current sink
             {
                 let sink = self.sink.lock().unwrap();
                 sink.stop();
             }
             
-            // Swap sinks
             {
                 let mut sink = self.sink.lock().unwrap();
                 *sink = new_sink;
             }
             
-            // Update state
             *self.current_path.lock().unwrap() = Some(new_path);
             *self.start_time.lock().unwrap() = Some(Instant::now());
             *self.seek_offset.lock().unwrap() = Duration::ZERO;
             *self.paused_duration.lock().unwrap() = Duration::ZERO;
             *self.pause_start.lock().unwrap() = None;
             
-            // Start playing
             let sink = self.sink.lock().unwrap();
             sink.play();
             
@@ -878,48 +622,37 @@ impl AudioPlayer {
     }
     
     /// Recover audio system after device disconnection or long idle
-    /// Returns true if recovery was successful
     pub fn recover(&self) -> AppResult<bool> {
         info!("Attempting audio system recovery...");
         
-        // Check if device is available
         if !self.is_device_available() {
             warn!("No audio device available for recovery");
             return Ok(false);
         }
         
-        // Save current state
         let current_path = self.current_path.lock().unwrap().clone();
         let current_position = self.get_position();
         let was_playing = self.is_playing();
         let volume = *self.last_volume.lock().unwrap();
         
-        // Try to recreate the audio output with device name tracking
-        match Self::create_high_quality_output_with_device_name() {
+        match device::create_high_quality_output_with_device_name() {
             Ok((new_stream, new_mixer, new_device_name)) => {
                 info!("Audio output recreated successfully on device: {:?}", new_device_name);
                 
-                // Create new sink
                 let new_sink = Sink::connect_new(&new_mixer);
                 new_sink.set_volume(volume);
                 
-                // Replace stream and mixer
                 *self._stream.lock().unwrap() = Some(new_stream);
                 *self.mixer.lock().unwrap() = Some(new_mixer);
-                
-                // Update connected device name
                 *self.connected_device_name.lock().unwrap() = new_device_name;
                 
-                // Replace sink
                 {
                     let mut sink = self.sink.lock().unwrap();
                     *sink = new_sink;
                 }
                 
-                // Update last active time
                 *self.last_active.lock().unwrap() = Instant::now();
                 
-                // Reload current track if there was one
                 if let Some(path) = current_path {
                     info!("Reloading track after recovery: {}", path);
                     if let Err(e) = self.load(path) {
@@ -927,14 +660,12 @@ impl AudioPlayer {
                         return Ok(false);
                     }
                     
-                    // Restore position
                     if current_position > 0.5 {
                         if let Err(e) = self.seek(current_position) {
                             warn!("Failed to restore position after recovery: {}", e);
                         }
                     }
                     
-                    // Resume if was playing
                     if was_playing {
                         if let Err(e) = self.play() {
                             warn!("Failed to resume playback after recovery: {}", e);
@@ -952,17 +683,14 @@ impl AudioPlayer {
         }
     }
     
-    /// Check if the audio system is healthy (sink is responsive)
+    /// Check if the audio system is healthy
     pub fn is_healthy(&self) -> bool {
-        // Try to access the sink - if this hangs or fails, system is unhealthy
         match self.sink.try_lock() {
             Ok(sink) => {
-                // Just check if we can read state without hanging
                 let _ = sink.is_paused();
                 true
             }
             Err(_) => {
-                // Lock is held for too long - might be stuck
                 warn!("Audio sink lock unavailable - system may be unhealthy");
                 false
             }
@@ -970,7 +698,6 @@ impl AudioPlayer {
     }
     
     /// Check how long the audio has been inactive/paused
-    /// Returns the duration in seconds
     pub fn get_inactive_duration(&self) -> f64 {
         let pause_duration = self.pause_start.lock().unwrap()
             .map(|start| start.elapsed())
@@ -978,13 +705,11 @@ impl AudioPlayer {
         
         let time_since_active = self.last_active.lock().unwrap().elapsed();
         
-        // Return the longer of the two
         pause_duration.max(time_since_active).as_secs_f64()
     }
     
-    /// Check if audio needs reinitialization (paused too long or device changed)
+    /// Check if audio needs reinitialization
     pub fn needs_reinit(&self) -> bool {
-        // Check for device changes first (external DAC reconnected, etc.)
         if self.has_device_changed() {
             return true;
         }
