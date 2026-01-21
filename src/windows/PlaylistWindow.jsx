@@ -1,13 +1,22 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { List, Trash2, MoreVertical, Loader, Plus, Edit2, X, Search, ArrowDown, ArrowUp, ArrowDownToLine, Star, Play } from 'lucide-react';
+import { List, Loader, Search } from 'lucide-react';
 import { TrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
 import { useStore } from '../store/useStore';
-import { StarRating } from '../components/StarRating';
 import { TauriAPI } from '../services/TauriAPI';
+import {
+  PlaylistSelector,
+  PlaylistHeader,
+  PlaylistSearchBar,
+  PlaylistColumnHeaders,
+  NewPlaylistDialog,
+  PlaylistPickerDialog,
+  RatingDialog,
+  BatchPlaylistPickerDialog
+} from '../components/playlist';
 
 export function PlaylistWindow({
   tracks,
@@ -486,38 +495,14 @@ export function PlaylistWindow({
         }}
       >
         {/* Playlist Selector */}
-        <div className="flex items-center gap-2 p-3 border-b border-slate-700">
-          <div className="flex-1 overflow-x-auto flex gap-1">
-            {playlists.playlists.map(pl => (
-              <button
-                key={pl.id}
-                onClick={() => handleSelectPlaylist(pl.id)}
-                className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${playlists.currentPlaylist === pl.id
-                  ? `${currentColors.accent} bg-slate-800`
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                  }`}
-              >
-                {pl.name}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setShowNewPlaylistDialog(true)}
-            className="p-1.5 hover:bg-slate-700 rounded transition-colors"
-            title="New Playlist"
-          >
-            <Plus className="w-4 h-4 text-slate-400" />
-          </button>
-          {playlists.currentPlaylist && (
-            <button
-              onClick={() => handleDeletePlaylist(playlists.currentPlaylist)}
-              className="p-1.5 hover:bg-red-900/50 rounded transition-colors"
-              title="Delete Playlist"
-            >
-              <Trash2 className="w-4 h-4 text-red-400" />
-            </button>
-          )}
-        </div>
+        <PlaylistSelector
+          playlists={playlists.playlists}
+          currentPlaylist={playlists.currentPlaylist}
+          currentColors={currentColors}
+          onSelect={handleSelectPlaylist}
+          onNew={() => setShowNewPlaylistDialog(true)}
+          onDelete={handleDeletePlaylist}
+        />
 
         {/* Empty State with Drop Zone */}
         <div
@@ -596,38 +581,14 @@ export function PlaylistWindow({
       }}
     >
       {/* Playlist Selector */}
-      <div className="flex items-center gap-2 px-3">
-        <div className="flex-1 overflow-x-auto flex gap-1">
-          {playlists.playlists.map(pl => (
-            <button
-              key={pl.id}
-              onClick={() => handleSelectPlaylist(pl.id)}
-              className={`px-3 py-1 text-sm rounded whitespace-nowrap transition-colors ${playlists.currentPlaylist === pl.id
-                ? `${currentColors.accent} bg-slate-800`
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                }`}
-            >
-              {pl.name}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => setShowNewPlaylistDialog(true)}
-          className="p-1.5 hover:bg-slate-700 rounded transition-colors"
-          title="New Playlist"
-        >
-          <Plus className="w-4 h-4 text-slate-400" />
-        </button>
-        {playlists.currentPlaylist && (
-          <button
-            onClick={() => handleDeletePlaylist(playlists.currentPlaylist)}
-            className="p-1.5 hover:bg-red-900/50 rounded transition-colors"
-            title="Delete Playlist"
-          >
-            <Trash2 className="w-4 h-4 text-red-400" />
-          </button>
-        )}
-      </div>
+      <PlaylistSelector
+        playlists={playlists.playlists}
+        currentPlaylist={playlists.currentPlaylist}
+        currentColors={currentColors}
+        onSelect={handleSelectPlaylist}
+        onNew={() => setShowNewPlaylistDialog(true)}
+        onDelete={handleDeletePlaylist}
+      />
 
       {/* Adding Progress Indicator */}
       {playlists.addingProgress.isAdding && (
@@ -653,102 +614,32 @@ export function PlaylistWindow({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between px-3">
-        <h3 className="text-white font-semibold flex items-center gap-2">
-          <List className={`w-5 h-5 ${currentColors.accent}`} />
-          {playlists.currentPlaylist
-            ? playlists.playlists.find(p => p.id === playlists.currentPlaylist)?.name || 'Playlist'
-            : 'Select a Playlist'}
-        </h3>
-        <div className="flex items-center gap-2">
-          <span className="text-slate-400 text-xs">
-            {displayTracks.length} track{displayTracks.length !== 1 ? 's' : ''}
-            {searchQuery && playlists.playlistTracks.length !== displayTracks.length && (
-              <span className={`ml-1 ${currentColors.accent}`}>
-                (filtered from {playlists.playlistTracks.length})
-              </span>
-            )}
-          </span>
-          {/* Auto-scroll toggle */}
-          <button
-            onClick={() => setPlaylistAutoScroll(!playlistAutoScroll)}
-            className={`p-1.5 rounded transition-colors ${playlistAutoScroll
-              ? `${currentColors.accent} bg-slate-800`
-              : 'text-slate-400 hover:bg-slate-700'
-              }`}
-            title={playlistAutoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
-          >
-            <ArrowDown className="w-4 h-4" />
-          </button>
-          {/* Manual scroll to current track button (only when auto-scroll is off) */}
-          {!playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0 && (
-            <button
-              onClick={scrollToCurrentTrack}
-              className="p-1.5 text-slate-400 hover:bg-slate-700 rounded transition-colors"
-              title="Jump to current track"
-            >
-              <ArrowDownToLine className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
+      <PlaylistHeader
+        playlistName={playlists.currentPlaylist
+          ? playlists.playlists.find(p => p.id === playlists.currentPlaylist)?.name
+          : null}
+        trackCount={displayTracks.length}
+        totalTracks={playlists.playlistTracks.length}
+        searchQuery={searchQuery}
+        autoScroll={playlistAutoScroll}
+        onToggleAutoScroll={() => setPlaylistAutoScroll(!playlistAutoScroll)}
+        onScrollToCurrentTrack={scrollToCurrentTrack}
+        showScrollButton={!playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0}
+        currentColors={currentColors}
+      />
 
       {/* Search Bar */}
-      <div className="px-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search tracks (fuzzy search: try 'jbwm' for 'Just Be What Moves')..."
-            className="w-full bg-slate-800/50 border border-slate-700 rounded pl-10 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
-              title="Clear search"
-            >
-              <X className="w-4 h-4 text-slate-400" />
-            </button>
-          )}
-        </div>
-      </div>
+      <PlaylistSearchBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        onClear={() => setSearchQuery('')}
+      />
 
       {/* Column Headers */}
-      <div className="flex items-center px-3 text-xs text-slate-500 font-medium border-b border-slate-700 pb-2 select-none">
-        <span className="w-10 text-center">#</span>
-        <div
-          className="flex-1 flex items-center gap-1 cursor-pointer hover:text-cyan-400 transition-colors"
-          onClick={() => handleSort('title')}
-        >
-          Title
-          {sortConfig.key === 'title' && (
-            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-          )}
-        </div>
-        <div
-          className="w-40 flex items-center gap-1 cursor-pointer hover:text-cyan-400 transition-colors"
-          onClick={() => handleSort('artist')}
-        >
-          Artist
-          {sortConfig.key === 'artist' && (
-            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-          )}
-        </div>
-        <div
-          className="w-40 hidden lg:flex items-center gap-1 cursor-pointer hover:text-cyan-400 transition-colors"
-          onClick={() => handleSort('album')}
-        >
-          Album
-          {sortConfig.key === 'album' && (
-            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-          )}
-        </div>
-        <span className="w-16 text-right">Duration</span>
-        <span className="w-8"></span>
-      </div>
+      <PlaylistColumnHeaders
+        sortConfig={sortConfig}
+        onSort={handleSort}
+      />
 
       {/* Virtualized Track List */}
       <div className="flex-1 overflow-hidden relative">
