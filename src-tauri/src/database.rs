@@ -357,7 +357,7 @@ impl Database {
             let col = match sort_by.as_str() {
                 "title" => "title",
                 "artist" => "artist",
-                "album" => "album",
+                "album" => "artist, album", // Sort by artist first, then album to keep albums grouped by artist
                 "date" => "date_added",
                 "date_added" => "date_added",
                 "rating" => "rating",

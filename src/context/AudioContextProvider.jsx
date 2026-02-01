@@ -81,16 +81,6 @@ export function AudioContextProvider({ children, audioElement }) {
       setIsInitialized(true);
       console.log('Web Audio API initialized successfully');
 
-      // Resume context on user interaction
-      const resume = () => {
-        if (ctx.state === 'suspended') {
-          ctx.resume().catch(err => console.error('Failed to resume audio context:', err));
-        }
-      };
-      
-      document.addEventListener('click', resume, { once: true });
-      document.addEventListener('keydown', resume, { once: true });
-
     } catch (err) {
       console.error('Failed to initialize Web Audio API:', err);
       setError(err.message);
@@ -105,6 +95,76 @@ export function AudioContextProvider({ children, audioElement }) {
       }
     };
   }, [audioElement, isInitialized]);
+
+  // Persistent audio context resume handler
+  // Browsers suspend AudioContext after long idle periods (24h+)
+  // This effect ensures we always try to resume on user interaction
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+
+    // Resume context on any user interaction (not once - always check)
+    const resume = () => {
+      if (ctx && ctx.state === 'suspended') {
+        console.log('Attempting to resume suspended audio context...');
+        ctx.resume()
+          .then(() => console.log('Audio context resumed successfully'))
+          .catch(err => console.error('Failed to resume audio context:', err));
+      }
+    };
+
+    // Handle visibility change - resume when tab becomes visible after long idle
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resume();
+      }
+    };
+
+    // Use passive listeners for better performance
+    document.addEventListener('click', resume, { passive: true });
+    document.addEventListener('keydown', resume, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Periodic health check for very long idle (every 30 seconds when visible)
+    let healthCheckInterval = null;
+    const startHealthCheck = () => {
+      if (healthCheckInterval) return;
+      healthCheckInterval = setInterval(() => {
+        if (document.visibilityState === 'visible' && ctx.state === 'suspended') {
+          console.log('Health check: audio context suspended, attempting resume...');
+          resume();
+        }
+      }, 30000); // Check every 30 seconds
+    };
+
+    const stopHealthCheck = () => {
+      if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+      }
+    };
+
+    // Start health check when visible, stop when hidden to save resources
+    if (document.visibilityState === 'visible') {
+      startHealthCheck();
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        startHealthCheck();
+      } else {
+        stopHealthCheck();
+      }
+    });
+
+    return () => {
+      document.removeEventListener('click', resume);
+      document.removeEventListener('keydown', resume);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopHealthCheck();
+    };
+  }, [isInitialized]);
 
   // Set EQ band gain
   const setEQBand = useCallback((bandIndex, value) => {

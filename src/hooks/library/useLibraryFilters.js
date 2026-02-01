@@ -10,7 +10,7 @@ import { SEARCH_DEBOUNCE_MS } from '../../utils/constants';
  */
 export function useLibraryFilters() {
     const [searchQuery, setSearchQuery] = useState('');
-    const [sortBy, setSortBy] = useState('title');
+    const [sortBy, setSortBy] = useState('album'); // Default to album sorting (artist + album)
     const [sortOrder, setSortOrder] = useState('asc');
     const [advancedFilters, setAdvancedFilters] = useState({
         genre: '',

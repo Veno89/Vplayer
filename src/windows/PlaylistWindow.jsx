@@ -154,6 +154,25 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
     // 2. Sort
     if (sortConfig.key) {
       result.sort((a, b) => {
+        // Special case for album: sort by artist first, then album
+        // This keeps albums grouped by artist instead of mixing them
+        if (sortConfig.key === 'album') {
+          const artistA = (a.artist || '').toString().toLowerCase();
+          const artistB = (b.artist || '').toString().toLowerCase();
+          
+          // First compare by artist
+          if (artistA < artistB) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (artistA > artistB) return sortConfig.direction === 'asc' ? 1 : -1;
+          
+          // If same artist, compare by album
+          const albumA = (a.album || '').toString().toLowerCase();
+          const albumB = (b.album || '').toString().toLowerCase();
+          
+          if (albumA < albumB) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (albumA > albumB) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        }
+
         const valA = a[sortConfig.key];
         const valB = b[sortConfig.key];
 
