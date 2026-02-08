@@ -55,27 +55,18 @@ export function PlayerProvider({ children }) {
   // ── Derived: playback track list ──────────────────────────────────
   const playbackTracks = activePlaybackTracks?.length > 0 ? activePlaybackTracks : tracks;
 
-  // ── Refs for stale-closure prevention in onEnded ──────────────────
-  const activePlaybackTracksRef = useRef([]);
+  // playerHookRef needed because playerHook is a hook instance, not store state
   const playerHookRef = useRef(null);
-  const repeatModeRef = useRef('off');
-  const currentTrackRef = useRef(null);
-  const tracksRef = useRef([]);
-
-  useEffect(() => { activePlaybackTracksRef.current = activePlaybackTracks; }, [activePlaybackTracks]);
-  useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
-  useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
-  useEffect(() => { tracksRef.current = tracks; }, [tracks]);
 
   // ── Audio engine ──────────────────────────────────────────────────
   const audio = useAudio({
     initialVolume: volume,
     onEnded: () => {
-      const currentActivePlaybackTracks = activePlaybackTracksRef.current;
-      const currentTracks = tracksRef.current;
-      const pbTracks = currentActivePlaybackTracks?.length > 0 ? currentActivePlaybackTracks : currentTracks;
-      const currentRepeatMode = repeatModeRef.current;
-      const currentTrackIdx = currentTrackRef.current;
+      // Read fresh state from store to avoid stale closures
+      const state = useStore.getState();
+      const pbTracks = state.activePlaybackTracks?.length > 0 ? state.activePlaybackTracks : state.tracks;
+      const currentRepeatMode = state.repeatMode;
+      const currentTrackIdx = state.currentTrack;
 
       if (currentRepeatMode === 'one') {
         audio.seek(0);

@@ -331,3 +331,17 @@ function FeaturePreview({ icon: Icon, title, description, color }) {
 }
 
 export default OnboardingWindow;
+
+/**
+ * Self-managing onboarding guard.
+ * Renders OnboardingWindow only when onboarding hasn't completed
+ * and the library has no folders yet.
+ */
+export function OnboardingGuard() {
+  const onboardingComplete = useStore(s => s.onboardingComplete);
+  const { library } = usePlayerContext();
+  const [dismissed, setDismissed] = React.useState(false);
+
+  if (dismissed || onboardingComplete || library.libraryFolders.length > 0) return null;
+  return <OnboardingWindow onComplete={() => setDismissed(true)} />;
+}

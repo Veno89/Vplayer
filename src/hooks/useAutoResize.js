@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/window';
+import { useStore } from '../store/useStore';
 
 const PADDING = 60; // Extra padding around windows
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
 const DEBOUNCE_MS = 200; // Increased for stability - resize happens after drag/resize ends
+const INITIAL_SETTLE_MS = 2000; // Wait for windows to settle on startup
 
 // Global drag state tracker - shared across all components
 let isDraggingOrResizing = false;
@@ -33,11 +35,15 @@ export function notifyDragEnd() {
 }
 
 /**
- * Auto-resize main window to fit all visible windows
- * @param {Object} windows - Windows state object
- * @param {boolean} enabled - Whether auto-resize is enabled
+ * Self-contained auto-resize hook.
+ * Reads windows + autoResizeWindow from the store directly.
+ * Manages Ctrl+R shortcut, initial resize timer, and debounced recalculation.
+ *
+ * Call this once at the app root (VPlayer).
  */
-export function useAutoResize(windows, enabled) {
+export function useAutoResize() {
+  const windows = useStore(s => s.windows);
+  const enabled = useStore(s => s.autoResizeWindow);
   const debounceTimer = useRef(null);
   const [isReady, setIsReady] = useState(false);
   const lastResizeRef = useRef({ width: 0, height: 0 });
@@ -152,6 +158,23 @@ export function useAutoResize(windows, enabled) {
       }
     };
   }, [windows, enabled, isReady, calculateAndResize]);
+
+  // Ctrl+R shortcut to recalculate
+  useEffect(() => {
+    if (!enabled || !isReady) return;
+    const handleKeyPress = (e) => {
+      if (e.ctrlKey && e.key === 'r') calculateAndResize(true);
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [enabled, isReady, calculateAndResize]);
+
+  // Extra settle-resize after startup to catch late layout
+  useEffect(() => {
+    if (!enabled || !windows || !isReady) return;
+    const timer = setTimeout(() => calculateAndResize(true), INITIAL_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [enabled, windows, isReady, calculateAndResize]);
 
   return { 
     recalculateSize: () => calculateAndResize(true),

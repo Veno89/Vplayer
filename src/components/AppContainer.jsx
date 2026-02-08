@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { ToastContainer } from './Toast';
 import { FolderPlus } from 'lucide-react';
 import { useStore } from '../store/useStore';
@@ -9,13 +10,28 @@ import { useDragDrop } from '../hooks/useDragDrop';
 /**
  * Main application container — self-sufficient.
  * Reads theme, toast, drag-drop, and audio error state from store/context.
+ * Also handles background image URL conversion (file:// → Tauri asset://).
  */
 export const AppContainer = ({ children }) => {
   const currentColors = useCurrentColors();
   const fontSize = useStore(s => s.fontSize);
   const backgroundImage = useStore(s => s.backgroundImage);
+  const setBackgroundImage = useStore(s => s.setBackgroundImage);
   const backgroundBlur = useStore(s => s.backgroundBlur);
   const backgroundOpacity = useStore(s => s.backgroundOpacity);
+
+  // Convert file:// URLs to Tauri asset:// URLs for background images
+  useEffect(() => {
+    if (backgroundImage && backgroundImage.startsWith('file://')) {
+      try {
+        const filePath = decodeURIComponent(backgroundImage.replace('file:///', ''));
+        setBackgroundImage(convertFileSrc(filePath));
+      } catch (err) {
+        console.error('Failed to convert background image URL:', err);
+        setBackgroundImage(null);
+      }
+    }
+  }, [backgroundImage, setBackgroundImage]);
 
   const { audioBackendError, library, toast } = usePlayerContext();
   const { toasts, removeToast } = toast;

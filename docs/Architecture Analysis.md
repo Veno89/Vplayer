@@ -568,8 +568,8 @@ For each rename:
 | Phase | Focus | Effort | Fixes | Status |
 |-------|-------|--------|-------|--------|
 | **Phase 1** | Service & state consolidation | 2–3 days | #2, #6, #12 | ✅ COMPLETE |
-| **Phase 2** | Break the God Component | 4–5 days | #1, #3, #5 | ⏳ Next |
-| **Phase 3** | TypeScript migration | 3–4 days | #4, #11 | |
+| **Phase 2** | Break the God Component | 4–5 days | #1, #3, #5 | ✅ COMPLETE |
+| **Phase 3** | TypeScript migration | 3–4 days | #4, #11 | ⏳ Next |
 | **Phase 4** | DRY cleanup & testing | 3–4 days | #7, #8, #10, #13, #15, #16 | |
 | **Phase 5** | Security & backend | 1–2 days | #9, #14 | |
 | **Total** | | **13–18 days** | All 16 findings | |
@@ -606,3 +606,35 @@ Phase 5 (security — independent, can be done in parallel with Phase 3/4)
 ```
 
 Phases 1 and 2 are the critical path. Phase 5 can run in parallel with anything. Phases 3 and 4 can be interleaved or run in parallel if two people are working.
+
+### Phase 2 Completion Notes
+
+**Step 2.1 — Create a PlayerProvider context** ✅
+- Created `src/context/PlayerProvider.jsx` encapsulating useAudio + usePlayer + useTrackLoading + useCrossfade + useLibrary
+- Exposes actions (next/prev/seek/volume/togglePlay) + audio engine state (isLoading, audioBackendError) + derived values (playbackTracks) via context
+- Windows read scalar state (playing, progress, volume) directly from `useStore`, only use context for actions
+- Wrapped `<VPlayer>` with `<PlayerProvider>` in `App.jsx`
+
+**Step 2.2 — Make windows self-sufficient** ✅
+- Converted all 15 window components from props-based to store-based:
+  - 9 EASY windows: VisualizerWindow, DiscographyWindow, HistoryWindow, LyricsWindow, ShortcutsWindow, QueueWindow, AlbumViewWindow, SmartPlaylistsWindow, LibraryStatsWindow
+  - 3 MEDIUM windows: EqualizerWindow, PlayerWindow, OptionsWindowEnhanced
+  - 3 HARD windows: TagEditorWindow, PlaylistWindow, LibraryWindow
+- Also made self-sufficient: AppContainer, ThemeEditorWindow, MiniPlayerWindow, OnboardingWindow
+- Created `useCurrentColors()` hook in `useStoreHooks.js` for derived theme colors
+- Promoted transient cross-window state to Zustand uiSlice: `tagEditorTrack`, `themeEditorOpen`, `isDraggingTracks`
+
+**Step 2.3 — Delete useWindowConfigs** ✅
+- Created `src/windowRegistry.jsx` — static declarative array of `{ id, title, icon, Component }` for all 15 windows
+- Updated `WindowManager.jsx` to be fully self-sufficient (reads store, uses WINDOW_REGISTRY, renders `<Component />` with zero props)
+- Deleted `src/hooks/useWindowConfigs.jsx` (~300 lines, ~70 parameters — all dead code)
+
+**Step 2.4 — Clean up VPlayer.jsx** ✅
+- VPlayer.jsx: **350 → 83 lines** (76% reduction)
+- Extracted background image URL conversion into `AppContainer`
+- Created self-managing `OnboardingGuard` component (renders null when not needed)
+- Made `useAutoResize` fully self-contained (reads store directly, manages Ctrl+R shortcut and initial timer internally)
+- Eliminated stale-closure refs in `PlayerProvider`: replaced 4 state-mirroring refs (`activePlaybackTracksRef`, `repeatModeRef`, `currentTrackRef`, `tracksRef`) with `useStore.getState()` reads in `onEnded` callback
+- Eliminated stale-closure refs in `usePlayer.ts`: replaced 4 state-mirroring refs (`tracksRef`, `shuffleRef`, `repeatModeRef`, `currentTrackRef`) with `storeGetter()` reads in `handleNextTrack`/`handlePrevTrack`
+- Remaining legitimate refs: `useAudio.js` has `onEndedRef`/`onTimeUpdateRef` (function callbacks, not store state — unavoidable) and `currentTrackRef` (tracks loaded file, not store index)
+- All 54 tests pass with 0 errors, exit code 0

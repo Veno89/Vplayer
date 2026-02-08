@@ -57,17 +57,6 @@ export function usePlayer({
     const seekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSeekTimeRef = useRef<number>(0);
 
-    // Keep fresh refs for values used in callbacks to prevent stale closures
-    const tracksRef = useRef<Track[]>(tracks);
-    const shuffleRef = useRef<boolean>(shuffle);
-    const repeatModeRef = useRef<RepeatMode>(repeatMode);
-    const currentTrackRef = useRef<number | null>(currentTrack);
-
-    useEffect(() => { tracksRef.current = tracks; }, [tracks]);
-    useEffect(() => { shuffleRef.current = shuffle; }, [shuffle]);
-    useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
-    useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
-
     // Keep user volume in sync
     useEffect(() => {
         if (!crossfadeInProgressRef.current) {
@@ -98,7 +87,7 @@ export function usePlayer({
         // Always read fresh state from the store to avoid stale closures
         const store = storeGetter ? storeGetter() : null;
         // Use ref for tracks to get the freshest array
-        const currentTracks = tracksRef.current;
+        const currentTracks = store?.tracks ?? tracks;
         const effectiveTotalTracks = currentTracks.length || totalTracks;
 
         console.log('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks);
@@ -214,7 +203,8 @@ export function usePlayer({
      * Uses refs to always read fresh state
      */
     const handleNextTrack = useCallback(() => {
-        const currentTracks = tracksRef.current;
+        const store = storeGetter ? storeGetter() : null;
+        const currentTracks = store?.tracks ?? tracks;
         if (!currentTracks.length) return;
 
         // Cancel any in-progress crossfade
@@ -225,10 +215,10 @@ export function usePlayer({
             crossfadeInProgressRef.current = false;
         }
 
-        // Read fresh values from refs to prevent stale closure bugs
-        const currentShuffle = shuffleRef.current;
-        const currentRepeatMode = repeatModeRef.current;
-        const currentTrackIdx = currentTrackRef.current ?? 0;
+        // Read fresh values from store to prevent stale closure bugs
+        const currentShuffle = store?.shuffle ?? shuffle;
+        const currentRepeatMode = store?.repeatMode ?? repeatMode;
+        const currentTrackIdx = store?.currentTrack ?? currentTrack ?? 0;
 
         const nextIdx = getNextTrackIndex(currentTrackIdx, currentTracks.length, currentShuffle, currentRepeatMode);
         if (nextIdx !== null) {
@@ -245,7 +235,8 @@ export function usePlayer({
      * Uses refs to always read fresh state
      */
     const handlePrevTrack = useCallback(() => {
-        const currentTracks = tracksRef.current;
+        const store = storeGetter ? storeGetter() : null;
+        const currentTracks = store?.tracks ?? tracks;
         if (!currentTracks.length) return;
 
         // Cancel any in-progress crossfade
@@ -264,10 +255,10 @@ export function usePlayer({
             return;
         }
 
-        // Read fresh values from refs
-        const currentShuffle = shuffleRef.current;
-        const currentRepeatMode = repeatModeRef.current;
-        const currentTrackIdx = currentTrackRef.current ?? 0;
+        // Read fresh values from store
+        const currentShuffle = store?.shuffle ?? shuffle;
+        const currentRepeatMode = store?.repeatMode ?? repeatMode;
+        const currentTrackIdx = store?.currentTrack ?? currentTrack ?? 0;
 
         if (currentShuffle) {
             let prevIdx: number;
