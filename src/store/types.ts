@@ -360,8 +360,15 @@ export interface SettingsSliceState {
     onboardingComplete: boolean;
 }
 
+/**
+ * Generic setter: updateSetting('gaplessPlayback', true)
+ * All individual setXxx methods are auto-generated from SettingsSliceState keys.
+ */
 export interface SettingsSliceActions {
-    // Playback Settings
+    /** Generic type-safe setter for any setting */
+    updateSetting: <K extends keyof SettingsSliceState>(key: K, value: SettingsSliceState[K]) => void;
+
+    // Individual setters (backward-compatible, auto-generated in createSettingsSlice)
     setGaplessPlayback: (enabled: boolean) => void;
     setAutoPlayOnStartup: (enabled: boolean) => void;
     setResumeLastTrack: (enabled: boolean) => void;
@@ -372,8 +379,6 @@ export interface SettingsSliceActions {
     setFadeDuration: (duration: number) => void;
     setDefaultVolume: (volume: number) => void;
     setRememberTrackPosition: (enabled: boolean) => void;
-
-    // Library Settings
     setAutoScanOnStartup: (enabled: boolean) => void;
     setWatchFolderChanges: (enabled: boolean) => void;
     setExcludedFormats: (formats: string[]) => void;
@@ -382,8 +387,6 @@ export interface SettingsSliceActions {
     setMetadataLanguage: (language: string) => void;
     setAlbumArtSize: (size: 'small' | 'medium' | 'large') => void;
     setAutoFetchAlbumArt: (enabled: boolean) => void;
-
-    // Behavior Settings
     setMinimizeToTray: (enabled: boolean) => void;
     setCloseToTray: (enabled: boolean) => void;
     setStartMinimized: (enabled: boolean) => void;
@@ -394,25 +397,15 @@ export interface SettingsSliceActions {
     setShowNotifications: (enabled: boolean) => void;
     setSnapToGrid: (enabled: boolean) => void;
     setGridSize: (size: number) => void;
-
-    // Performance Settings
     setCacheSizeLimit: (limit: number) => void;
     setMaxConcurrentScans: (max: number) => void;
     setThumbnailQuality: (quality: 'low' | 'medium' | 'high') => void;
     setHardwareAcceleration: (enabled: boolean) => void;
     setAudioBufferSize: (size: number) => void;
-
-    // EQ
     setEqBands: (bands: EqBand[]) => void;
-
-    // Crossfade
     setCrossfadeEnabled: (enabled: boolean) => void;
     setCrossfadeDuration: (duration: number) => void;
-
-    // Keyboard Shortcuts
     setKeyboardShortcuts: (shortcuts: KeyboardShortcut[] | null) => void;
-
-    // Onboarding
     setOnboardingComplete: (complete: boolean) => void;
 }
 

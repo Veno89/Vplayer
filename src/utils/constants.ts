@@ -2,19 +2,6 @@
 export const VOLUME_STEP = 0.1;
 export const SEEK_THRESHOLD_SECONDS = 3;
 
-// LocalStorage Keys
-export const STORAGE_KEYS = {
-  PLAYER_STATE: 'vplayer_player',
-  UI_STATE: 'vplayer_ui',
-  LAST_TRACK: 'vplayer_last_track',
-  LAST_POSITION: 'vplayer_last_position',
-  EQ_BANDS: 'vplayer_eq_bands',
-  PLAYLISTS: 'vplayer_playlists',
-  QUEUE: 'vplayer_queue',
-  CROSSFADE_DURATION: 'vplayer_crossfade_duration',
-  CROSSFADE_ENABLED: 'vplayer_crossfade_enabled',
-};
-
 // Per-window minimum sizes for proper content display
 export const WINDOW_MIN_SIZES = {
   player: { width: 340, height: 320 },      // Album art + controls + progress

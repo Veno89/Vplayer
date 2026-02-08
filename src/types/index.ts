@@ -187,17 +187,4 @@ export interface WindowConfig {
     content: React.ReactNode;
 }
 
-// =============================================================================
-// Theme Types (legacy — prefer StoreColorScheme from store/types for full schema)
-// =============================================================================
-
-export interface ColorScheme {
-    name: string;
-    accent: string;
-    primary: string;
-    secondary: string;
-    background: string;
-    surface: string;
-    text: string;
-    textMuted: string;
-}
+// Theme types — canonical definition is in store/types.ts (re-exported as StoreColorScheme above)

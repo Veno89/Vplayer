@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { create } from 'zustand';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
@@ -16,27 +16,32 @@ export interface UpdaterAPI {
   downloadProgress: number;
   checking: boolean;
   error: string | null;
+  _initialized: boolean;
   checkForUpdates: (silent?: boolean) => Promise<boolean>;
   downloadAndInstall: () => Promise<void>;
   dismissUpdate: () => void;
 }
 
-export function useUpdater(): UpdaterAPI {
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
+/**
+ * Global updater store — singleton.
+ * Replaces the old pattern of `window.updater = useUpdater()`.
+ * Any component can call `useUpdater()` to get the same shared state.
+ */
+const useUpdaterStore = create<UpdaterAPI>((set, get) => ({
+  updateAvailable: false,
+  updateInfo: null,
+  downloading: false,
+  downloadProgress: 0,
+  checking: false,
+  error: null,
+  _initialized: false,
 
-  const checkForUpdates = useCallback(async (silent = false): Promise<boolean> => {
+  checkForUpdates: async (silent = false): Promise<boolean> => {
     try {
-      setChecking(true);
-      setError(null);
+      set({ checking: true, error: null });
 
       const update = await check();
 
-      // Debug logging
       console.log('[useUpdater] check() result:', update);
       console.log('[useUpdater] update available:', !!update);
       if (update) {
@@ -45,93 +50,79 @@ export function useUpdater(): UpdaterAPI {
       }
 
       if (update) {
-        setUpdateAvailable(true);
-        setUpdateInfo({
-          version: update.version,
-          currentVersion: update.currentVersion,
-          body: update.body,
-          date: update.date,
+        set({
+          updateAvailable: true,
+          updateInfo: {
+            version: update.version,
+            currentVersion: update.currentVersion,
+            body: update.body,
+            date: update.date,
+          },
         });
         return true;
       } else {
-        setUpdateAvailable(false);
-        setUpdateInfo(null);
+        set({ updateAvailable: false, updateInfo: null });
         return false;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to check for updates:', err);
-      // Only show error if it's not a network/remote configuration issue
       const errorMessage = err.message || 'Failed to check for updates';
       if (!silent) {
-        setError(errorMessage);
+        set({ error: errorMessage });
       }
       return false;
     } finally {
-      setChecking(false);
+      set({ checking: false });
     }
-  }, []);
+  },
 
-  const downloadAndInstall = useCallback(async (): Promise<void> => {
+  downloadAndInstall: async (): Promise<void> => {
     try {
-      setDownloading(true);
-      setError(null);
-      setDownloadProgress(0);
+      set({ downloading: true, error: null, downloadProgress: 0 });
 
       const update = await check();
+      if (!update) throw new Error('No update available');
 
-      if (!update) {
-        throw new Error('No update available');
-      }
-
-      // Download with progress tracking
       await update.downloadAndInstall((event) => {
         switch (event.event) {
           case 'Started':
-            setDownloadProgress(0);
+            set({ downloadProgress: 0 });
             break;
           case 'Progress':
             const progress = event.data.chunkLength / event.data.contentLength * 100;
-            setDownloadProgress(Math.round(progress));
+            set({ downloadProgress: Math.round(progress) });
             break;
           case 'Finished':
-            setDownloadProgress(100);
+            set({ downloadProgress: 100 });
             break;
         }
       });
 
-      // Prompt to restart
       await relaunch();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to download/install update:', err);
-      setError(err.message || 'Failed to install update');
-      setDownloading(false);
+      set({ error: err.message || 'Failed to install update', downloading: false });
     }
-  }, []);
+  },
 
-  const dismissUpdate = useCallback((): void => {
-    setUpdateAvailable(false);
-    setUpdateInfo(null);
-  }, []);
+  dismissUpdate: () => {
+    set({ updateAvailable: false, updateInfo: null });
+  },
+}));
 
-  // Check for updates on mount (silently)
-  useEffect(() => {
-    // Delay initial check to not slow down app startup
-    const timer = setTimeout(() => {
-      checkForUpdates(true);
-    }, 5000);
+// Kick off the initial silent update check once (on first import)
+setTimeout(() => {
+  const store = useUpdaterStore.getState();
+  if (!store._initialized) {
+    useUpdaterStore.setState({ _initialized: true });
+    store.checkForUpdates(true);
+  }
+}, 5000);
 
-    return () => clearTimeout(timer);
-  }, [checkForUpdates]);
-
-  return {
-    updateAvailable,
-    updateInfo,
-    downloading,
-    downloadProgress,
-    checking,
-    error,
-    checkForUpdates,
-    downloadAndInstall,
-    dismissUpdate,
-  };
+/**
+ * Hook returning the global updater API.
+ * Safe to call from any component — all share the same state.
+ */
+export function useUpdater(): UpdaterAPI {
+  return useUpdaterStore();
 }

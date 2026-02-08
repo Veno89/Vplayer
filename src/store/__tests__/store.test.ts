@@ -116,9 +116,9 @@ describe('playerSlice', () => {
   describe('player setters', () => {
     it('sets current track and resets progress', () => {
       useStore.setState({ progress: 50 });
-      useStore.getState().setCurrentTrack(makeMockTrack());
+      useStore.getState().setCurrentTrack(0);
       expect(useStore.getState().progress).toBe(0);
-      expect(useStore.getState().currentTrack).not.toBeNull();
+      expect(useStore.getState().currentTrack).toBe(0);
     });
 
     it('setPlaying accepts updater function', () => {
@@ -184,13 +184,13 @@ describe('uiSlice', () => {
 
   describe('themes', () => {
     it('saves and retrieves a custom theme', () => {
-      const theme = { name: 'My Theme', accent: '#f00', bg: '#000' };
+      const theme = { name: 'My Theme', accent: '#f00', background: '#000', primary: '#fff', text: '#eee', textMuted: '#999' } as import('../../store/types').ColorScheme;
       useStore.getState().saveCustomTheme(theme);
       expect(useStore.getState().customThemes['my-theme']).toEqual(theme);
     });
 
     it('deletes a custom theme and resets to default if active', () => {
-      const theme = { name: 'Del Me', accent: '#f00', bg: '#000' };
+      const theme = { name: 'Del Me', accent: '#f00', background: '#000', primary: '#fff', text: '#eee', textMuted: '#999' } as import('../../store/types').ColorScheme;
       useStore.getState().saveCustomTheme(theme);
       useStore.getState().setColorScheme('del-me');
       useStore.getState().deleteCustomTheme('Del Me');

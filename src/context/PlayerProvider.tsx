@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useCallback, useRef } from 'react';
-import { TauriAPI } from '../services/TauriAPI';
+import { createContext, useContext, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useStore } from '../store/useStore';
 import { useAudio } from '../hooks/useAudio';
 import { usePlayer as usePlayerHook } from '../hooks/usePlayer';
@@ -7,6 +6,72 @@ import { useTrackLoading } from '../hooks/useTrackLoading';
 import { useCrossfade } from '../hooks/useCrossfade';
 import { useToast } from '../hooks/useToast';
 import { useLibrary } from '../hooks/useLibrary';
+import { usePlaybackEffects } from '../hooks/usePlaybackEffects';
+import { useStartupRestore } from '../hooks/useStartupRestore';
+import type { AudioService, Track } from '../types';
+import type { CrossfadeAPI } from '../hooks/useCrossfade';
+import type { ToastAPI } from '../hooks/useToast';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PlayerContext type definition
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Library data & actions exposed via context. */
+export interface LibraryContextValue {
+  tracks: Track[];
+  libraryFolders: { id: string; path: string; name: string; dateAdded: number }[];
+  isScanning: boolean;
+  scanProgress: number;
+  scanCurrent: number;
+  scanTotal: number;
+  scanCurrentFile: string;
+  searchQuery: string;
+  sortBy: string;
+  sortOrder: string;
+  advancedFilters: Record<string, any>;
+  filteredTracks: Track[];
+  setSearchQuery: (query: string) => void;
+  setSortBy: (sort: string) => void;
+  setSortOrder: (order: string) => void;
+  setAdvancedFilters: React.Dispatch<React.SetStateAction<any>>;
+  addFolder: () => Promise<any>;
+  removeFolder: (id: string, path: string) => Promise<void>;
+  refreshFolders: () => Promise<number>;
+  removeTrack: (id: string) => Promise<void>;
+  refreshTracks: () => Promise<void>;
+}
+
+/** Complete typed context value. */
+export interface PlayerContextValue {
+  // Audio engine state (not in Zustand)
+  audioIsLoading: boolean;
+  audioBackendError: string | null;
+
+  // Player actions
+  handleNextTrack: () => void;
+  handlePrevTrack: () => void;
+  handleSeek: (percent: number) => void;
+  handleVolumeChange: (volume: number) => void;
+  handleVolumeUp: (step?: number) => void;
+  handleVolumeDown: (step?: number) => void;
+  handleToggleMute: () => void;
+  togglePlay: () => void;
+
+  // Low-level audio (needed by shortcuts, MiniPlayer, etc.)
+  audio: AudioService;
+
+  // Crossfade
+  crossfade: CrossfadeAPI;
+
+  // Derived
+  playbackTracks: Track[];
+
+  // Library
+  library: LibraryContextValue;
+
+  // Toast (singleton — also available via useToast() directly)
+  toast: ToastAPI;
+}
 
 /**
  * PlayerContext — single source of truth for audio playback.
@@ -19,34 +84,26 @@ import { useLibrary } from '../hooks/useLibrary';
  * from `useStore(s => s.playing)` — they do NOT receive them as props.
  * They use `usePlayerContext()` only for actions and audio-engine state.
  */
-const PlayerContext = createContext(null);
+const PlayerContext = createContext<PlayerContextValue | null>(null);
 
-export function PlayerProvider({ children }) {
+export function PlayerProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
-  const prevPlayingRef = useRef(null);
 
-  // ── Store selectors (reactive) ────────────────────────────────────
+  // ── Store selectors (only what orchestration needs) ───────────────
   const currentTrack = useStore(s => s.currentTrack);
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
-  const playing = useStore(s => s.playing);
   const setPlaying = useStore(s => s.setPlaying);
   const setProgress = useStore(s => s.setProgress);
   const setDuration = useStore(s => s.setDuration);
   const volume = useStore(s => s.volume);
   const setVolume = useStore(s => s.setVolume);
   const shuffle = useStore(s => s.shuffle);
-  const setShuffle = useStore(s => s.setShuffle);
   const repeatMode = useStore(s => s.repeatMode);
-  const setRepeatMode = useStore(s => s.setRepeatMode);
   const setLoadingTrackIndex = useStore(s => s.setLoadingTrackIndex);
-  const abRepeat = useStore(s => s.abRepeat);
   const activePlaybackTracks = useStore(s => s.activePlaybackTracks);
   const progress = useStore(s => s.progress);
   const duration = useStore(s => s.duration);
-
-  // Settings (for startup behaviour)
-  const autoPlayOnStartup = useStore(s => s.autoPlayOnStartup);
-  const resumeLastTrack = useStore(s => s.resumeLastTrack);
+  const playing = useStore(s => s.playing);
 
   // ── Library (provides tracks + management) ────────────────────────
   const library = useLibrary();
@@ -56,7 +113,7 @@ export function PlayerProvider({ children }) {
   const playbackTracks = activePlaybackTracks?.length > 0 ? activePlaybackTracks : tracks;
 
   // playerHookRef needed because playerHook is a hook instance, not store state
-  const playerHookRef = useRef(null);
+  const playerHookRef = useRef<any>(null);
 
   // ── Audio engine ──────────────────────────────────────────────────
   const audio = useAudio({
@@ -77,7 +134,7 @@ export function PlayerProvider({ children }) {
       } else if (currentRepeatMode === 'all' || currentTrackIdx < (pbTracks?.length ?? 0) - 1) {
         playerHookRef.current?.handleNextTrack();
       } else {
-        setPlaying(false);
+        useStore.getState().setPlaying(false);
       }
     },
     onTimeUpdate: (time) => {
@@ -118,86 +175,9 @@ export function PlayerProvider({ children }) {
     handleNextTrack: playerHook.handleNextTrack,
   });
 
-  // ── Effects (previously in VPlayer) ───────────────────────────────
-
-  // Set initial volume on mount
-  useEffect(() => {
-    audio.changeVolume(volume).catch(err =>
-      console.error('Failed to set initial volume:', err)
-    );
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync duration from audio engine → store
-  useEffect(() => { setDuration(audio.duration); }, [audio.duration, setDuration]);
-
-  // Sync progress from audio engine → store + save position + A-B repeat
-  useEffect(() => {
-    setProgress(audio.progress);
-    if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
-      useStore.getState().setLastPosition(audio.progress);
-    }
-
-    if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
-      if (audio.progress >= abRepeat.pointB) {
-        audio.seek(abRepeat.pointA).catch(err => {
-          console.error('Failed to seek for A-B repeat:', err);
-        });
-      }
-    }
-  }, [audio.progress, setProgress, abRepeat]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Restore last-played track on startup
-  useEffect(() => {
-    if (trackLoading.hasRestoredTrack || !tracks?.length) return;
-
-    if (resumeLastTrack) {
-      const savedTrackId = useStore.getState().lastTrackId;
-      if (savedTrackId) {
-        const trackIndex = tracks.findIndex(t => t.id === savedTrackId);
-        if (trackIndex !== -1) {
-          setCurrentTrack(trackIndex);
-          if (autoPlayOnStartup) {
-            setTimeout(() => setPlaying(true), 500);
-          }
-        }
-      }
-    }
-
-    trackLoading.setHasRestoredTrack(true);
-  }, [tracks, trackLoading, setCurrentTrack, resumeLastTrack, autoPlayOnStartup, setPlaying]);
-
-  // Translate store `playing` intent → actual audio.play() / audio.pause()
-  useEffect(() => {
-    if (prevPlayingRef.current === null) {
-      prevPlayingRef.current = playing;
-      return;
-    }
-    if (prevPlayingRef.current === playing) return;
-
-    const wasPlaying = prevPlayingRef.current;
-    prevPlayingRef.current = playing;
-
-    if (playing && !wasPlaying) {
-      audio.play().catch(err => {
-        console.error('Failed to play:', err);
-        toast.showError('Failed to play track');
-        setPlaying(false);
-      });
-    } else if (!playing && wasPlaying) {
-      audio.pause().catch(err => {
-        console.error('Failed to pause:', err);
-        toast.showError('Failed to pause');
-      });
-    }
-  }, [playing]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Increment play count when a track starts playing
-  useEffect(() => {
-    if (playing && currentTrack !== null && tracks?.[currentTrack]) {
-      TauriAPI.incrementPlayCount(tracks[currentTrack].id)
-        .catch(err => console.warn('Failed to increment play count:', err));
-    }
-  }, [playing, currentTrack, tracks]);
+  // ── Extracted side-effect hooks ───────────────────────────────────
+  usePlaybackEffects({ audio, toast, tracks });
+  useStartupRestore(tracks, trackLoading);
 
   // ── Context value ─────────────────────────────────────────────────
   // NOTE: Scalar playback state (playing, progress, volume, etc.) is NOT here.
@@ -260,7 +240,7 @@ export function PlayerProvider({ children }) {
  * - Library data: `library.tracks`, `library.libraryFolders`, …
  * - Crossfade: `crossfade.enabled`, `crossfade.toggleEnabled`, …
  */
-export function usePlayerContext() {
+export function usePlayerContext(): PlayerContextValue {
   const context = useContext(PlayerContext);
   if (!context) {
     throw new Error('usePlayerContext must be used within a <PlayerProvider>');

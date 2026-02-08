@@ -1,34 +1,41 @@
 /**
  * Settings Slice - All user preferences and settings
+ *
+ * DRY pattern:
+ * - Default values defined once in SETTINGS_DEFAULTS
+ * - Individual setters auto-generated from the defaults keys
+ * - Persist function picks all state keys from SETTINGS_DEFAULTS
+ * - Generic `updateSetting(key, value)` for new code
  */
 import type { AppStore, SettingsSlice, SettingsSliceState } from '../types';
 
 type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
 
-export const createSettingsSlice = (set: SetFn): SettingsSlice => ({
-  // === Playback Settings ===
+// ─── Single source of truth for default values ──────────────────────────────
+export const SETTINGS_DEFAULTS: SettingsSliceState = {
+  // Playback Settings
   gaplessPlayback: true,
   autoPlayOnStartup: false,
   resumeLastTrack: true,
-  replayGainMode: 'off', // 'off', 'track', 'album'
-  replayGainPreamp: 0, // dB
-  playbackSpeed: 1.0, // 0.5 - 2.0
+  replayGainMode: 'off',
+  replayGainPreamp: 0,
+  playbackSpeed: 1.0,
   fadeOnPause: true,
-  fadeDuration: 200, // ms
-  defaultVolume: 80, // 0-100
-  rememberTrackPosition: true, // for podcasts/audiobooks
+  fadeDuration: 200,
+  defaultVolume: 80,
+  rememberTrackPosition: true,
 
-  // === Library Settings ===
+  // Library Settings
   autoScanOnStartup: true,
   watchFolderChanges: true,
   excludedFormats: [],
-  duplicateSensitivity: 'medium', // 'low', 'medium', 'high'
+  duplicateSensitivity: 'medium',
   showHiddenFiles: false,
   metadataLanguage: 'en',
-  albumArtSize: 'large', // 'small', 'medium', 'large'
+  albumArtSize: 'large',
   autoFetchAlbumArt: true,
 
-  // === Behavior Settings ===
+  // Behavior Settings
   minimizeToTray: true,
   closeToTray: false,
   startMinimized: false,
@@ -40,14 +47,14 @@ export const createSettingsSlice = (set: SetFn): SettingsSlice => ({
   snapToGrid: true,
   gridSize: 10,
 
-  // === Performance Settings ===
-  cacheSizeLimit: 500, // MB
+  // Performance Settings
+  cacheSizeLimit: 500,
   maxConcurrentScans: 4,
-  thumbnailQuality: 'high', // 'low', 'medium', 'high'
+  thumbnailQuality: 'high',
   hardwareAcceleration: true,
-  audioBufferSize: 4096, // samples
+  audioBufferSize: 4096,
 
-  // === EQ Settings (migrated from localStorage) ===
+  // EQ Settings
   eqBands: [
     { freq: "60Hz", value: 50 },
     { freq: "170Hz", value: 50 },
@@ -58,123 +65,60 @@ export const createSettingsSlice = (set: SetFn): SettingsSlice => ({
     { freq: "6kHz", value: 50 },
     { freq: "12kHz", value: 50 },
     { freq: "14kHz", value: 50 },
-    { freq: "16kHz", value: 50 }
+    { freq: "16kHz", value: 50 },
   ],
 
-  // === Crossfade Settings (migrated from localStorage) ===
-  crossfadeEnabled: false,
-  crossfadeDuration: 3000, // ms
-
-  // === Keyboard Shortcuts (migrated from localStorage) ===
-  keyboardShortcuts: null, // null means use defaults; array of {id, name, key, category}
-
-  // === Onboarding ===
-  onboardingComplete: false,
-
-  // === Playback Settings Actions ===
-  setGaplessPlayback: (enabled) => set({ gaplessPlayback: enabled }),
-  setAutoPlayOnStartup: (enabled) => set({ autoPlayOnStartup: enabled }),
-  setResumeLastTrack: (enabled) => set({ resumeLastTrack: enabled }),
-  setReplayGainMode: (mode) => set({ replayGainMode: mode }),
-  setReplayGainPreamp: (preamp) => set({ replayGainPreamp: preamp }),
-  setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
-  setFadeOnPause: (enabled) => set({ fadeOnPause: enabled }),
-  setFadeDuration: (duration) => set({ fadeDuration: duration }),
-  setDefaultVolume: (volume) => set({ defaultVolume: volume }),
-  setRememberTrackPosition: (enabled) => set({ rememberTrackPosition: enabled }),
-
-  // === Library Settings Actions ===
-  setAutoScanOnStartup: (enabled) => set({ autoScanOnStartup: enabled }),
-  setWatchFolderChanges: (enabled) => set({ watchFolderChanges: enabled }),
-  setExcludedFormats: (formats) => set({ excludedFormats: formats }),
-  setDuplicateSensitivity: (sensitivity) => set({ duplicateSensitivity: sensitivity }),
-  setShowHiddenFiles: (enabled) => set({ showHiddenFiles: enabled }),
-  setMetadataLanguage: (language) => set({ metadataLanguage: language }),
-  setAlbumArtSize: (size) => set({ albumArtSize: size }),
-  setAutoFetchAlbumArt: (enabled) => set({ autoFetchAlbumArt: enabled }),
-
-  // === Behavior Settings Actions ===
-  setMinimizeToTray: (enabled) => set({ minimizeToTray: enabled }),
-  setCloseToTray: (enabled) => set({ closeToTray: enabled }),
-  setStartMinimized: (enabled) => set({ startMinimized: enabled }),
-  setRememberWindowPositions: (enabled) => set({ rememberWindowPositions: enabled }),
-  setPlaylistAutoScroll: (enabled) => set({ playlistAutoScroll: enabled }),
-  setAutoResizeWindow: (enabled) => set({ autoResizeWindow: enabled }),
-  setConfirmBeforeDelete: (enabled) => set({ confirmBeforeDelete: enabled }),
-  setShowNotifications: (enabled) => set({ showNotifications: enabled }),
-  setSnapToGrid: (enabled) => set({ snapToGrid: enabled }),
-  setGridSize: (size) => set({ gridSize: size }),
-
-  // === Performance Settings Actions ===
-  setCacheSizeLimit: (limit) => set({ cacheSizeLimit: limit }),
-  setMaxConcurrentScans: (max) => set({ maxConcurrentScans: max }),
-  setThumbnailQuality: (quality) => set({ thumbnailQuality: quality }),
-  setHardwareAcceleration: (enabled) => set({ hardwareAcceleration: enabled }),
-  setAudioBufferSize: (size) => set({ audioBufferSize: size }),
-
-  // === EQ Actions ===
-  setEqBands: (bands) => set({ eqBands: bands }),
-
-  // === Crossfade Actions ===
-  setCrossfadeEnabled: (enabled) => set({ crossfadeEnabled: enabled }),
-  setCrossfadeDuration: (duration) => set({ crossfadeDuration: duration }),
-
-  // === Keyboard Shortcuts Actions ===
-  setKeyboardShortcuts: (shortcuts) => set({ keyboardShortcuts: shortcuts }),
-
-  // === Onboarding Actions ===
-  setOnboardingComplete: (complete) => set({ onboardingComplete: complete }),
-});
-
-/**
- * Settings state to persist
- */
-export const settingsPersistState = (state: SettingsSliceState) => ({
-  // Playback Settings
-  gaplessPlayback: state.gaplessPlayback,
-  autoPlayOnStartup: state.autoPlayOnStartup,
-  resumeLastTrack: state.resumeLastTrack,
-  replayGainMode: state.replayGainMode,
-  replayGainPreamp: state.replayGainPreamp,
-  // Note: crossfade settings are now managed via Zustand persist (crossfadeEnabled, crossfadeDuration)
-  playbackSpeed: state.playbackSpeed,
-  fadeOnPause: state.fadeOnPause,
-  fadeDuration: state.fadeDuration,
-  defaultVolume: state.defaultVolume,
-  rememberTrackPosition: state.rememberTrackPosition,
-  // Library Settings
-  autoScanOnStartup: state.autoScanOnStartup,
-  watchFolderChanges: state.watchFolderChanges,
-  excludedFormats: state.excludedFormats,
-  duplicateSensitivity: state.duplicateSensitivity,
-  showHiddenFiles: state.showHiddenFiles,
-  metadataLanguage: state.metadataLanguage,
-  albumArtSize: state.albumArtSize,
-  autoFetchAlbumArt: state.autoFetchAlbumArt,
-  // Behavior Settings
-  minimizeToTray: state.minimizeToTray,
-  closeToTray: state.closeToTray,
-  startMinimized: state.startMinimized,
-  rememberWindowPositions: state.rememberWindowPositions,
-  playlistAutoScroll: state.playlistAutoScroll,
-  autoResizeWindow: state.autoResizeWindow,
-  confirmBeforeDelete: state.confirmBeforeDelete,
-  showNotifications: state.showNotifications,
-  snapToGrid: state.snapToGrid,
-  gridSize: state.gridSize,
-  // Performance Settings
-  cacheSizeLimit: state.cacheSizeLimit,
-  maxConcurrentScans: state.maxConcurrentScans,
-  thumbnailQuality: state.thumbnailQuality,
-  hardwareAcceleration: state.hardwareAcceleration,
-  audioBufferSize: state.audioBufferSize,
-  // EQ Settings
-  eqBands: state.eqBands,
   // Crossfade Settings
-  crossfadeEnabled: state.crossfadeEnabled,
-  crossfadeDuration: state.crossfadeDuration,
+  crossfadeEnabled: false,
+  crossfadeDuration: 3000,
+
   // Keyboard Shortcuts
-  keyboardShortcuts: state.keyboardShortcuts,
+  keyboardShortcuts: null,
+
   // Onboarding
-  onboardingComplete: state.onboardingComplete,
-});
+  onboardingComplete: false,
+};
+
+/** All keys of SettingsSliceState — used by persist and setter generation */
+const SETTINGS_KEYS = Object.keys(SETTINGS_DEFAULTS) as Array<keyof SettingsSliceState>;
+
+// ─── Helper: generate "setFoo" name from "foo" ─────────────────────────────
+function setterName(key: string): string {
+  return `set${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+}
+
+// ─── Slice creator ──────────────────────────────────────────────────────────
+export const createSettingsSlice = (set: SetFn): SettingsSlice => {
+  // Generic setter — the primary way to update settings going forward
+  const updateSetting = <K extends keyof SettingsSliceState>(
+    key: K,
+    value: SettingsSliceState[K],
+  ) => set({ [key]: value } as Partial<AppStore>);
+
+  // Auto-generate individual setters for backward compatibility
+  // e.g. setGaplessPlayback: (v) => set({ gaplessPlayback: v })
+  const setters: Record<string, (value: any) => void> = {};
+  for (const key of SETTINGS_KEYS) {
+    setters[setterName(key)] = (value: any) => set({ [key]: value } as Partial<AppStore>);
+  }
+
+  return {
+    // Spread all default state values
+    ...SETTINGS_DEFAULTS,
+
+    // Generic setter
+    updateSetting,
+
+    // Spread all auto-generated individual setters (setGaplessPlayback, setAutoPlayOnStartup, …)
+    ...setters,
+  } as SettingsSlice;
+};
+
+// ─── Persist: auto-pick all settings state keys ─────────────────────────────
+export const settingsPersistState = (state: SettingsSliceState): Partial<SettingsSliceState> => {
+  const persisted: Partial<SettingsSliceState> = {};
+  for (const key of SETTINGS_KEYS) {
+    (persisted as any)[key] = state[key];
+  }
+  return persisted;
+};

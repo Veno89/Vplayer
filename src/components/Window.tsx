@@ -1,9 +1,48 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { WINDOW_MIN_SIZES } from '../utils/constants';
-import { notifyDragStart, notifyDragEnd } from '../hooks/useAutoResize';
+import { useDraggable, useResizable } from '../hooks/useWindowInteraction';
+import type { LucideIcon } from 'lucide-react';
 
-export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }) {
+interface WindowData {
+  visible: boolean;
+  minimized: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  [key: string]: any;
+}
+
+interface WindowColors {
+  accent: string;
+  primary: string;
+  windowBg: string;
+  windowBorder: string;
+  headerBg: string;
+  text: string;
+  textMuted: string;
+  textSubtle?: string;
+  border: string;
+  [key: string]: string | undefined;
+}
+
+interface WindowProps {
+  id: string;
+  title: string;
+  icon: LucideIcon;
+  children: ReactNode;
+  className?: string;
+  windowData: WindowData;
+  bringToFront: (id: string) => void;
+  setWindows: (updater: (prev: Record<string, WindowData>) => Record<string, WindowData>) => void;
+  toggleWindow: (id: string) => void;
+  currentColors?: WindowColors | null;
+  windowOpacity?: number;
+}
+
+export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }: WindowProps) {
   if (!windowData.visible) return null;
 
   // Check if this is the library window and if it's currently dragging
@@ -25,110 +64,9 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
   // Get minimum sizes for this window type (with fallbacks)
   const minSizes = WINDOW_MIN_SIZES[id] || { width: 250, height: 150 };
 
-  const handleTitleBarMouseDown = (e) => {
-    if (e.target.closest('.window-controls')) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startWindowX = windowData.x;
-    const startWindowY = windowData.y;
-    bringToFront(id);
-    notifyDragStart(); // Notify auto-resize that dragging started
-    let raf = null;
-    let pendingX = startWindowX;
-    let pendingY = startWindowY;
-    const handleMouseMove = (moveEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-      // Allow dragging anywhere (positive coordinates only) - auto-resize will expand the main window
-      const newX = Math.max(0, startWindowX + deltaX);
-      const newY = Math.max(0, startWindowY + deltaY);
-      pendingX = newX;
-      pendingY = newY;
-      if (!raf) {
-        raf = requestAnimationFrame(() => {
-          setWindows((prev) => {
-            if (!prev[id]) return prev;
-            return {
-              ...prev,
-              [id]: { ...prev[id], x: pendingX, y: pendingY }
-            };
-          });
-          raf = null;
-        });
-      }
-    };
-    const handleMouseUp = () => {
-      if (raf) {
-        cancelAnimationFrame(raf);
-        raf = null;
-        setWindows((prev) => {
-          if (!prev[id]) return prev;
-          return {
-            ...prev,
-            [id]: { ...prev[id], x: pendingX, y: pendingY }
-          };
-        });
-      }
-      notifyDragEnd(); // Notify auto-resize that dragging ended
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const handleResizeMouseDown = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startWidth = windowData.width;
-    const startHeight = windowData.height;
-    bringToFront(id);
-    notifyDragStart(); // Notify auto-resize that resizing started
-    let raf = null;
-    let pendingW = startWidth;
-    let pendingH = startHeight;
-    const handleMouseMove = (moveEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-      const newWidth = Math.max(minSizes.width, startWidth + deltaX);
-      const newHeight = Math.max(minSizes.height, startHeight + deltaY);
-      pendingW = newWidth;
-      pendingH = newHeight;
-      if (!raf) {
-        raf = requestAnimationFrame(() => {
-          setWindows((prev) => {
-            if (!prev[id]) return prev;
-            return {
-              ...prev,
-              [id]: { ...prev[id], width: pendingW, height: pendingH }
-            };
-          });
-          raf = null;
-        });
-      }
-    };
-    const handleMouseUp = () => {
-      if (raf) {
-        cancelAnimationFrame(raf);
-        raf = null;
-        setWindows((prev) => {
-          if (!prev[id]) return prev;
-          return {
-            ...prev,
-            [id]: { ...prev[id], width: pendingW, height: pendingH }
-          };
-        });
-      }
-      notifyDragEnd(); // Notify auto-resize that resizing ended
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
+  // ── Extracted drag & resize hooks ─────────────────────────────────
+  const handleTitleBarMouseDown = useDraggable({ id, windowData, setWindows, bringToFront });
+  const handleResizeMouseDown = useResizable({ id, windowData, setWindows, bringToFront, minSizes });
 
   if (windowData.minimized) {
     return (

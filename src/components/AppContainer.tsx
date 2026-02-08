@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, type ReactNode } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { ToastContainer } from './Toast';
 import { FolderPlus } from 'lucide-react';
@@ -6,13 +6,14 @@ import { useStore } from '../store/useStore';
 import { usePlayerContext } from '../context/PlayerProvider';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { useDragDrop } from '../hooks/useDragDrop';
+import { useToast } from '../hooks/useToast';
 
 /**
  * Main application container — self-sufficient.
  * Reads theme, toast, drag-drop, and audio error state from store/context.
  * Also handles background image URL conversion (file:// → Tauri asset://).
  */
-export const AppContainer = ({ children }) => {
+export const AppContainer = ({ children }: { children: ReactNode }) => {
   const currentColors = useCurrentColors();
   const fontSize = useStore(s => s.fontSize);
   const backgroundImage = useStore(s => s.backgroundImage);
@@ -33,7 +34,8 @@ export const AppContainer = ({ children }) => {
     }
   }, [backgroundImage, setBackgroundImage]);
 
-  const { audioBackendError, library, toast } = usePlayerContext();
+  const { audioBackendError, library } = usePlayerContext();
+  const toast = useToast();
   const { toasts, removeToast } = toast;
   const dragDrop = useDragDrop({ addFolder: library.addFolder, refreshTracks: library.refreshTracks, toast });
 

@@ -3,6 +3,7 @@ import { Settings, Palette, Volume2, Info, Layout, Search, Play, Music, Sliders,
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { usePlayerContext } from '../context/PlayerProvider';
+import { useUpdater } from '../hooks/useUpdater';
 
 // Import tab components
 import { AppearanceTab } from './options/AppearanceTab';
@@ -230,7 +231,7 @@ export function OptionsWindowEnhanced() {
 
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }) {
-  const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = window.updater || {};
+  const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = useUpdater();
   const [currentVersion, setCurrentVersion] = React.useState('0.6.3');
   const [checking, setChecking] = React.useState(false);
   const [message, setMessage] = React.useState('');
@@ -260,7 +261,7 @@ function AboutTab({ currentColors }) {
       const hasUpdate = await checkForUpdates();
       if (!hasUpdate && !updateAvailable) {
         // Check for error in the global updater object (since hook updates async)
-        if (!window.updater?.error) {
+        if (!error) {
           setMessage(`You are up to date! (v${currentVersion})`);
         }
       }

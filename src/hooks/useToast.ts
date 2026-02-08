@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { create } from 'zustand';
 
 export interface Toast {
   id: number;
@@ -17,55 +17,44 @@ export interface ToastAPI {
   showInfo: (message: string, duration?: number) => number;
 }
 
-export function useToast(): ToastAPI {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastIdRef = useRef(0);
+let _toastId = 0;
 
-  const addToast = useCallback((message: string, type: Toast['type'] = 'info', duration: number = 5000) => {
-    const id = ++toastIdRef.current;
-    const newToast = { id, message, type, duration };
+/**
+ * Global toast store — singleton.
+ * Every call to useToast() returns the SAME store, so toasts from any
+ * component or hook all appear in the single <ToastContainer>.
+ */
+const useToastStore = create<ToastAPI>((set, get) => {
+  const removeToast = (id: number) => {
+    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+  };
 
-    setToasts((prev) => [...prev, newToast]);
+  const addToast = (message: string, type: Toast['type'] = 'info', duration: number = 5000): number => {
+    const id = ++_toastId;
+    const newToast: Toast = { id, message, type, duration };
+    set((state) => ({ toasts: [...state.toasts, newToast] }));
 
-    // Auto-remove after duration
     if (duration > 0) {
-      setTimeout(() => {
-        removeToast(id);
-      }, duration);
+      setTimeout(() => removeToast(id), duration);
     }
-
     return id;
-  }, []);
+  };
 
-  const removeToast = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
-
-  const showSuccess = useCallback((message: string, duration?: number) => {
-    return addToast(message, 'success', duration);
-  }, [addToast]);
-
-  const showError = useCallback((message: string, duration?: number) => {
-    return addToast(message, 'error', duration);
-  }, [addToast]);
-
-  const showWarning = useCallback((message: string, duration?: number) => {
-    return addToast(message, 'warning', duration);
-  }, [addToast]);
-
-  const showInfo = useCallback((message: string, duration?: number) => {
-    return addToast(message, 'info', duration);
-  }, [addToast]);
-
-  const contextValue = useMemo(() => ({
-    toasts,
+  return {
+    toasts: [],
     addToast,
     removeToast,
-    showSuccess,
-    showError,
-    showWarning,
-    showInfo,
-  }), [toasts, addToast, removeToast, showSuccess, showError, showWarning, showInfo]);
+    showSuccess: (message, duration?) => addToast(message, 'success', duration),
+    showError: (message, duration?) => addToast(message, 'error', duration),
+    showWarning: (message, duration?) => addToast(message, 'warning', duration),
+    showInfo: (message, duration?) => addToast(message, 'info', duration),
+  };
+});
 
-  return contextValue;
+/**
+ * Hook returning the global toast API.
+ * Safe to call from any component or hook — all toasts go to the same store.
+ */
+export function useToast(): ToastAPI {
+  return useToastStore();
 }

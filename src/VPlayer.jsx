@@ -32,7 +32,6 @@ const VPlayerInner = () => {
 
   // ── Auto-updater ──────────────────────────────────────────────────
   const updater = useUpdater();
-  useEffect(() => { window.updater = updater; return () => { delete window.updater; }; }, [updater]);
 
   // ── Auto-resize (self-contained: reads windows/enabled from store) ─
   const { recalculateSize } = useAutoResize();

@@ -3,7 +3,64 @@
 All notable changes to VPlayer will be documented in this file.
 
 
-## [0.9.7] - 2026-02-08
+## [0.9.8] - 2026-02-08
+
+### Architecture Overhaul (6 Phases)
+
+Major internal refactoring across Rust and React layers. No new user-facing features — all changes are structural improvements for stability, maintainability, and developer productivity.
+
+#### Phase 1 — Service & State Consolidation
+- **Centralized IPC Bridge**: Routed all 50+ raw `invoke()` call sites through `TauriAPI` singleton (19 typed methods), eliminating duplicate error handling
+- **Unified Persistence**: Migrated 15 files from ad-hoc `localStorage` to Zustand `persist` middleware — single source of truth for all settings
+- **Fixed test dependency**: Moved `vitest` from `dependencies` to `devDependencies`
+
+#### Phase 2 — Break the God Component
+- **Extracted `PlayerProvider`**: Created context provider encapsulating audio engine, player controller, crossfade, and track loading
+- **Self-sufficient Windows**: All 15 windows now read store/context directly — removed ~70 prop-drilling parameters
+- **Window Registry**: Created declarative `windowRegistry.jsx`, deleted `useWindowConfigs` (~300 lines)
+- **VPlayer Reduction**: Main component reduced from 350 → 83 lines (76% reduction)
+- **Stale Closure Elimination**: Replaced 8 stale-closure refs across `PlayerProvider` and `usePlayer` with `useStore.getState()` / `storeGetter()`
+- **Self-managing hooks**: `useAutoResize` now reads store and manages `Ctrl+R` internally
+
+#### Phase 3 — TypeScript Migration
+- **Store types**: Comprehensive `AppStore = PlayerSlice & UISlice & SettingsSlice & MusicBrainzSlice` with full interfaces
+- **All 20 hooks** converted from `.js` to `.ts` with typed parameters and return interfaces
+- **All 3 services** (`CoverArtArchive`, `MusicBrainzAPI`, `DiscographyMatcher`) converted to typed TypeScript
+- **Utility files** (`colorSchemes`, `constants`, `formatters`) converted to TypeScript
+- TypeScript coverage increased from 6% → 38%
+
+#### Phase 4 — DRY Cleanup & Developer Experience
+- **Dead code removal**: Deleted `Row.jsx`, `AudioContextProvider.jsx`, `PlaylistComponents.jsx`, `ErrorDisplay.jsx`, empty `storage/` directory
+- **`useMaintenanceActions` hook**: Extracted maintenance logic, added `formatBytes` utility
+- **Mutable globals → Zustand**: Replaced module-level mutables in `useAutoResize` with Zustand atom; `useToast` converted to Zustand store singleton
+- **Native dialogs**: Replaced all browser `confirm()`/`alert()` with native Tauri dialogs via `nativeDialog.ts` (`nativeConfirm`/`nativeAlert`/`nativeError`)
+- **Logger**: Created `logger.ts` gating `console.log` behind `import.meta.env.DEV`; replaced ~60 bare `console.log` calls across 11 hook files
+- **DRY settings slice**: `SETTINGS_DEFAULTS` object with auto-generated setters — cut ~65 lines
+- **Updater singleton**: `useUpdater` converted to Zustand store; removed `window.updater` global
+
+#### Phase 5 — Security & Backend Hardening
+- **Content Security Policy**: Enabled CSP with `default-src 'self'`, restricted script/style/img/connect sources
+- **Asset protocol scope**: Restricted from `**` (everything) to `$HOME/**`, `$APPDATA/**`, `$RESOURCE/**`
+- **Dialog permissions**: Added missing `allow-ask`, `allow-message`, `allow-save`
+- **Versioned database migrations**: Replaced 8 silent `ALTER TABLE` attempts with a `schema_version` system — each migration logs clearly and fails loudly on real errors
+- **Bug fix**: Fixed duplicate `duration_to` filter and unused variable warning in `get_filtered_tracks`
+
+#### Phase 6 — Critical Path Testing & Final Cleanup
+- **`TauriAPI.test.ts`**: 47 tests covering all audio commands, balance, library CRUD, playlist CRUD, gapless playback, error formatting (decode/permission/not-found/unknown), health check, ReplayGain, effects, database
+- **`useAudio.test.ts`**: 21 tests covering initialization, loadTrack with retry/backoff, play with recovery, pause, stop, volume clamping, seek, and polling (progress + track-end detection)
+- **`usePlaybackEffects.test.ts`**: 15 tests covering volume sync, duration/progress sync, A-B repeat, play/pause translation, error handling, play count increment
+- **Store tests**: 22 tests for queue operations, A-B repeat, window management, themes, layouts
+- **Path aliases**: Configured `@/` → `src/` in Vite `resolve.alias` (matching existing tsconfig `paths`)
+- **PlayerProvider breakup**: Extracted `usePlaybackEffects.ts` (audio↔store sync) and `useStartupRestore.ts` (resume last track) — PlayerProvider is now a thin orchestrator
+- **Core TSX migration**: `PlayerProvider.tsx`, `AppContainer.tsx`, `Window.tsx` with full typed props
+
+### Test Coverage
+- **Before**: 54 tests across 6 files
+- **After**: 159 tests across 10 files (194% increase)
+- All tests passing, zero TypeScript errors in typed files
+
+
+## [0.9.7] - 2026-02-04
 
 ### Fixed
 - **Stale Closures After Long Idle**: Fixed player crashing or playing wrong tracks after the app sat idle for hours. `onEnded`, `repeatMode`, `currentTrack`, and `tracks` callbacks now use refs so they always read fresh state.
