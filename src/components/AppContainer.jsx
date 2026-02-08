@@ -1,41 +1,26 @@
 import React from 'react';
 import { ToastContainer } from './Toast';
 import { FolderPlus } from 'lucide-react';
+import { useStore } from '../store/useStore';
+import { usePlayerContext } from '../context/PlayerProvider';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { useDragDrop } from '../hooks/useDragDrop';
 
 /**
- * Main application container
- * Handles app-level layout, background, toast notifications, and error display
- * 
- * @param {Object} props
- * @param {React.ReactNode} props.children - Child components to render
- * @param {Array} props.toasts - Toast notifications
- * @param {Function} props.removeToast - Remove toast callback
- * @param {string|null} props.audioBackendError - Audio backend error message
- * @param {Function} props.onDrop - Drop event handler
- * @param {Function} props.onDragOver - Drag over event handler
- * @param {Function} props.onDragLeave - Drag leave event handler
- * @param {boolean} props.isDraggingExternal - Whether files are being dragged over
- * @param {number} props.fontSize - Base font size
- * @param {string} props.backgroundImage - Background image URL
- * @param {number} props.backgroundBlur - Background blur amount
- * @param {number} props.backgroundOpacity - Background opacity (0-1)
- * @param {Object} props.currentColors - Theme color configuration
+ * Main application container — self-sufficient.
+ * Reads theme, toast, drag-drop, and audio error state from store/context.
  */
-export const AppContainer = ({ 
-  children, 
-  toasts, 
-  removeToast, 
-  audioBackendError,
-  onDrop,
-  onDragOver,
-  onDragLeave,
-  isDraggingExternal,
-  fontSize,
-  backgroundImage,
-  backgroundBlur,
-  backgroundOpacity,
-  currentColors
-}) => {
+export const AppContainer = ({ children }) => {
+  const currentColors = useCurrentColors();
+  const fontSize = useStore(s => s.fontSize);
+  const backgroundImage = useStore(s => s.backgroundImage);
+  const backgroundBlur = useStore(s => s.backgroundBlur);
+  const backgroundOpacity = useStore(s => s.backgroundOpacity);
+
+  const { audioBackendError, library, toast } = usePlayerContext();
+  const { toasts, removeToast } = toast;
+  const dragDrop = useDragDrop({ addFolder: library.addFolder, refreshTracks: library.refreshTracks, toast });
+
   // Default colors for fallback
   const colors = currentColors || {
     gradientFrom: '#0f172a',
@@ -49,9 +34,9 @@ export const AppContainer = ({
   return (
     <div 
       className="w-full h-screen overflow-hidden relative"
-      onDrop={onDrop}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
+      onDrop={dragDrop.handleDrop}
+      onDragOver={dragDrop.handleDragOver}
+      onDragLeave={dragDrop.handleDragLeave}
       style={{ 
         fontSize: `${fontSize}px`,
         background: `linear-gradient(to bottom right, ${colors.gradientFrom}, ${colors.gradientVia}, ${colors.gradientTo})`,
@@ -75,7 +60,7 @@ export const AppContainer = ({
       )}
       
       {/* Drop zone overlay */}
-      {isDraggingExternal && (
+      {dragDrop.isDraggingExternal && (
         <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
           <div 
             className="flex flex-col items-center gap-4 p-12 rounded-2xl border-4 border-dashed"

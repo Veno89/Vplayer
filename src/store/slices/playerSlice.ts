@@ -23,6 +23,11 @@ export const createPlayerSlice: StateCreator<PlayerSlice> = (set, get) => ({
         pointB: null,
     },
 
+    // === Restore State (persisted) ===
+    lastTrackId: null as string | null,
+    lastPosition: 0,
+    lastPlaylistId: null as string | null,
+
     // === Queue State ===
     queue: [],
     queueIndex: 0,
@@ -46,6 +51,11 @@ export const createPlayerSlice: StateCreator<PlayerSlice> = (set, get) => ({
     setVolume: (volume) => set({ volume }),
 
     setActivePlaybackTracks: (tracks) => set({ activePlaybackTracks: tracks }),
+
+    // === Restore Actions ===
+    setLastTrackId: (id: string | null) => set({ lastTrackId: id }),
+    setLastPosition: (position: number) => set({ lastPosition: position }),
+    setLastPlaylistId: (id: string | null) => set({ lastPlaylistId: id }),
 
     getCurrentTrackData: () => {
         const state = get();
@@ -216,6 +226,9 @@ export const playerPersistState = (state: PlayerSliceState) => ({
     volume: state.volume,
     shuffle: state.shuffle,
     repeatMode: state.repeatMode,
+    lastTrackId: state.lastTrackId,
+    lastPosition: state.lastPosition,
+    lastPlaylistId: state.lastPlaylistId,
     queue: state.queue,
     queueHistory: state.queueHistory.slice(-50)
 });

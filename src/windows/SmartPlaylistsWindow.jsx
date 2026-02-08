@@ -2,8 +2,13 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Sparkles, Play, Calendar, TrendingUp, Music } from 'lucide-react';
 import { SimpleTrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function SmartPlaylistsWindow({ tracks, currentColors, setCurrentTrack }) {
+export function SmartPlaylistsWindow() {
+  const tracks = useStore(s => s.tracks);
+  const currentColors = useCurrentColors();
+  const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
 
   // Define smart playlist rules

@@ -368,6 +368,96 @@ class TauriAPIService {
         }
     }
 
+    // ========== Audio Recovery & Device Commands ==========
+
+    async recoverAudio(): Promise<boolean> {
+        return this._invoke('recover_audio');
+    }
+
+    async isAudioDeviceAvailable(): Promise<boolean> {
+        return this._invoke('is_audio_device_available');
+    }
+
+    async hasAudioDeviceChanged(): Promise<boolean> {
+        return this._invoke('has_audio_device_changed');
+    }
+
+    async getInactiveDuration(): Promise<number> {
+        return this._invoke('get_inactive_duration');
+    }
+
+    async getAudioDevices(): Promise<string[]> {
+        return this._invoke('get_audio_devices');
+    }
+
+    async setAudioDevice(deviceName: string): Promise<void> {
+        return this._invoke('set_audio_device', { deviceName });
+    }
+
+    // ========== Track Rating (set_track_rating command) ==========
+
+    async setTrackRating(trackId: string, rating: number): Promise<void> {
+        return this._invoke('set_track_rating', { trackId, rating });
+    }
+
+    // ========== Folder Watch Commands ==========
+
+    async startFolderWatch(folderPath: string): Promise<void> {
+        return this._invoke('start_folder_watch', { folderPath });
+    }
+
+    async stopFolderWatch(folderPath: string): Promise<void> {
+        return this._invoke('stop_folder_watch', { folderPath });
+    }
+
+    // ========== History Commands ==========
+
+    async getRecentlyPlayed(limit: number = 50): Promise<any[]> {
+        return this._invoke('get_recently_played', { limit });
+    }
+
+    async getMostPlayed(limit: number = 50): Promise<any[]> {
+        return this._invoke('get_most_played', { limit });
+    }
+
+    // ========== Lyrics Commands ==========
+
+    async loadLyrics(trackPath: string): Promise<string | null> {
+        return this._invoke('load_lyrics', { trackPath });
+    }
+
+    // ========== File System Commands ==========
+
+    async writeTextFile(filePath: string, content: string): Promise<void> {
+        return this._invoke('write_text_file', { filePath, content });
+    }
+
+    async checkMissingFiles(): Promise<any[]> {
+        return this._invoke('check_missing_files');
+    }
+
+    // ========== Database & Performance Commands ==========
+
+    async getPerformanceStats(): Promise<any> {
+        return this._invoke('get_performance_stats');
+    }
+
+    async getCacheSize(): Promise<number> {
+        return this._invoke('get_cache_size');
+    }
+
+    async getDatabaseSize(): Promise<number> {
+        return this._invoke('get_database_size');
+    }
+
+    async vacuumDatabase(): Promise<void> {
+        return this._invoke('vacuum_database');
+    }
+
+    async clearAlbumArtCache(): Promise<void> {
+        return this._invoke('clear_album_art_cache');
+    }
+
     // ========== Health Check ==========
 
     async checkHealth(): Promise<{ healthy: boolean, error: string | null }> {

@@ -3,6 +3,19 @@ import { useStore } from '../store/useStore';
 import { COLOR_SCHEMES } from '../utils/colorSchemes';
 
 /**
+ * Lightweight hook for derived currentColors.
+ * Use this in self-sufficient window components instead of passing colors as props.
+ */
+export function useCurrentColors() {
+  const colorScheme = useStore((state) => state.colorScheme);
+  const customThemes = useStore((state) => state.customThemes);
+  return useMemo(
+    () => customThemes?.[colorScheme] || COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.default,
+    [colorScheme, customThemes],
+  );
+}
+
+/**
  * Custom hook for window management using Zustand store
  */
 export function useWindowManagement() {

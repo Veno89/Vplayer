@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { History, Clock, TrendingUp, PlayCircle } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function HistoryWindow({ currentColors, setCurrentTrack, tracks }) {
+export function HistoryWindow() {
+  const currentColors = useCurrentColors();
+  const setCurrentTrack = useStore(s => s.setCurrentTrack);
+  const tracks = useStore(s => s.tracks);
   const [recentlyPlayed, setRecentlyPlayed] = useState([]);
   const [mostPlayed, setMostPlayed] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,8 +21,8 @@ export function HistoryWindow({ currentColors, setCurrentTrack, tracks }) {
     try {
       setLoading(true);
       const [recent, most] = await Promise.all([
-        invoke('get_recently_played', { limit: 50 }),
-        invoke('get_most_played', { limit: 50 })
+        TauriAPI.getRecentlyPlayed(50),
+        TauriAPI.getMostPlayed(50)
       ]);
       setRecentlyPlayed(recent);
       setMostPlayed(most);

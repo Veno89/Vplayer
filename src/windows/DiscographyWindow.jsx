@@ -28,8 +28,10 @@ import {
 } from 'lucide-react';
 import { useDiscography } from '../hooks/useDiscography';
 import { save } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
 import { desktopDir } from '@tauri-apps/api/path';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
 // Helper to export missing albums to a text file
 const exportMissingAlbums = async (artistName, albums, allArtistsData = null) => {
@@ -123,7 +125,7 @@ const exportMissingAlbums = async (artistName, albums, allArtistsData = null) =>
     
     if (filePath) {
       // Write the file using Tauri command
-      await invoke('write_text_file', { filePath, content });
+      await TauriAPI.writeTextFile(filePath, content);
       console.log('[DiscographyWindow] Exported missing albums to:', filePath);
       return true;
     }
@@ -339,7 +341,10 @@ const SettingsPanel = ({ config, setConfig, currentColors }) => {
 };
 
 // Main discography window component
-export function DiscographyWindow({ tracks, currentColors }) {
+export function DiscographyWindow() {
+  const tracks = useStore(s => s.tracks);
+  const currentColors = useCurrentColors();
+
   const {
     artistList,
     stats,

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Music, BarChart3, Activity } from 'lucide-react';
 import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
 const VISUALIZER_MODES = ['bars', 'wave', 'circular'];
 
@@ -11,7 +13,9 @@ const VISUALIZER_MODES = ['bars', 'wave', 'circular'];
  * Rust backend's ring buffer, processes them with FFT, and displays the
  * frequency spectrum and waveform data.
  */
-export function VisualizerWindow({ currentColors, isPlaying }) {
+export function VisualizerWindow() {
+  const currentColors = useCurrentColors();
+  const isPlaying = useStore(s => s.playing);
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
   

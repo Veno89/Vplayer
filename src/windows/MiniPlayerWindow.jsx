@@ -1,23 +1,22 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Maximize2, X, Volume2, VolumeX } from 'lucide-react';
 import { AlbumArt } from '../components/AlbumArt';
+import { useStore } from '../store/useStore';
+import { usePlayerContext } from '../context/PlayerProvider';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function MiniPlayerWindow({
-  currentTrack,
-  tracks,
-  playing,
-  progress,
-  duration,
-  volume,
-  togglePlay,
-  nextTrack,
-  prevTrack,
-  onMaximize,
-  onClose,
-  currentColors,
-  isMuted,
-  toggleMute,
-}) {
+export function MiniPlayerWindow({ onMaximize, onClose }) {
+  const currentTrack = useStore(s => s.currentTrack);
+  const playing = useStore(s => s.playing);
+  const setPlaying = useStore(s => s.setPlaying);
+  const progress = useStore(s => s.progress);
+  const duration = useStore(s => s.duration);
+  const volume = useStore(s => s.volume);
+  const currentColors = useCurrentColors();
+  const { playbackTracks, handleNextTrack, handlePrevTrack, handleToggleMute, audio } = usePlayerContext();
+  const tracks = playbackTracks;
+  const isMuted = audio.isMuted;
+  const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
   const currentTrackData = currentTrack !== null ? tracks[currentTrack] : null;
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
 
@@ -104,7 +103,7 @@ export function MiniPlayerWindow({
         <div className="flex items-center justify-between mt-3">
           {/* Volume */}
           <button
-            onClick={toggleMute}
+            onClick={handleToggleMute}
             className="p-1.5 hover:bg-slate-800 rounded transition-colors"
             title={isMuted ? 'Unmute' : 'Mute'}
           >
@@ -118,7 +117,7 @@ export function MiniPlayerWindow({
           {/* Playback Controls */}
           <div className="flex items-center gap-2">
             <button
-              onClick={prevTrack}
+              onClick={handlePrevTrack}
               disabled={tracks.length === 0}
               className="p-1.5 hover:bg-slate-800 rounded transition-colors disabled:opacity-30"
               title="Previous"
@@ -140,7 +139,7 @@ export function MiniPlayerWindow({
             </button>
 
             <button
-              onClick={nextTrack}
+              onClick={handleNextTrack}
               disabled={tracks.length === 0}
               className="p-1.5 hover:bg-slate-800 rounded transition-colors disabled:opacity-30"
               title="Next"

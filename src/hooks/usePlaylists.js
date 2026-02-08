@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
 
 export function usePlaylists() {
   const [playlists, setPlaylists] = useState([]);
@@ -10,9 +10,13 @@ export function usePlaylists() {
   const [hasRestoredPlaylist, setHasRestoredPlaylist] = useState(false);
   const [addingProgress, setAddingProgress] = useState({ current: 0, total: 0, isAdding: false });
 
+  // Read last playlist from store (persisted)
+  const lastPlaylistId = useStore(state => state.lastPlaylistId);
+  const setLastPlaylistId = useStore(state => state.setLastPlaylistId);
+
   const loadPlaylists = useCallback(async () => {
     try {
-      const data = await invoke('get_all_playlists');
+      const data = await TauriAPI.getAllPlaylists();
       // Convert to objects with id, name, createdAt
       const playlistObjects = data.map(([id, name, createdAt]) => ({
         id,
@@ -23,12 +27,11 @@ export function usePlaylists() {
       
       // Restore last playlist on first load
       if (!hasRestoredPlaylist && playlistObjects.length > 0) {
-        const savedPlaylist = localStorage.getItem('vplayer_last_playlist');
-        if (savedPlaylist) {
+        if (lastPlaylistId) {
           // Check if saved playlist still exists
-          const exists = playlistObjects.some(p => p.id === savedPlaylist);
+          const exists = playlistObjects.some(p => p.id === lastPlaylistId);
           if (exists) {
-            setCurrentPlaylist(savedPlaylist);
+            setCurrentPlaylist(lastPlaylistId);
           }
         }
         setHasRestoredPlaylist(true);
@@ -37,7 +40,7 @@ export function usePlaylists() {
       console.error('Failed to load playlists:', err);
       throw err;
     }
-  }, [hasRestoredPlaylist]);
+  }, [hasRestoredPlaylist, lastPlaylistId]);
 
   const loadPlaylistTracks = useCallback(async (playlistId) => {
     if (!playlistId) {
@@ -47,7 +50,7 @@ export function usePlaylists() {
     
     try {
       setIsLoading(true);
-      const tracks = await invoke('get_playlist_tracks', { playlistId });
+      const tracks = await TauriAPI.getPlaylistTracks(playlistId);
       setPlaylistTracks(tracks);
     } catch (err) {
       console.error('Failed to load playlist tracks:', err);
@@ -59,7 +62,7 @@ export function usePlaylists() {
 
   const createPlaylist = useCallback(async (name) => {
     try {
-      const id = await invoke('create_playlist', { name });
+      const id = await TauriAPI.createPlaylist(name);
       await loadPlaylists();
       return id;
     } catch (err) {
@@ -70,7 +73,7 @@ export function usePlaylists() {
 
   const deletePlaylist = useCallback(async (playlistId) => {
     try {
-      await invoke('delete_playlist', { playlistId });
+      await TauriAPI.deletePlaylist(playlistId);
       await loadPlaylists();
       if (currentPlaylist === playlistId) {
         setCurrentPlaylist(null);
@@ -84,7 +87,7 @@ export function usePlaylists() {
 
   const renamePlaylist = useCallback(async (playlistId, newName) => {
     try {
-      await invoke('rename_playlist', { playlistId, newName });
+      await TauriAPI.renamePlaylist(playlistId, newName);
       await loadPlaylists();
     } catch (err) {
       console.error('Failed to rename playlist:', err);
@@ -94,7 +97,7 @@ export function usePlaylists() {
 
   const addTrackToPlaylist = useCallback(async (playlistId, trackId) => {
     try {
-      await invoke('add_track_to_playlist', { playlistId, trackId });
+      await TauriAPI.addTrackToPlaylist(playlistId, trackId);
       if (currentPlaylist === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
@@ -129,7 +132,7 @@ export function usePlaylists() {
 
   const removeTrackFromPlaylist = useCallback(async (playlistId, trackId) => {
     try {
-      await invoke('remove_track_from_playlist', { playlistId, trackId });
+      await TauriAPI.removeTrackFromPlaylist(playlistId, trackId);
       if (currentPlaylist === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
@@ -141,7 +144,7 @@ export function usePlaylists() {
 
   const reorderPlaylistTracks = useCallback(async (playlistId, trackPositions) => {
     try {
-      await invoke('reorder_playlist_tracks', { playlistId, trackPositions });
+      await TauriAPI.reorderPlaylistTracks(playlistId, trackPositions);
       if (currentPlaylist === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
@@ -156,10 +159,11 @@ export function usePlaylists() {
     loadPlaylists();
   }, [loadPlaylists]);
 
-  // Load tracks when current playlist changes
+  // Load tracks when current playlist changes, and persist selection
   useEffect(() => {
     loadPlaylistTracks(currentPlaylist);
-  }, [currentPlaylist, loadPlaylistTracks]);
+    setLastPlaylistId(currentPlaylist);
+  }, [currentPlaylist, loadPlaylistTracks, setLastPlaylistId]);
 
   return {
     playlists,

@@ -200,6 +200,11 @@ export const createUISlice = (set, get) => ({
   fontSize: 14,
   debugVisible: false,
 
+  // === Transient UI State (not persisted) ===
+  tagEditorTrack: null,
+  themeEditorOpen: false,
+  isDraggingTracks: false,
+
   // === Window Actions ===
   setWindows: (windowsOrUpdater) =>
     set((state) => {
@@ -355,6 +360,11 @@ export const createUISlice = (set, get) => ({
   setWindowOpacity: (opacity) => set({ windowOpacity: opacity }),
   setFontSize: (size) => set({ fontSize: size }),
   setDebugVisible: (visible) => set({ debugVisible: visible }),
+
+  // === Transient UI Actions ===
+  setTagEditorTrack: (track) => set({ tagEditorTrack: track }),
+  setThemeEditorOpen: (open) => set({ themeEditorOpen: open }),
+  setIsDraggingTracks: (dragging) => set({ isDraggingTracks: dragging }),
 
   // Reset all windows to default layout (classic)
   resetWindowPositions: () => {

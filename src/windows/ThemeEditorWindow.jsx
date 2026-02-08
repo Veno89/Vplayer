@@ -1,17 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Palette, Save, Plus, Trash2, Check } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 import { Modal } from '../components/Modal';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { COLOR_SCHEMES } from '../utils/colorSchemes';
 
-export default function ThemeEditorWindow({ 
-  isOpen, 
-  onClose, 
-  currentColors,
-  colorSchemes,
-  onSaveTheme,
-  onDeleteTheme,
-  onApplyTheme
-}) {
+export default function ThemeEditorWindow() {
+  const isOpen = useStore(s => s.themeEditorOpen);
+  const setThemeEditorOpen = useStore(s => s.setThemeEditorOpen);
+  const currentColors = useCurrentColors();
+  const customThemes = useStore(s => s.customThemes);
+  const saveCustomTheme = useStore(s => s.saveCustomTheme);
+  const deleteCustomTheme = useStore(s => s.deleteCustomTheme);
+  const applyCustomTheme = useStore(s => s.applyCustomTheme);
+  const colorSchemes = useMemo(() => ({ ...COLOR_SCHEMES, ...customThemes }), [customThemes]);
+  const onClose = () => setThemeEditorOpen(false);
   const [editingTheme, setEditingTheme] = useState(null);
   const [themeName, setThemeName] = useState('');
   const [colors, setColors] = useState({
@@ -62,7 +66,7 @@ export default function ThemeEditorWindow({
       createdAt: Date.now()
     };
 
-    onSaveTheme(newTheme);
+    saveCustomTheme(newTheme);
     showSuccess(`Theme "${themeName}" saved!`);
     setThemeName('');
     setEditingTheme(null);
@@ -70,13 +74,13 @@ export default function ThemeEditorWindow({
 
   const handleApplyTheme = (theme) => {
     setColors(theme.colors);
-    onApplyTheme(theme);
+    applyCustomTheme(theme);
     showSuccess(`Applied theme: ${theme.name}`);
   };
 
   const handleDeleteTheme = (themeName) => {
     if (confirm(`Delete theme "${themeName}"?`)) {
-      onDeleteTheme(themeName);
+      deleteCustomTheme(themeName);
       showSuccess(`Theme "${themeName}" deleted`);
     }
   };

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, Speaker, RefreshCw, Loader, Check, Radio, Gauge } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { SettingCard, SettingSlider, SettingToggle, SettingBadge, SettingDivider } from './SettingsComponents';
 import { TauriAPI } from '../../services/TauriAPI';
 
@@ -19,7 +18,7 @@ export function AudioTab({ crossfade }) {
   const loadAudioDevices = async () => {
     try {
       setLoadingDevices(true);
-      const devices = await invoke('get_audio_devices');
+      const devices = await TauriAPI.getAudioDevices();
       setAudioDevices(devices || []);
       const defaultDevice = devices?.find(d => d.is_default);
       if (defaultDevice) {
@@ -60,7 +59,7 @@ export function AudioTab({ crossfade }) {
   const handleDeviceChange = async (deviceName) => {
     try {
       setSwitchingDevice(true);
-      await invoke('set_audio_device', { deviceName });
+      await TauriAPI.setAudioDevice(deviceName);
       setSelectedDevice(deviceName);
     } catch (err) {
       console.error('Failed to set audio device:', err);

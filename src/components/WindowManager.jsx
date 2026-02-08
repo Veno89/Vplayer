@@ -1,32 +1,26 @@
 import React from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Window } from './Window';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { WINDOW_REGISTRY } from '../windowRegistry';
 
 /**
  * Window manager component
- * Renders all visible windows with error boundaries
- * 
- * @param {Object} props
- * @param {Array} props.windowConfigs - Window configuration array
- * @param {Object} props.windows - Window state object
- * @param {Object} props.currentColors - Current color scheme
- * @param {Function} props.bringToFront - Bring window to front callback
- * @param {Function} props.setWindows - Set windows state callback
- * @param {Function} props.toggleWindow - Toggle window visibility callback
- * @param {number} props.windowOpacity - Window opacity (0-1)
+ * Renders all visible windows from the static WINDOW_REGISTRY.
+ * Each window is self-sufficient — reads its own state from store / context.
  */
-export const WindowManager = ({ 
-  windowConfigs, 
-  windows, 
-  currentColors,
-  bringToFront,
-  setWindows,
-  toggleWindow,
-  windowOpacity
-}) => {
+export const WindowManager = () => {
+  const windows = useStore(s => s.windows);
+  const bringToFront = useStore(s => s.bringToFront);
+  const setWindows = useStore(s => s.setWindows);
+  const toggleWindow = useStore(s => s.toggleWindow);
+  const windowOpacity = useStore(s => s.windowOpacity);
+  const currentColors = useCurrentColors();
+
   return (
     <>
-      {windowConfigs.map(cfg => (
+      {WINDOW_REGISTRY.map(cfg => (
         windows[cfg.id]?.visible && (
           <ErrorBoundary key={cfg.id} fallbackMessage={`Failed to render ${cfg.title} window`}>
             <Window
@@ -40,7 +34,7 @@ export const WindowManager = ({
               toggleWindow={toggleWindow}
               windowOpacity={windowOpacity}
             >
-              {cfg.content}
+              <cfg.Component />
             </Window>
           </ErrorBoundary>
         )

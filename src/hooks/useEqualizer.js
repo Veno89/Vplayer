@@ -1,32 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { EQ_PRESETS, STORAGE_KEYS } from '../utils/constants';
+import { EQ_PRESETS } from '../utils/constants';
 import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
 
 export function useEqualizer() {
-  // Load saved EQ from localStorage or use flat preset
-  const savedEQ = (() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.EQ_BANDS);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  })();
+  // Load EQ bands from Zustand store (persisted)
+  const storedEqBands = useStore(state => state.eqBands);
+  const setStoredEqBands = useStore(state => state.setEqBands);
 
-  const [eqBands, setEqBands] = useState(
-    savedEQ || [
-      { freq: "60Hz", value: 50 },
-      { freq: "170Hz", value: 50 },
-      { freq: "310Hz", value: 50 },
-      { freq: "600Hz", value: 50 },
-      { freq: "1kHz", value: 50 },
-      { freq: "3kHz", value: 50 },
-      { freq: "6kHz", value: 50 },
-      { freq: "12kHz", value: 50 },
-      { freq: "14kHz", value: 50 },
-      { freq: "16kHz", value: 50 }
-    ]
-  );
+  const [eqBands, setEqBandsLocal] = useState(storedEqBands);
 
   const [currentPreset, setCurrentPreset] = useState('CUSTOM');
   const initialSyncDone = useRef(false);
@@ -64,14 +46,10 @@ export function useEqualizer() {
     }
   }, [eqBands, syncWithBackend]);
 
-  // Save EQ to localStorage whenever it changes
+  // Persist EQ to store whenever it changes
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.EQ_BANDS, JSON.stringify(eqBands));
-    } catch (err) {
-      console.warn('Failed to save EQ settings:', err);
-    }
-  }, [eqBands]);
+    setStoredEqBands(eqBands);
+  }, [eqBands, setStoredEqBands]);
 
   // Apply preset
   const applyPreset = useCallback((presetName) => {
@@ -115,7 +93,7 @@ export function useEqualizer() {
 
   return { 
     eqBands, 
-    setEqBands, 
+    setEqBands: setEqBandsLocal, 
     currentPreset, 
     applyPreset, 
     resetEQ,

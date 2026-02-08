@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
 import { Window } from '../components/Window';
 import { useStore } from '../store/useStore';
 
@@ -13,7 +13,7 @@ import { useStore } from '../store/useStore';
  * - Displays metadata (title, artist, album)
  * - Graceful fallback when no lyrics found
  */
-export default function LyricsWindow({ id, onClose }) {
+export default function LyricsWindow() {
   const [lyrics, setLyrics] = useState(null);
   const [currentLine, setCurrentLine] = useState(null);
   const [error, setError] = useState(null);
@@ -21,6 +21,7 @@ export default function LyricsWindow({ id, onClose }) {
   
   const currentTrack = useStore((state) => state.currentTrack);
   const progress = useStore((state) => state.progress);
+  const toggleWindow = useStore((state) => state.toggleWindow);
 
   // Load lyrics when track changes
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function LyricsWindow({ id, onClose }) {
     setLoading(true);
     setError(null);
 
-    invoke('load_lyrics', { trackPath: currentTrack.path })
+    TauriAPI.loadLyrics(currentTrack.path)
       .then((lrc) => {
         setLyrics(lrc);
         setError(null);
@@ -67,9 +68,9 @@ export default function LyricsWindow({ id, onClose }) {
 
   return (
     <Window
-      id={id}
+      id="lyrics"
       title="Lyrics"
-      onClose={onClose}
+      onClose={() => toggleWindow('lyrics')}
       className="w-[500px] h-[600px]"
     >
       <div className="flex flex-col h-full p-6 overflow-hidden">

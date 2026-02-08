@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { STORAGE_KEYS, CROSSFADE_CONFIG } from '../utils/constants';
+import { CROSSFADE_CONFIG } from '../utils/constants';
+import { useStore } from '../store/useStore';
 
 /**
  * Crossfade hook for smooth transitions between tracks
@@ -10,15 +11,14 @@ import { STORAGE_KEYS, CROSSFADE_CONFIG } from '../utils/constants';
  * @returns {Object} Crossfade control interface
  */
 export function useCrossfade() {
-  const [enabled, setEnabled] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CROSSFADE_ENABLED);
-    return saved ? JSON.parse(saved) : CROSSFADE_CONFIG.DEFAULT_ENABLED;
-  });
+  // Read initial values from store (persisted via Zustand persist)
+  const storedEnabled = useStore(state => state.crossfadeEnabled);
+  const storedDuration = useStore(state => state.crossfadeDuration);
+  const setStoredEnabled = useStore(state => state.setCrossfadeEnabled);
+  const setStoredDuration = useStore(state => state.setCrossfadeDuration);
 
-  const [duration, setDuration] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CROSSFADE_DURATION);
-    return saved ? parseInt(saved, 10) : CROSSFADE_CONFIG.DEFAULT_DURATION_MS;
-  });
+  const [enabled, setEnabled] = useState(storedEnabled);
+  const [duration, setDuration] = useState(storedDuration);
 
   const fadeIntervalRef = useRef(null);
   const fadeTimeoutRef = useRef(null);
@@ -26,14 +26,14 @@ export function useCrossfade() {
   const originalVolumeRef = useRef(1.0);
   const fadeStartTimeRef = useRef(null);
 
-  // Persist settings
+  // Persist to store when values change
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CROSSFADE_ENABLED, JSON.stringify(enabled));
-  }, [enabled]);
+    setStoredEnabled(enabled);
+  }, [enabled, setStoredEnabled]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CROSSFADE_DURATION, duration.toString());
-  }, [duration]);
+    setStoredDuration(duration);
+  }, [duration, setStoredDuration]);
 
   const toggleEnabled = useCallback(() => {
     setEnabled(prev => !prev);

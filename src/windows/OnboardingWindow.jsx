@@ -1,16 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Music, FolderPlus, ArrowRight, CheckCircle, Sparkles, Volume2, Palette, Keyboard } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { useStore } from '../store/useStore';
+import { usePlayerContext } from '../context/PlayerProvider';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
 /**
- * Onboarding Window - First-run experience for new users
+ * Onboarding Window - First-run experience for new users.
+ * Self-sufficient: reads store/context directly.
+ * @param {{ onComplete: () => void }} props
  */
-export function OnboardingWindow({ 
-  onComplete, 
-  onAddFolder,
-  currentColors 
-}) {
+export function OnboardingWindow({ onComplete }) {
+  const currentColors = useCurrentColors();
+  const { library, toast } = usePlayerContext();
+  const handleAddFolder = useCallback(async () => {
+    try { await library.addFolder(); toast.showSuccess('Folder added successfully'); }
+    catch { toast.showError('Failed to add folder'); }
+  }, [library, toast]);
   const [step, setStep] = useState(0);
   const [folderAdded, setFolderAdded] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState(null);
@@ -30,7 +36,7 @@ export function OnboardingWindow({
       icon: FolderPlus,
       content: (
         <LibraryStep 
-          onAddFolder={handleAddFolder} 
+          onAddFolder={handleAddFolderStep} 
           folderAdded={folderAdded}
           selectedFolder={selectedFolder}
         />
@@ -59,7 +65,7 @@ export function OnboardingWindow({
     },
   ];
 
-  async function handleAddFolder() {
+  async function handleAddFolderStep() {
     try {
       const selected = await open({
         directory: true,
@@ -69,9 +75,7 @@ export function OnboardingWindow({
 
       if (selected) {
         setSelectedFolder(selected);
-        if (onAddFolder) {
-          await onAddFolder();
-        }
+        await handleAddFolder();
         setFolderAdded(true);
       }
     } catch (err) {
@@ -94,15 +98,15 @@ export function OnboardingWindow({
   };
 
   const handleComplete = () => {
-    // Mark onboarding as complete
-    localStorage.setItem('vplayer_onboarding_complete', 'true');
+    // Mark onboarding as complete in store
+    useStore.getState().setOnboardingComplete(true);
     if (onComplete) {
       onComplete();
     }
   };
 
   const handleSkip = () => {
-    localStorage.setItem('vplayer_onboarding_complete', 'true');
+    useStore.getState().setOnboardingComplete(true);
     if (onComplete) {
       onComplete();
     }

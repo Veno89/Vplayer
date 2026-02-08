@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ERROR_MESSAGES, DEFAULT_PREFERENCES, STORAGE_KEYS } from '../utils/constants';
+import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
 import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
 
@@ -26,11 +26,11 @@ export function useTrackLoading({
 
   // Restore last played track on mount
   useEffect(() => {
-    if (hasRestoredTrack || tracks.length === 0) return;
+    if (hasRestoredTrack || !tracks?.length) return;
 
-    const savedTrackId = localStorage.getItem('vplayer_last_track');
-    if (savedTrackId) {
-      const trackIndex = tracks.findIndex(t => t.id === savedTrackId);
+    const lastTrackId = useStore.getState().lastTrackId;
+    if (lastTrackId) {
+      const trackIndex = tracks.findIndex(t => t.id === lastTrackId);
       if (trackIndex !== -1) {
         // This will be handled by setCurrentTrack in parent
       }
@@ -62,7 +62,7 @@ export function useTrackLoading({
         // Safety check: if the store has a known last-played track ID, and we're being
         // asked to load a different track at the same index, it may mean the tracks array
         // was re-sorted and the index is now stale. Log a warning for diagnostics.
-        const lastSavedId = localStorage.getItem('vplayer_last_track');
+        const lastSavedId = useStore.getState().lastTrackId;
         if (loadedTrackId && loadedTrackId !== track.id && lastSavedId && lastSavedId === loadedTrackId) {
           console.log('[useTrackLoading] Track at index', currentTrack, 'changed from', loadedTrackId, 'to', track.id,
             '- array may have been re-sorted, loading new track');
@@ -75,15 +75,14 @@ export function useTrackLoading({
         }
 
         // Save last played track
-        localStorage.setItem('vplayer_last_track', track.id);
+        useStore.getState().setLastTrackId(track.id);
 
         // Check if we should restore position for this track
-        const savedTrackId = localStorage.getItem('vplayer_last_track');
-        const shouldRestore = shouldRestorePosition.current && track.id === savedTrackId;
+        const shouldRestore = shouldRestorePosition.current && track.id === useStore.getState().lastTrackId;
 
         if (!shouldRestore) {
           // Reset position only if not restoring
-          localStorage.setItem('vplayer_last_position', '0');
+          useStore.getState().setLastPosition(0);
         }
 
         console.log('Loading track:', track.name);
@@ -99,15 +98,12 @@ export function useTrackLoading({
           await replayGain.applyReplayGain(track);
 
           // Restore last position if we should
-          const savedTrackId = localStorage.getItem('vplayer_last_track');
-          if (shouldRestorePosition.current && track.id === savedTrackId) {
-            const savedPosition = localStorage.getItem('vplayer_last_position');
-            if (savedPosition) {
-              const position = parseFloat(savedPosition);
-              if (position > 0 && position < track.duration) {
-                console.log(`Restoring position: ${position}s for track ${track.name}`);
-                await audio.seek(position);
-              }
+          const storedTrackId = useStore.getState().lastTrackId;
+          if (shouldRestorePosition.current && track.id === storedTrackId) {
+            const savedPosition = useStore.getState().lastPosition;
+            if (savedPosition > 0 && savedPosition < track.duration) {
+              console.log(`Restoring position: ${savedPosition}s for track ${track.name}`);
+              await audio.seek(savedPosition);
             }
             // Mark that we've restored, so subsequent track changes don't restore
             shouldRestorePosition.current = false;
@@ -131,15 +127,12 @@ export function useTrackLoading({
           // Check if this is a decode error (corrupted file)
           const isDecodeError = err.message && err.message.includes('Decode error');
 
-          // Get user preferences
-          const preferences = (() => {
-            try {
-              const raw = localStorage.getItem(STORAGE_KEYS.PREFERENCES);
-              return raw ? { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) } : DEFAULT_PREFERENCES;
-            } catch {
-              return DEFAULT_PREFERENCES;
-            }
-          })();
+          // Get user preferences from store
+          const storeState = useStore.getState();
+          const preferences = {
+            autoRemoveCorruptedFiles: DEFAULT_PREFERENCES.autoRemoveCorruptedFiles,
+            confirmCorruptedFileRemoval: DEFAULT_PREFERENCES.confirmCorruptedFileRemoval,
+          };
 
           if (isDecodeError && preferences.autoRemoveCorruptedFiles) {
             // Show confirmation dialog if enabled
@@ -164,7 +157,7 @@ export function useTrackLoading({
               console.log('Removed corrupted track:', track.name);
 
               // Skip to next track if there are more tracks
-              if (tracks.length > 1 && handleNextTrack) {
+              if (tracks?.length > 1 && handleNextTrack) {
                 setTimeout(() => {
                   handleNextTrack();
                 }, 500);
@@ -190,10 +183,10 @@ export function useTrackLoading({
   // Only re-run when currentTrack index or loadedTrackId changes
   // All other values (tracks, audio, etc.) are accessed from the closure
 
-  // Separate effect to save progress periodically
+  // Separate effect to save progress periodically to store
   useEffect(() => {
     if (loadedTrackId && progress > 0) {
-      localStorage.setItem('vplayer_last_position', progress.toString());
+      useStore.getState().setLastPosition(progress);
     }
   }, [progress, loadedTrackId]);
 

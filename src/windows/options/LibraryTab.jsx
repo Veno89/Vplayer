@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Music, FolderOpen, Search, Image, RefreshCw, FileAudio, Eye, Globe, Plus, Trash2, Loader } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../../services/TauriAPI';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../store/useStore';
 import { SettingToggle, SettingSelect, SettingCard, SettingButton, SettingInfo, SettingDivider, SettingBadge } from './SettingsComponents';
@@ -37,9 +37,9 @@ export function LibraryTab() {
     try {
       setLoading(true);
       // get_all_folders returns [(id, path, name, date_added), ...]
-      const folders = await invoke('get_all_folders').catch(() => []);
+      const folders = await TauriAPI.getAllFolders().catch(() => []);
       // Get all tracks to count them
-      const tracks = await invoke('get_all_tracks').catch(() => []);
+      const tracks = await TauriAPI.getAllTracks().catch(() => []);
       
       // Transform folders to include track count
       const foldersWithCounts = folders.map(([id, path, name, dateAdded]) => {
@@ -71,7 +71,7 @@ export function LibraryTab() {
       });
       if (selected) {
         setScanning(true);
-        await invoke('scan_folder', { path: selected });
+        await TauriAPI.scanFolder(selected);
         await loadLibraryInfo();
       }
     } catch (err) {
@@ -87,7 +87,7 @@ export function LibraryTab() {
     if (!confirm(`Remove "${path}" from library? Files will not be deleted.`)) return;
     try {
       if (folderId) {
-        await invoke('remove_folder', { folderId, folderPath: path });
+        await TauriAPI.removeFolder(folderId, path);
       }
       await loadLibraryInfo();
     } catch (err) {
@@ -101,7 +101,7 @@ export function LibraryTab() {
       // Rescan each folder
       for (const folder of libraryFolders) {
         const path = typeof folder === 'object' ? folder.path : folder;
-        await invoke('scan_folder', { path }).catch(err => {
+        await TauriAPI.scanFolder(path).catch(err => {
           console.warn(`Failed to scan ${path}:`, err);
         });
       }

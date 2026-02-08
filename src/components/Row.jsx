@@ -1,5 +1,5 @@
 import React from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from './StarRating';
 import { AlbumArt } from './AlbumArt';
@@ -13,7 +13,7 @@ export const Row = React.memo(({ data, index, style }) => {
   
   const handleRatingChange = async (newRating) => {
     try {
-      await invoke('set_track_rating', { trackId: track.id, rating: newRating });
+      await TauriAPI.setTrackRating(track.id, newRating);
       if (onRatingChange) {
         onRatingChange(track.id, newRating);
       }

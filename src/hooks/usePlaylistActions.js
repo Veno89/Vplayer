@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useStore } from '../store/useStore';
 
 /**
  * Custom hook that extracts playlist action handlers from PlaylistWindow.
@@ -180,8 +181,9 @@ export function usePlaylistActions({
             await playlists.deletePlaylist(playlistId);
 
             // Clear saved playlist if we deleted it
-            if (localStorage.getItem('vplayer_last_playlist') === playlistId) {
-                localStorage.removeItem('vplayer_last_playlist');
+            const lastPlaylistId = useStore.getState().lastPlaylistId;
+            if (lastPlaylistId === playlistId) {
+                useStore.getState().setLastPlaylistId(null);
             }
         } catch (err) {
             alert('Failed to delete playlist');

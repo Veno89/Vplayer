@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, HardDrive, Cpu, Image, Activity, Gauge } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../../services/TauriAPI';
 import { useStore } from '../../store/useStore';
 import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingInfo, SettingDivider } from './SettingsComponents';
 
@@ -30,9 +30,9 @@ export function PerformanceTab() {
     try {
       setLoadingStats(true);
       // Use get_performance_stats which returns various metrics
-      const stats = await invoke('get_performance_stats').catch(() => ({}));
+      const stats = await TauriAPI.getPerformanceStats().catch(() => ({}));
       // Also get cache size separately
-      const cacheUsed = await invoke('get_cache_size').catch(() => 0);
+      const cacheUsed = await TauriAPI.getCacheSize().catch(() => 0);
       setMemoryUsage({ 
         cache_used: cacheUsed,
         memory_used: stats?.memory_mb ? stats.memory_mb * 1024 * 1024 : 0,

@@ -1,8 +1,12 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import { Sliders, RotateCcw } from 'lucide-react';
 import { TauriAPI } from '../services/TauriAPI';
+import { useEqualizer } from '../hooks/useEqualizer';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function EqualizerWindow({ eqBands, setEqBands, currentColors, currentPreset, applyPreset, resetEQ, presets }) {
+export function EqualizerWindow() {
+  const { eqBands, setEqBands, currentPreset, applyPreset, resetEQ, presets } = useEqualizer();
+  const currentColors = useCurrentColors();
   const updateTimeoutRef = useRef(null);
 
   // Get theme colors with fallbacks

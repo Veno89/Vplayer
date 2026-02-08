@@ -1,16 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Tag, Save, X, Loader, Music, User, Disc, Calendar, Hash, MessageSquare, AlertCircle } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { usePlayerContext } from '../context/PlayerProvider';
 
 /**
  * Tag Editor Window - Edit track metadata (ID3 tags)
  */
-export function TagEditorWindow({ 
-  track, 
-  onClose, 
-  onSave, 
-  currentColors 
-}) {
+export function TagEditorWindow() {
+  const track = useStore(s => s.tagEditorTrack);
+  const setTagEditorTrack = useStore(s => s.setTagEditorTrack);
+  const currentColors = useCurrentColors();
+  const { library, toast } = usePlayerContext();
+
+  const onClose = useCallback(() => setTagEditorTrack(null), [setTagEditorTrack]);
+  const onSave = useCallback(() => {
+    library.refreshTracks();
+    toast.showSuccess('Tags saved successfully');
+  }, [library, toast]);
   const [tags, setTags] = useState({
     title: '',
     artist: '',
@@ -73,11 +81,7 @@ export function TagEditorWindow({
         }
       });
 
-      await invoke('update_track_tags', {
-        trackId: track.id,
-        trackPath: track.path,
-        tags: changedTags,
-      });
+      await TauriAPI.updateTrackTags(track.id, track.path, changedTags);
 
       setOriginalTags({ ...tags });
       setHasChanges(false);

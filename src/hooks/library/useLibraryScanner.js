@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { TauriAPI } from '../../services/TauriAPI';
 import { EVENTS } from '../../utils/constants';
@@ -35,7 +34,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             if (watchFolderChanges) {
                 for (const folder of libraryFolders) {
                     try {
-                        await invoke('start_folder_watch', { folderPath: folder.path });
+                        await TauriAPI.startFolderWatch(folder.path);
                         console.log(`Started watching folder: ${folder.path}`);
                     } catch (err) {
                         console.error(`Failed to start watching ${folder.path}:`, err);
@@ -191,7 +190,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
             // Start watching this folder
             try {
-                await invoke('start_folder_watch', { folderPath: path });
+                await TauriAPI.startFolderWatch(path);
                 console.log(`Started watching folder: ${path}`);
             } catch (err) {
                 console.error('Failed to start folder watch:', err);

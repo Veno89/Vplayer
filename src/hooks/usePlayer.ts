@@ -145,7 +145,7 @@ export function usePlayer({
 
     // Crossfade monitoring effect
     useEffect(() => {
-        if (!tracks.length || currentTrack === null || !duration) return;
+        if (!tracks?.length || currentTrack === null || !duration) return;
         if (!crossfade || !crossfade.enabled) return;
 
         // Check if we should start crossfade
@@ -185,7 +185,7 @@ export function usePlayer({
 
     // Pre-load next track for gapless playback (when crossfade disabled)
     useEffect(() => {
-        if (!tracks.length || currentTrack === null || !duration) return;
+        if (!tracks?.length || currentTrack === null || !duration) return;
         if (crossfade?.enabled) return;
 
         const timeRemaining = duration - progress;

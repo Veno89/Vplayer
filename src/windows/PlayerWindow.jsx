@@ -2,38 +2,37 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, Settings, Loader, Minimize2, CornerDownLeft, CornerDownRight, X } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
+import { useStore } from '../store/useStore';
+import { usePlayerContext } from '../context/PlayerProvider';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function PlayerWindow({
-  currentTrack,
-  tracks,
-  playing,
-  progress,
-  duration,
-  volume,
-  setVolume,
-  currentColors,
-  togglePlay,
-  nextTrack,
-  prevTrack,
-  setShuffle,
-  shuffle,
-  setRepeatMode,
-  repeatMode,
-  seekToPercent,
-  toggleWindow,
-  isLoading,
-  isMuted,
-  toggleMute,
-  audioBackendError,
-  onMinimize,
-  // A-B Repeat props
-  abRepeat,
-  setPointA,
-  setPointB,
-  clearABRepeat,
-  onSeek, // Direct seek function (time in seconds)
-}) {
-  const currentTrackData = currentTrack !== null ? tracks[currentTrack] : null;
+export function PlayerWindow() {
+  // ── Store state ───────────────────────────────────────────────────
+  const currentTrack = useStore(s => s.currentTrack);
+  const tracks = useStore(s => s.tracks);
+  const playing = useStore(s => s.playing);
+  const setPlaying = useStore(s => s.setPlaying);
+  const progress = useStore(s => s.progress);
+  const duration = useStore(s => s.duration);
+  const volume = useStore(s => s.volume);
+  const shuffle = useStore(s => s.shuffle);
+  const setShuffle = useStore(s => s.setShuffle);
+  const repeatMode = useStore(s => s.repeatMode);
+  const setRepeatMode = useStore(s => s.setRepeatMode);
+  const toggleWindow = useStore(s => s.toggleWindow);
+  const abRepeat = useStore(s => s.abRepeat);
+  const setPointA = useStore(s => s.setPointA);
+  const setPointB = useStore(s => s.setPointB);
+  const clearABRepeat = useStore(s => s.clearABRepeat);
+
+  // ── Context ───────────────────────────────────────────────────────
+  const { handleNextTrack: nextTrack, handlePrevTrack: prevTrack, handleSeek: seekToPercent, handleVolumeChange: setVolume, handleToggleMute: toggleMute, audioIsLoading: isLoading, audioBackendError } = usePlayerContext();
+
+  // ── Derived ───────────────────────────────────────────────────────
+  const currentColors = useCurrentColors();
+  const isMuted = false; // TODO: wire up properly when mute state is in store
+  const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
+  const currentTrackData = currentTrack !== null ? tracks?.[currentTrack] : null;
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
   const isDisabled = !!audioBackendError; // Disable controls if audio backend has failed
 
@@ -313,7 +312,7 @@ export function PlayerWindow({
             e.stopPropagation(); 
             prevTrack(); 
           }}
-          disabled={tracks.length === 0 || isDisabled}
+          disabled={!tracks?.length || isDisabled}
           className="p-2 hover:bg-slate-800 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Previous Track"
         >
@@ -326,7 +325,7 @@ export function PlayerWindow({
             e.stopPropagation(); 
             togglePlay(); 
           }}
-          disabled={tracks.length === 0 || currentTrack === null || isDisabled}
+          disabled={!tracks?.length || currentTrack === null || isDisabled}
           className={`p-4 bg-gradient-to-r ${currentColors.primary} hover:opacity-90 rounded-full transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed`}
           title={playing ? 'Pause' : 'Play'}
         >
@@ -343,7 +342,7 @@ export function PlayerWindow({
             e.stopPropagation(); 
             nextTrack(); 
           }}
-          disabled={tracks.length === 0 || isDisabled}
+          disabled={!tracks?.length || isDisabled}
           className="p-2 hover:bg-slate-800 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Next Track"
         >
@@ -480,9 +479,9 @@ export function PlayerWindow({
       )}
 
       {/* Track Counter */}
-      {tracks.length > 0 && (
+      {tracks?.length > 0 && (
         <div className="text-center text-slate-500 text-xs">
-          Track {currentTrack !== null ? currentTrack + 1 : 0} of {tracks.length}
+          Track {currentTrack !== null ? currentTrack + 1 : 0} of {tracks?.length ?? 0}
         </div>
       )}
     </div>

@@ -25,6 +25,11 @@ export interface PlayerSliceState {
     // A-B Repeat State
     abRepeat: ABRepeatState;
 
+    // Restore State (persisted)
+    lastTrackId: string | null;
+    lastPosition: number;
+    lastPlaylistId: string | null;
+
     // Queue State
     queue: Track[];
     queueIndex: number;
@@ -46,6 +51,11 @@ export interface PlayerSliceActions {
     setActivePlaybackTracks: (tracks: Track[]) => void;
     getCurrentTrackData: () => Track | null;
     getPlaybackTracks: () => Track[];
+
+    // Restore Actions
+    setLastTrackId: (id: string | null) => void;
+    setLastPosition: (position: number) => void;
+    setLastPlaylistId: (id: string | null) => void;
 
     // A-B Repeat Actions
     setPointA: (time: number | null) => void;

@@ -1,8 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { List, X, Trash2, Shuffle, PlayCircle, MoveUp, MoveDown, ListX, Search, Target } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function QueueWindow({ currentColors, setCurrentTrack, tracks }) {
+export function QueueWindow() {
+  const currentColors = useCurrentColors();
+  const setCurrentTrack = useStore((state) => state.setCurrentTrack);
+  const tracks = useStore((state) => state.tracks);
   const queue = useStore((state) => state.queue);
   const queueIndex = useStore((state) => state.queueIndex);
   const queueHistory = useStore((state) => state.queueHistory);

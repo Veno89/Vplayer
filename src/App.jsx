@@ -1,10 +1,13 @@
 import React from 'react'
 import VPlayer from './VPlayer'
+import { PlayerProvider } from './context/PlayerProvider'
 
 export default function App() {
   return (
     <div>
-      <VPlayer />
+      <PlayerProvider>
+        <VPlayer />
+      </PlayerProvider>
     </div>
   )
 }

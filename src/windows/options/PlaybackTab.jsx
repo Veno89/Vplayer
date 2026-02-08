@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Play, SkipForward, Volume2, Clock, Mic2, Activity, Loader } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../../services/TauriAPI';
 import { useStore } from '../../store/useStore';
 import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingDivider, SettingButton } from './SettingsComponents';
 
@@ -164,7 +164,7 @@ export function PlaybackTab({ crossfade }) {
 
                 try {
                   setAnalyzingRG(true);
-                  const tracks = await invoke('get_all_tracks');
+                  const tracks = await TauriAPI.getAllTracks();
 
                   // Filter tracks that need analysis (no loudness data)
                   const needsAnalysis = tracks.filter(t => t.loudness === null || t.loudness === undefined);
@@ -182,7 +182,7 @@ export function PlaybackTab({ crossfade }) {
 
                   for (const track of needsAnalysis) {
                     try {
-                      await invoke('analyze_replaygain', { trackPath: track.path });
+                      await TauriAPI.analyzeReplayGain(track.path);
                       analyzed++;
                     } catch (err) {
                       console.warn(`Failed to analyze ${track.path}:`, err);

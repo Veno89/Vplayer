@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useToast } from '../hooks/useToast';
 import { FolderOpen, Search, RefreshCw, Trash2, X, Loader, AlertCircle, FileQuestion, Copy, ChevronDown, ChevronRight, Music, GripVertical } from 'lucide-react';
 import { AdvancedSearch } from '../components/AdvancedSearch';
-import { invoke } from '@tauri-apps/api/core';
 import { TauriAPI } from '../services/TauriAPI';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from '../components/StarRating';
 import { FixedSizeList } from 'react-window';
 import { notifyDragStart, notifyDragEnd } from '../hooks/useAutoResize';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { usePlayerContext } from '../context/PlayerProvider';
 
 // Virtual list row component for track rendering
 const VirtualTrackRow = ({ index, style, data }) => {
@@ -72,30 +74,63 @@ const VirtualTrackRow = ({ index, style, data }) => {
   );
 };
 
-export function LibraryWindow({
-  libraryFolders,
-  tracks,
-  tracksCount,
-  currentColors,
-  isScanning,
-  scanProgress,
-  scanCurrent,
-  scanTotal,
-  scanCurrentFile,
-  handleAddFolder,
-  handleRefreshFolders,
-  handleRemoveFolder,
-  searchQuery,
-  setSearchQuery,
-  sortBy,
-  setSortBy,
-  sortOrder,
-  setSortOrder,
-  advancedFilters,
-  setAdvancedFilters,
-  onTrackDragStart,
-  onTrackDragEnd,
-}) {
+export function LibraryWindow() {
+  // ── Store state ───────────────────────────────────────────────────
+  const libraryFolders = useStore(s => s.libraryFolders) ?? [];
+  const isScanning = useStore(s => s.isScanning);
+  const scanProgress = useStore(s => s.scanProgress);
+  const scanCurrent = useStore(s => s.scanCurrent);
+  const scanTotal = useStore(s => s.scanTotal);
+  const scanCurrentFile = useStore(s => s.scanCurrentFile);
+  const searchQuery = useStore(s => s.searchQuery);
+  const setSearchQuery = useStore(s => s.setSearchQuery);
+  const sortBy = useStore(s => s.sortBy);
+  const setSortBy = useStore(s => s.setSortBy);
+  const sortOrder = useStore(s => s.sortOrder);
+  const setSortOrder = useStore(s => s.setSortOrder);
+  const advancedFilters = useStore(s => s.advancedFilters);
+  const setAdvancedFilters = useStore(s => s.setAdvancedFilters);
+  const setIsDraggingTracks = useStore(s => s.setIsDraggingTracks);
+  const setCurrentTrack = useStore(s => s.setCurrentTrack);
+  const setPlaying = useStore(s => s.setPlaying);
+
+  // ── Context / derived ─────────────────────────────────────────────
+  const { library, toast } = usePlayerContext();
+  const { tracks: allTracks, filteredTracks: tracks, addFolder, removeFolder, refreshTracks } = library;
+  const tracksCount = allTracks?.length ?? 0;
+  const currentColors = useCurrentColors();
+
+  // ── Library action handlers ───────────────────────────────────────
+  const handleAddFolder = useCallback(async () => {
+    try { await addFolder(); toast.showSuccess('Folder added successfully'); }
+    catch { toast.showError('Failed to add folder'); }
+  }, [addFolder, toast]);
+
+  const handleRefreshFolders = useCallback(async () => {
+    await refreshTracks();
+  }, [refreshTracks]);
+
+  const handleRemoveFolder = useCallback(async (folderId, folderPath) => {
+    try {
+      await removeFolder(folderId, folderPath);
+      toast.showSuccess('Folder removed successfully');
+      const ct = useStore.getState().currentTrack;
+      const t = useStore.getState().tracks;
+      if (ct !== null && t?.[ct]?.folderId === folderId) {
+        setCurrentTrack(null);
+        setPlaying(false);
+      }
+    } catch { toast.showError('Failed to remove folder'); }
+  }, [removeFolder, setCurrentTrack, setPlaying, toast]);
+
+  // ── Drag callbacks ────────────────────────────────────────────────
+  const onTrackDragStart = useCallback((data) => {
+    setTimeout(() => setIsDraggingTracks(true), 0);
+  }, [setIsDraggingTracks]);
+
+  const onTrackDragEnd = useCallback(() => {
+    setIsDraggingTracks(false);
+  }, [setIsDraggingTracks]);
   const [removingFolder, setRemovingFolder] = useState(null);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const [missingFiles, setMissingFiles] = useState([]);
@@ -120,7 +155,7 @@ export function LibraryWindow({
   const handleCheckMissingFiles = async () => {
     setCheckingMissing(true);
     try {
-      const missing = await invoke('check_missing_files');
+      const missing = await TauriAPI.checkMissingFiles();
       setMissingFiles(missing);
       setShowMissingFiles(true);
     } catch (err) {
@@ -171,14 +206,14 @@ export function LibraryWindow({
       }
 
       // Then, remove duplicate tracks
-      const groups = await invoke('find_duplicates');
+      const groups = await TauriAPI.findDuplicates();
       if (groups.length > 0) {
         for (const group of groups) {
           if (group.length > 1) {
             // Keep the first track, remove the rest
             const tracksToRemove = group.slice(1);
             for (const track of tracksToRemove) {
-              await invoke('remove_track', { trackId: track.id });
+              await TauriAPI.removeTrack(track.id);
               totalRemoved++;
             }
           }

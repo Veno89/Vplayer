@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { useStore } from '../store/useStore';
 
 // Default shortcuts - can be customized via ShortcutsWindow
 const DEFAULT_SHORTCUTS = [
@@ -79,7 +80,7 @@ function matchesShortcut(event, shortcut) {
 /**
  * Unified keyboard shortcuts hook
  * Handles both DOM keyboard events (in-app) and Tauri global events (OS media keys)
- * Reads customizable shortcuts from localStorage
+ * Reads customizable shortcuts from Zustand store
  */
 export function useShortcuts({
   // Playback callbacks
@@ -98,32 +99,9 @@ export function useShortcuts({
   // Audio reference for seeking and global shortcuts
   audio,
 }) {
-  // Load shortcuts from localStorage (synced with ShortcutsWindow)
-  const [shortcuts, setShortcuts] = useState(() => {
-    try {
-      const saved = localStorage.getItem('keyboard-shortcuts');
-      return saved ? JSON.parse(saved) : DEFAULT_SHORTCUTS;
-    } catch {
-      return DEFAULT_SHORTCUTS;
-    }
-  });
-
-  // Listen for storage changes (when ShortcutsWindow updates)
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'keyboard-shortcuts') {
-        try {
-          const newShortcuts = e.newValue ? JSON.parse(e.newValue) : DEFAULT_SHORTCUTS;
-          setShortcuts(newShortcuts);
-        } catch {
-          // Ignore parse errors
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  // Load shortcuts from Zustand store (persisted); null means use defaults
+  const storedShortcuts = useStore(state => state.keyboardShortcuts);
+  const shortcuts = storedShortcuts || DEFAULT_SHORTCUTS;
 
   // Check if an input element is focused
   const isInputFocused = useCallback(() => {

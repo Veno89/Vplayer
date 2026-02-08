@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { Window } from '../components/Window';
 import { useStore } from '../store/useStore';
 import { useToast } from '../hooks/useToast';
@@ -33,22 +32,20 @@ const defaultShortcuts = [
  * 
  * Allows users to customize keyboard shortcuts for all actions
  * with conflict detection and restore defaults.
- * Changes are synced with useShortcuts.js via localStorage.
+ * Changes are synced with useShortcuts.js via Zustand store.
  */
-export default function ShortcutsWindow({ id, onClose }) {
+export default function ShortcutsWindow() {
+  const storedShortcuts = useStore(state => state.keyboardShortcuts);
+  const setStoredShortcuts = useStore(state => state.setKeyboardShortcuts);
+  const toggleWindow = useStore(state => state.toggleWindow);
   const [shortcuts, setShortcuts] = useState([]);
   const [editing, setEditing] = useState(null);
   const [listening, setListening] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
-    // Load shortcuts from localStorage or use defaults
-    const saved = localStorage.getItem('keyboard-shortcuts');
-    if (saved) {
-      setShortcuts(JSON.parse(saved));
-    } else {
-      setShortcuts(defaultShortcuts);
-    }
+    // Load shortcuts from store or use defaults
+    setShortcuts(storedShortcuts || defaultShortcuts);
   }, []);
 
   const handleKeyDown = (e) => {
@@ -87,7 +84,7 @@ export default function ShortcutsWindow({ id, onClose }) {
       );
       
       setShortcuts(updated);
-      localStorage.setItem('keyboard-shortcuts', JSON.stringify(updated));
+      setStoredShortcuts(updated);
       setListening(false);
       setEditing(null);
       showToast('Shortcut updated', 'success');
@@ -113,7 +110,7 @@ export default function ShortcutsWindow({ id, onClose }) {
 
   const resetToDefaults = () => {
     setShortcuts(defaultShortcuts);
-    localStorage.setItem('keyboard-shortcuts', JSON.stringify(defaultShortcuts));
+    setStoredShortcuts(null); // null means "use defaults"
     showToast('Shortcuts reset to defaults', 'success');
   };
 
@@ -126,7 +123,7 @@ export default function ShortcutsWindow({ id, onClose }) {
     );
     
     setShortcuts(updated);
-    localStorage.setItem('keyboard-shortcuts', JSON.stringify(updated));
+    setStoredShortcuts(updated);
     showToast('Shortcut reset', 'success');
   };
 
@@ -134,9 +131,9 @@ export default function ShortcutsWindow({ id, onClose }) {
 
   return (
     <Window
-      id={id}
+      id="shortcuts"
       title="Keyboard Shortcuts"
-      onClose={onClose}
+      onClose={() => toggleWindow('shortcuts')}
       className="w-[700px] h-[600px]"
     >
       <div className="flex flex-col h-full p-6">

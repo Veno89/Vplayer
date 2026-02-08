@@ -1,5 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Settings, Palette, Volume2, Info, Layout, Search, Play, Music, Sliders, Zap, Database } from 'lucide-react';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { usePlayerContext } from '../context/PlayerProvider';
 
 // Import tab components
 import { AppearanceTab } from './options/AppearanceTab';
@@ -51,30 +54,33 @@ const TABS = [
   },
 ];
 
-export function OptionsWindowEnhanced({
-  windows,
-  toggleWindow,
-  colorScheme,
-  setColorScheme,
-  currentColors,
-  layouts,
-  currentLayout,
-  applyLayout,
-  crossfade,
-  onOpenThemeEditor,
-  backgroundImage,
-  setBackgroundImage,
-  backgroundBlur,
-  setBackgroundBlur,
-  backgroundOpacity,
-  setBackgroundOpacity,
-  windowOpacity,
-  setWindowOpacity,
-  fontSize,
-  setFontSize,
-  debugVisible,
-  setDebugVisible,
-}) {
+export function OptionsWindowEnhanced() {
+  // ── Store state ───────────────────────────────────────────────────
+  const windows = useStore(s => s.windows);
+  const toggleWindow = useStore(s => s.toggleWindow);
+  const colorScheme = useStore(s => s.colorScheme);
+  const setColorScheme = useStore(s => s.setColorScheme);
+  const layouts = useStore(s => s.getLayouts);
+  const currentLayout = useStore(s => s.currentLayout);
+  const applyLayout = useStore(s => s.applyLayout);
+  const backgroundImage = useStore(s => s.backgroundImage);
+  const setBackgroundImage = useStore(s => s.setBackgroundImage);
+  const backgroundBlur = useStore(s => s.backgroundBlur);
+  const setBackgroundBlur = useStore(s => s.setBackgroundBlur);
+  const backgroundOpacity = useStore(s => s.backgroundOpacity);
+  const setBackgroundOpacity = useStore(s => s.setBackgroundOpacity);
+  const windowOpacity = useStore(s => s.windowOpacity);
+  const setWindowOpacity = useStore(s => s.setWindowOpacity);
+  const fontSize = useStore(s => s.fontSize);
+  const setFontSize = useStore(s => s.setFontSize);
+  const debugVisible = useStore(s => s.debugVisible);
+  const setDebugVisible = useStore(s => s.setDebugVisible);
+  const setThemeEditorOpen = useStore(s => s.setThemeEditorOpen);
+
+  // ── Context / derived ─────────────────────────────────────────────
+  const { crossfade } = usePlayerContext();
+  const currentColors = useCurrentColors();
+  const onOpenThemeEditor = () => setThemeEditorOpen(true);
   const [activeTab, setActiveTab] = useState('appearance');
   const [searchQuery, setSearchQuery] = useState('');
 

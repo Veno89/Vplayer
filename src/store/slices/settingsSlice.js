@@ -44,6 +44,30 @@ export const createSettingsSlice = (set) => ({
   hardwareAcceleration: true,
   audioBufferSize: 4096, // samples
 
+  // === EQ Settings (migrated from localStorage) ===
+  eqBands: [
+    { freq: "60Hz", value: 50 },
+    { freq: "170Hz", value: 50 },
+    { freq: "310Hz", value: 50 },
+    { freq: "600Hz", value: 50 },
+    { freq: "1kHz", value: 50 },
+    { freq: "3kHz", value: 50 },
+    { freq: "6kHz", value: 50 },
+    { freq: "12kHz", value: 50 },
+    { freq: "14kHz", value: 50 },
+    { freq: "16kHz", value: 50 }
+  ],
+
+  // === Crossfade Settings (migrated from localStorage) ===
+  crossfadeEnabled: false,
+  crossfadeDuration: 3000, // ms
+
+  // === Keyboard Shortcuts (migrated from localStorage) ===
+  keyboardShortcuts: null, // null means use defaults; array of {id, name, key, category}
+
+  // === Onboarding ===
+  onboardingComplete: false,
+
   // === Playback Settings Actions ===
   setGaplessPlayback: (enabled) => set({ gaplessPlayback: enabled }),
   setAutoPlayOnStartup: (enabled) => set({ autoPlayOnStartup: enabled }),
@@ -84,6 +108,19 @@ export const createSettingsSlice = (set) => ({
   setThumbnailQuality: (quality) => set({ thumbnailQuality: quality }),
   setHardwareAcceleration: (enabled) => set({ hardwareAcceleration: enabled }),
   setAudioBufferSize: (size) => set({ audioBufferSize: size }),
+
+  // === EQ Actions ===
+  setEqBands: (bands) => set({ eqBands: bands }),
+
+  // === Crossfade Actions ===
+  setCrossfadeEnabled: (enabled) => set({ crossfadeEnabled: enabled }),
+  setCrossfadeDuration: (duration) => set({ crossfadeDuration: duration }),
+
+  // === Keyboard Shortcuts Actions ===
+  setKeyboardShortcuts: (shortcuts) => set({ keyboardShortcuts: shortcuts }),
+
+  // === Onboarding Actions ===
+  setOnboardingComplete: (complete) => set({ onboardingComplete: complete }),
 });
 
 /**
@@ -96,7 +133,7 @@ export const settingsPersistState = (state) => ({
   resumeLastTrack: state.resumeLastTrack,
   replayGainMode: state.replayGainMode,
   replayGainPreamp: state.replayGainPreamp,
-  // Note: crossfade settings are managed by useCrossfade hook with localStorage
+  // Note: crossfade settings are now managed via Zustand persist (crossfadeEnabled, crossfadeDuration)
   playbackSpeed: state.playbackSpeed,
   fadeOnPause: state.fadeOnPause,
   fadeDuration: state.fadeDuration,
@@ -128,4 +165,13 @@ export const settingsPersistState = (state) => ({
   thumbnailQuality: state.thumbnailQuality,
   hardwareAcceleration: state.hardwareAcceleration,
   audioBufferSize: state.audioBufferSize,
+  // EQ Settings
+  eqBands: state.eqBands,
+  // Crossfade Settings
+  crossfadeEnabled: state.crossfadeEnabled,
+  crossfadeDuration: state.crossfadeDuration,
+  // Keyboard Shortcuts
+  keyboardShortcuts: state.keyboardShortcuts,
+  // Onboarding
+  onboardingComplete: state.onboardingComplete,
 });

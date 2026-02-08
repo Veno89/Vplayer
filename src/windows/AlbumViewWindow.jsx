@@ -3,8 +3,13 @@ import { Music, Play, Disc, Grid, List as ListIcon, Search, X } from 'lucide-rea
 import { SimpleTrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
-export function AlbumViewWindow({ tracks, currentColors, setCurrentTrack }) {
+export function AlbumViewWindow() {
+  const tracks = useStore(s => s.tracks);
+  const currentColors = useCurrentColors();
+  const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [searchQuery, setSearchQuery] = useState('');

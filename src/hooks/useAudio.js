@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { AUDIO_RETRY_CONFIG, STORAGE_KEYS } from '../utils/constants';
+import { TauriAPI } from '../services/TauriAPI';
+import { AUDIO_RETRY_CONFIG } from '../utils/constants';
 import { useErrorHandler } from '../services/ErrorHandler';
 import { useToast } from './useToast';
 
@@ -78,10 +78,8 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   const toast = useToast();
   const errorHandler = useErrorHandler(toast);
   
-  // Load volume from localStorage or use initialVolume
-  const savedVolume = localStorage.getItem(STORAGE_KEYS.PLAYER_STATE);
-  const initialVol = savedVolume ? JSON.parse(savedVolume).volume : initialVolume;
-  const [volume, setVolumeState] = useState(initialVol ?? initialVolume);
+  // Volume state - initialVolume comes from the Zustand store (persisted)
+  const [volume, setVolumeState] = useState(initialVolume);
   
   const progressIntervalRef = useRef(null);
   const currentTrackRef = useRef(null);
@@ -93,7 +91,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   useEffect(() => {
     const checkAudioBackend = async () => {
       try {
-        await invoke('is_playing');
+        await TauriAPI.isPlaying();
         setAudioBackendError(null);
       } catch (err) {
         setAudioBackendError(`Audio system unavailable: ${err}`);
@@ -117,7 +115,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
         try {
           // Get real position from Rust backend with timeout to prevent hangs
           const position = await withTimeout(
-            invoke('get_position'),
+            TauriAPI.getPosition(),
             2000, // 2 second timeout for polling
             'Position polling timed out'
           );
@@ -134,7 +132,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
           // Check if track finished (only when playing)
           if (isPlaying && position >= duration - 0.1) {
             const finished = await withTimeout(
-              invoke('is_finished'),
+              TauriAPI.isFinished(),
               2000,
               'Finished check timed out'
             );
@@ -150,11 +148,11 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
           // This catches the case where audio stops unexpectedly mid-track
           if (isPlaying && position < duration - 1) {
             try {
-              const actuallyPlaying = await invoke('is_playing');
+              const actuallyPlaying = await TauriAPI.isPlaying();
               if (!actuallyPlaying) {
                 console.warn('[useAudio] Audio stopped unexpectedly at position:', position, '/', duration);
                 // Audio stopped but we think it's playing - try to recover
-                const isFinished = await invoke('is_finished');
+                const isFinished = await TauriAPI.isFinished();
                 if (isFinished && position < duration - 1) {
                   // Audio finished prematurely - this is the bug!
                   console.error('[useAudio] Audio finished prematurely, attempting recovery...');
@@ -162,9 +160,9 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
                   const currentPath = currentTrackRef.current?.path;
                   if (currentPath) {
                     try {
-                      await invoke('load_track', { path: currentPath });
-                      await invoke('seek_to', { position });
-                      await invoke('play_audio');
+                      await TauriAPI.loadTrack(currentPath);
+                      await TauriAPI.seekTo(position);
+                      await TauriAPI.play();
                       console.log('[useAudio] Recovered from premature audio stop');
                     } catch (recoveryErr) {
                       console.error('[useAudio] Recovery failed:', recoveryErr);
@@ -194,7 +192,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
             try {
               // Try to reinitialize the audio backend connection
               const recovered = await withTimeout(
-                invoke('recover_audio'),
+                TauriAPI.recoverAudio(),
                 BACKEND_TIMEOUT_MS,
                 'Audio recovery timed out'
               );
@@ -245,11 +243,11 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     while (attempt <= AUDIO_RETRY_CONFIG.MAX_RETRIES) {
       try {
         setIsLoading(true);
-        await invoke('load_track', { path: track.path });
+        await TauriAPI.loadTrack(track.path);
         currentTrackRef.current = track;
         
         // Get real duration from backend
-        const realDuration = await invoke('get_duration');
+        const realDuration = await TauriAPI.getDuration();
         setDuration(realDuration > 0 ? realDuration : track.duration || 0);
         setProgress(0);
         setIsLoading(false);
@@ -296,7 +294,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     
     try {
       // Check if audio device is available
-      const deviceAvailable = await invoke('is_audio_device_available');
+      const deviceAvailable = await TauriAPI.isAudioDeviceAvailable();
       if (!deviceAvailable) {
         toast.showError('No audio device found. Please connect headphones or speakers.');
         setAudioBackendError('No audio device available');
@@ -304,10 +302,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
       }
       
       // Check if audio device has changed (e.g., external DAC reconnected)
-      const deviceChanged = await invoke('has_audio_device_changed');
+      const deviceChanged = await TauriAPI.hasAudioDeviceChanged();
       
       // Check if audio has been idle for a long time
-      const inactiveDuration = await invoke('get_inactive_duration');
+      const inactiveDuration = await TauriAPI.getInactiveDuration();
       
       if (deviceChanged) {
         console.log('Audio device changed, backend will reinitialize...');
@@ -317,7 +315,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
         toast.showInfo('Resuming playback...', 2000);
       }
       
-      await invoke('play_audio');
+      await TauriAPI.play();
       setIsPlaying(true);
       setAudioBackendError(null); // Clear any previous error
     } catch (err) {
@@ -329,10 +327,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
         isRecoveringRef.current = true;
         toast.showWarning('Reinitializing audio system...');
         
-        const recovered = await invoke('recover_audio');
+        const recovered = await TauriAPI.recoverAudio();
         if (recovered) {
           console.log('Recovery successful, retrying play...');
-          await invoke('play_audio');
+          await TauriAPI.play();
           setIsPlaying(true);
           setAudioBackendError(null);
           toast.showSuccess('Audio resumed');
@@ -354,7 +352,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     
     try {
       console.log('Calling pause_audio command');
-      await invoke('pause_audio');
+      await TauriAPI.pause();
       console.log('Pause command completed, setting isPlaying to false');
       setIsPlaying(false);
     } catch (err) {
@@ -367,7 +365,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     if (audioBackendError) return; // Silently fail
     
     try {
-      await invoke('stop_audio');
+      await TauriAPI.stop();
       setIsPlaying(false);
       setProgress(0);
     } catch (err) {
@@ -384,9 +382,8 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     
     try {
       const clampedVolume = Math.max(0, Math.min(1, newVolume));
-      await invoke('set_volume', { volume: clampedVolume });
+      await TauriAPI.setVolume(clampedVolume);
       setVolumeState(clampedVolume);
-      localStorage.setItem('vplayer_volume', clampedVolume.toString());
     } catch (err) {
       errorHandler.handle(err, 'Audio Volume');
       throw err;
@@ -403,12 +400,12 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     try {
       // Check for long idle - if so, the Rust play() function will handle reinit
       // but we should warn the user that seek might fail until they press play
-      const inactiveDuration = await invoke('get_inactive_duration');
+      const inactiveDuration = await TauriAPI.getInactiveDuration();
       if (inactiveDuration > LONG_IDLE_THRESHOLD_SECONDS) {
         console.warn('Seeking while audio is idle for a long time - may need to press play first');
       }
       
-      await invoke('seek_to', { position });
+      await TauriAPI.seekTo(position);
       // Update UI after successful seek to ensure we show the correct position
       setProgress(position);
     } catch (err) {

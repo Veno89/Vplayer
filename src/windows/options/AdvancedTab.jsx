@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Trash2, RotateCw, Download, Upload, Bug, HardDrive, FileJson, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../../services/TauriAPI';
 import { getVersion } from '@tauri-apps/api/app';
 import { useStore } from '../../store/useStore';
 import { SettingCard, SettingButton, SettingInfo, SettingToggle, SettingDivider } from './SettingsComponents';
@@ -26,8 +26,8 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
     try {
       setLoadingStats(true);
       const [cache, db] = await Promise.all([
-        invoke('get_cache_size').catch(() => 0),
-        invoke('get_database_size').catch(() => 0)
+        TauriAPI.getCacheSize().catch(() => 0),
+        TauriAPI.getDatabaseSize().catch(() => 0)
       ]);
       setCacheSize(cache || 0);
       setDbSize(db || 0);
@@ -50,7 +50,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
     if (!confirm('Clear all cached album art? This will remove cached images but not affect your music files.')) return;
     try {
       setClearing(true);
-      await invoke('clear_album_art_cache');
+      await TauriAPI.clearAlbumArtCache();
       await loadStats();
       alert('Cache cleared successfully!');
     } catch (err) {
@@ -64,7 +64,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
     if (!confirm('Optimize the database? This may take a moment for large libraries.')) return;
     try {
       setOptimizing(true);
-      await invoke('vacuum_database');
+      await TauriAPI.vacuumDatabase();
       await loadStats();
       alert('Database optimized successfully!');
     } catch (err) {

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
 
 /**
  * Drag and drop hook for track management
@@ -25,7 +26,8 @@ import { TauriAPI } from '../services/TauriAPI';
  * @returns {Function} returns.handleLibraryDragEnd - Library drag end handler
  */
 export function useDragDrop({ addFolder, refreshTracks, toast }) {
-  const [isDraggingTracks, setIsDraggingTracks] = useState(false);
+  const isDraggingTracks = useStore(s => s.isDraggingTracks);
+  const setIsDraggingTracks = useStore(s => s.setIsDraggingTracks);
   const [isDraggingExternal, setIsDraggingExternal] = useState(false);
   const [dragData, setDragData] = useState(null);
   const [tauriDropHandled, setTauriDropHandled] = useState(false);

@@ -10,6 +10,8 @@ import { usePlaylists } from '../hooks/usePlaylists';
 import { usePlaylistActions } from '../hooks/usePlaylistActions';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
 import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { usePlayerContext } from '../context/PlayerProvider';
 import { TauriAPI } from '../services/TauriAPI';
 import {
   PlaylistSelector,
@@ -22,18 +24,24 @@ import {
   BatchPlaylistPickerDialog
 } from '../components/playlist';
 
-export const PlaylistWindow = React.memo(function PlaylistWindow({
-  tracks,
-  currentTrack,
-  setCurrentTrack,
-  currentColors,
-  loadingTrackIndex,
-  removeTrack,
-  onRatingChange,
-  onActiveTracksChange,
-  onEditTags, // New prop for tag editor
-  isDraggingTracks, // Prop from useDragDrop via WindowManager
-}) { // Changed to standard function for memo wrapping below
+export const PlaylistWindow = React.memo(function PlaylistWindow() {
+  // ── Store state ───────────────────────────────────────────────────
+  const currentTrack = useStore(s => s.currentTrack) ?? 0;
+  const setCurrentTrack = useStore(s => s.setCurrentTrack);
+  const loadingTrackIndex = useStore(s => s.loadingTrackIndex);
+  const isDraggingTracks = useStore(s => s.isDraggingTracks);
+  const setActivePlaybackTracks = useStore(s => s.setActivePlaybackTracks);
+  const setTagEditorTrack = useStore(s => s.setTagEditorTrack);
+
+  // ── Context ───────────────────────────────────────────────────────
+  const { playbackTracks: tracks, library, toast } = usePlayerContext();
+  const { removeTrack, refreshTracks } = library;
+
+  // ── Derived ───────────────────────────────────────────────────────
+  const currentColors = useCurrentColors();
+  const onRatingChange = useCallback(() => refreshTracks(), [refreshTracks]);
+  const onEditTags = useCallback((track) => setTagEditorTrack?.(track), [setTagEditorTrack]);
+  const onActiveTracksChange = setActivePlaybackTracks;
   /* eslint-disable no-unused-vars */
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
@@ -365,12 +373,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
     return Array.from(selectedIndices).map(i => displayTracks[i]).filter(Boolean);
   }, [selectedIndices, displayTracks]);
 
-  // Save current playlist to localStorage when it changes
-  useEffect(() => {
-    if (playlists.currentPlaylist) {
-      localStorage.setItem('vplayer_last_playlist', playlists.currentPlaylist);
-    }
-  }, [playlists.currentPlaylist]);
+  // Note: last playlist ID is now persisted by usePlaylists hook via Zustand store
 
   // Handle Context Menu
   const handleShowMenu = useCallback((index, e) => {

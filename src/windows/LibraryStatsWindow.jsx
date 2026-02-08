@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, Database, HardDrive, Music, Clock, Disc, User, Folder, Loader, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
 
 /**
  * Library Statistics Window - Shows collection stats and performance info
  */
-export function LibraryStatsWindow({ 
-  tracks = [], 
-  libraryFolders = [], 
-  currentColors 
-}) {
+export function LibraryStatsWindow() {
+  const tracks = useStore(s => s.tracks) ?? [];
+  const libraryFolders = useStore(s => s.libraryFolders) ?? [];
+  const currentColors = useCurrentColors();
   const [stats, setStats] = useState(null);
   const [cacheSize, setCacheSize] = useState(0);
   const [dbSize, setDbSize] = useState(0);
@@ -69,9 +70,9 @@ export function LibraryStatsWindow({
     setLoading(true);
     try {
       const [perfStats, cache, db] = await Promise.all([
-        invoke('get_performance_stats'),
-        invoke('get_cache_size').catch(() => 0),
-        invoke('get_database_size').catch(() => 0),
+        TauriAPI.getPerformanceStats(),
+        TauriAPI.getCacheSize().catch(() => 0),
+        TauriAPI.getDatabaseSize().catch(() => 0),
       ]);
       setStats(perfStats);
       setCacheSize(cache);
@@ -86,7 +87,7 @@ export function LibraryStatsWindow({
   const handleVacuum = async () => {
     setVacuuming(true);
     try {
-      await invoke('vacuum_database');
+      await TauriAPI.vacuumDatabase();
       await loadStats();
     } catch (err) {
       console.error('Failed to vacuum database:', err);
@@ -103,7 +104,7 @@ export function LibraryStatsWindow({
     
     setClearingCache(true);
     try {
-      await invoke('clear_album_art_cache');
+      await TauriAPI.clearAlbumArtCache();
       await loadStats();
     } catch (err) {
       console.error('Failed to clear cache:', err);
