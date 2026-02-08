@@ -294,7 +294,17 @@ describe('TauriAPI', () => {
   // ---------------------------------------------------------------------------
   describe('Effects Commands', () => {
     it('setAudioEffects should invoke set_audio_effects', async () => {
-      const config = { bands: [0, 1, 2] };
+      const config = {
+        pitch_shift: 0,
+        tempo: 1,
+        reverb_mix: 0,
+        reverb_room_size: 0.5,
+        bass_boost: 0,
+        echo_delay: 0.3,
+        echo_feedback: 0.3,
+        echo_mix: 0,
+        eq_bands: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      };
       await TauriAPI.setAudioEffects(config);
       expect(invoke).toHaveBeenCalledWith('set_audio_effects', { config });
     });

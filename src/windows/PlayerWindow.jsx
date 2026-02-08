@@ -9,7 +9,6 @@ import { useCurrentColors } from '../hooks/useStoreHooks';
 export function PlayerWindow() {
   // ── Store state ───────────────────────────────────────────────────
   const currentTrack = useStore(s => s.currentTrack);
-  const tracks = useStore(s => s.tracks);
   const playing = useStore(s => s.playing);
   const setPlaying = useStore(s => s.setPlaying);
   const progress = useStore(s => s.progress);
@@ -26,7 +25,7 @@ export function PlayerWindow() {
   const clearABRepeat = useStore(s => s.clearABRepeat);
 
   // ── Context ───────────────────────────────────────────────────────
-  const { handleNextTrack: nextTrack, handlePrevTrack: prevTrack, handleSeek: seekToPercent, handleVolumeChange: setVolume, handleToggleMute: toggleMute, audioIsLoading: isLoading, audioBackendError } = usePlayerContext();
+  const { handleNextTrack: nextTrack, handlePrevTrack: prevTrack, handleSeek: seekToPercent, handleVolumeChange: setVolume, handleToggleMute: toggleMute, audioIsLoading: isLoading, audioBackendError, playbackTracks: tracks } = usePlayerContext();
 
   // ── Derived ───────────────────────────────────────────────────────
   const currentColors = useCurrentColors();

@@ -3,6 +3,59 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { Track, Playlist, PlaylistTrack, TrackFilter } from '../types';
 
+// ========== API-specific types ==========
+
+/** Matches Rust EffectsConfig struct */
+export interface AudioEffectsConfig {
+    pitch_shift: number;
+    tempo: number;
+    reverb_mix: number;
+    reverb_room_size: number;
+    bass_boost: number;
+    echo_delay: number;
+    echo_feedback: number;
+    echo_mix: number;
+    eq_bands: number[];
+}
+
+/** Matches Rust TagUpdate struct */
+export interface TagUpdate {
+    title?: string;
+    artist?: string;
+    album?: string;
+    year?: string;
+    genre?: string;
+    comment?: string;
+    track_number?: string;
+    disc_number?: string;
+}
+
+/** Returned by get_performance_stats */
+export interface PerformanceStats {
+    database: {
+        tracks: number;
+        playlists: number;
+        smartPlaylists: number;
+        sizeBytes: number;
+        indexes: number;
+    };
+    query: {
+        sampleTimeMs: number;
+    };
+    memory: {
+        estimatedUsage: number;
+    };
+}
+
+/** Returned by check_missing_files — (trackId, path) tuples */
+export type MissingFile = [string, string];
+
+/** Options accepted by the file-open dialog */
+export interface SelectFolderOptions {
+    title?: string;
+    defaultPath?: string;
+}
+
 /**
  * Centralized Tauri API service with error handling and logging
  */
@@ -16,7 +69,7 @@ class TauriAPIService {
     /**
      * Log API calls in development mode
      */
-    private _log(method: string, params: any, result: any, error?: any) {
+    private _log(method: string, params: Record<string, unknown>, result: unknown, error?: unknown) {
         if (!this.debug) return;
 
         // Filter out noisy logs
@@ -32,7 +85,7 @@ class TauriAPIService {
     /**
      * Wrapper around invoke with error handling
      */
-    private async _invoke<T>(command: string, params: any = {}): Promise<T> {
+    private async _invoke<T>(command: string, params: Record<string, unknown> = {}): Promise<T> {
         try {
             const result = await invoke<T>(command, params);
             this._log(command, params, result);
@@ -249,11 +302,11 @@ class TauriAPIService {
 
     // ========== Audio Effects Commands ==========
 
-    async setAudioEffects(config: any): Promise<void> {
+    async setAudioEffects(config: AudioEffectsConfig): Promise<void> {
         return this._invoke('set_audio_effects', { config });
     }
 
-    async getAudioEffects(): Promise<any> {
+    async getAudioEffects(): Promise<AudioEffectsConfig> {
         return this._invoke('get_audio_effects');
     }
 
@@ -281,7 +334,7 @@ class TauriAPIService {
 
     // ========== Tag Editor Commands ==========
 
-    async updateTrackTags(trackId: string, trackPath: string, tags: any): Promise<void> {
+    async updateTrackTags(trackId: string, trackPath: string, tags: TagUpdate): Promise<void> {
         return this._invoke('update_track_tags', { trackId, trackPath, tags });
     }
 
@@ -339,7 +392,7 @@ class TauriAPIService {
 
     // ========== Dialog Commands ==========
 
-    async selectFolder(options: any = {}): Promise<string | null> {
+    async selectFolder(options: SelectFolderOptions = {}): Promise<string | null> {
         try {
             const result = await open({
                 directory: true,
@@ -412,11 +465,11 @@ class TauriAPIService {
 
     // ========== History Commands ==========
 
-    async getRecentlyPlayed(limit: number = 50): Promise<any[]> {
+    async getRecentlyPlayed(limit: number = 50): Promise<Track[]> {
         return this._invoke('get_recently_played', { limit });
     }
 
-    async getMostPlayed(limit: number = 50): Promise<any[]> {
+    async getMostPlayed(limit: number = 50): Promise<Track[]> {
         return this._invoke('get_most_played', { limit });
     }
 
@@ -432,13 +485,13 @@ class TauriAPIService {
         return this._invoke('write_text_file', { filePath, content });
     }
 
-    async checkMissingFiles(): Promise<any[]> {
+    async checkMissingFiles(): Promise<MissingFile[]> {
         return this._invoke('check_missing_files');
     }
 
     // ========== Database & Performance Commands ==========
 
-    async getPerformanceStats(): Promise<any> {
+    async getPerformanceStats(): Promise<PerformanceStats> {
         return this._invoke('get_performance_stats');
     }
 

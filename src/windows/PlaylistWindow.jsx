@@ -237,6 +237,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
 
 
 
+  const setPlaying = useStore(s => s.setPlaying);
+
   // Handle track selection
   const handleTrackSelect = useCallback((filteredIndex) => {
     const selectedTrack = displayTracks[filteredIndex];
@@ -250,13 +252,16 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       // Use setTimeout to ensure React state update completes before track loads
       setTimeout(() => {
         setCurrentTrack(filteredIndex);
+        // Start playback when user explicitly clicks a track
+        setPlaying(true);
       }, 50);
     } else {
       // Fallback if no playlist context (shouldn't happen in PlaylistWindow)
       setCurrentTrack(filteredIndex);
+      setPlaying(true);
     }
 
-  }, [displayTracks, onActiveTracksChange, setCurrentTrack]);
+  }, [displayTracks, onActiveTracksChange, setCurrentTrack, setPlaying]);
 
   // The currentTrack index now directly refers to the displayTracks array
   // (set by handleTrackSelect), so no mapping is needed

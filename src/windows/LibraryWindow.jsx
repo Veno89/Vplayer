@@ -76,28 +76,34 @@ const VirtualTrackRow = ({ index, style, data }) => {
 };
 
 export function LibraryWindow() {
-  // ── Store state ───────────────────────────────────────────────────
-  const libraryFolders = useStore(s => s.libraryFolders) ?? [];
-  const isScanning = useStore(s => s.isScanning);
-  const scanProgress = useStore(s => s.scanProgress);
-  const scanCurrent = useStore(s => s.scanCurrent);
-  const scanTotal = useStore(s => s.scanTotal);
-  const scanCurrentFile = useStore(s => s.scanCurrentFile);
-  const searchQuery = useStore(s => s.searchQuery);
-  const setSearchQuery = useStore(s => s.setSearchQuery);
-  const sortBy = useStore(s => s.sortBy);
-  const setSortBy = useStore(s => s.setSortBy);
-  const sortOrder = useStore(s => s.sortOrder);
-  const setSortOrder = useStore(s => s.setSortOrder);
-  const advancedFilters = useStore(s => s.advancedFilters);
-  const setAdvancedFilters = useStore(s => s.setAdvancedFilters);
+  // ── Store state (only fields that actually exist in the Zustand store) ──
   const setIsDraggingTracks = useStore(s => s.setIsDraggingTracks);
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const setPlaying = useStore(s => s.setPlaying);
 
   // ── Context / derived ─────────────────────────────────────────────
   const { library, toast } = usePlayerContext();
-  const { tracks: allTracks, filteredTracks: tracks, addFolder, removeFolder, refreshTracks } = library;
+  const {
+    tracks: allTracks,
+    filteredTracks: tracks,
+    libraryFolders,
+    isScanning,
+    scanProgress,
+    scanCurrent,
+    scanTotal,
+    scanCurrentFile,
+    searchQuery,
+    setSearchQuery,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
+    advancedFilters,
+    setAdvancedFilters,
+    addFolder,
+    removeFolder,
+    refreshTracks,
+  } = library;
   const tracksCount = allTracks?.length ?? 0;
   const currentColors = useCurrentColors();
 

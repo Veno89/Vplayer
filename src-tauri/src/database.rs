@@ -305,20 +305,8 @@ impl Database {
             "SELECT id, path, name, title, artist, album, duration, date_added, rating FROM tracks"
         )?;
         
-        let tracks = stmt.query_map([], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let tracks = stmt.query_map([], Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
         
         self.set_cached_tracks(cache_key.to_string(), tracks.clone());
         Ok(tracks)
@@ -422,20 +410,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&sql)?;
         
-        let tracks = stmt.query_map(rusqlite::params_from_iter(params_values.iter()), |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let tracks = stmt.query_map(rusqlite::params_from_iter(params_values.iter()), Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(tracks)
     }
@@ -487,20 +463,8 @@ impl Database {
              LIMIT ?1"
         )?;
         
-        let tracks = stmt.query_map(params![limit], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let tracks = stmt.query_map(params![limit], Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
         
         Ok(tracks)
     }
@@ -515,20 +479,8 @@ impl Database {
              LIMIT ?1"
         )?;
         
-        let tracks = stmt.query_map(params![limit], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let tracks = stmt.query_map(params![limit], Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
         
         Ok(tracks)
     }
@@ -749,20 +701,8 @@ impl Database {
              ORDER BY pt.position ASC"
         )?;
         
-        let tracks = stmt.query_map(params![playlist_id], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let tracks = stmt.query_map(params![playlist_id], Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
         
         Ok(tracks)
     }
@@ -859,17 +799,7 @@ impl Database {
         
         let mut rows = stmt.query(params![path])?;
         if let Some(row) = rows.next()? {
-            Ok(Some(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            }))
+            Ok(Some(Track::from_row(row)?))
         } else {
             Ok(None)
         }
@@ -889,20 +819,8 @@ impl Database {
              ORDER BY title, artist, album, duration"
         )?;
         
-        let all_tracks = stmt.query_map([], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                title: row.get(3)?,
-                artist: row.get(4)?,
-                album: row.get(5)?,
-                duration: row.get(6)?,
-                date_added: row.get(7)?,
-                rating: row.get(8)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let all_tracks = stmt.query_map([], Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
         
         // Group tracks by similarity
         let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();

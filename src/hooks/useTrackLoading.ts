@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
 import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
+import { confirm as nativeConfirm } from '@tauri-apps/plugin-dialog';
 import type { Track, AudioService, ToastService } from '../types';
 
 export interface TrackLoadingParams {
@@ -156,12 +157,13 @@ export function useTrackLoading({
           };
 
           if (isDecodeError && preferences.autoRemoveCorruptedFiles) {
-            // Show confirmation dialog if enabled
+            // Show native confirmation dialog if enabled
             if (preferences.confirmCorruptedFileRemoval) {
-              const confirmed = window.confirm(
+              const confirmed = await nativeConfirm(
                 `The file "${track.name}" appears to be corrupted.\n\n` +
                 `Would you like to remove it from your library?\n\n` +
-                `(You can disable this prompt in Settings)`
+                `(You can disable this prompt in Settings)`,
+                { title: 'Corrupted File Detected', kind: 'warning' }
               );
 
               if (!confirmed) {

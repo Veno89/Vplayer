@@ -172,19 +172,7 @@ export interface PlaylistTrack {
 // Window Types
 // =============================================================================
 
-export interface WindowState {
-    id: string;
-    visible: boolean;
-    minimized: boolean;
-    position?: { x: number; y: number };
-    size?: { width: number; height: number };
-}
-
-export interface WindowConfig {
-    id: string;
-    title: string;
-    icon: React.ComponentType<{ className?: string }>;
-    content: React.ReactNode;
-}
+// Window state is defined in store/types.ts as WindowPosition.
+// Window configs are managed by windowRegistry.jsx.
 
 // Theme types — canonical definition is in store/types.ts (re-exported as StoreColorScheme above)

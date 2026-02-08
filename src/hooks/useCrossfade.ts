@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { CROSSFADE_CONFIG } from '../utils/constants';
 import { log } from '../utils/logger';
 import { useStore } from '../store/useStore';
@@ -39,14 +39,11 @@ export interface CrossfadeAPI {
  * @returns {Object} Crossfade control interface
  */
 export function useCrossfade(): CrossfadeAPI {
-  // Read initial values from store (persisted via Zustand persist)
-  const storedEnabled = useStore(state => state.crossfadeEnabled);
-  const storedDuration = useStore(state => state.crossfadeDuration);
+  // Read/write directly from Zustand store (persisted) — no local useState copy
+  const enabled = useStore(state => state.crossfadeEnabled);
+  const duration = useStore(state => state.crossfadeDuration);
   const setStoredEnabled = useStore(state => state.setCrossfadeEnabled);
   const setStoredDuration = useStore(state => state.setCrossfadeDuration);
-
-  const [enabled, setEnabled] = useState(storedEnabled);
-  const [duration, setDuration] = useState(storedDuration);
 
   const fadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,26 +51,17 @@ export function useCrossfade(): CrossfadeAPI {
   const originalVolumeRef = useRef<number>(1.0);
   const fadeStartTimeRef = useRef<number | null>(null);
 
-  // Persist to store when values change
-  useEffect(() => {
-    setStoredEnabled(enabled);
-  }, [enabled, setStoredEnabled]);
-
-  useEffect(() => {
-    setStoredDuration(duration);
-  }, [duration, setStoredDuration]);
-
   const toggleEnabled = useCallback(() => {
-    setEnabled(prev => !prev);
-  }, []);
+    setStoredEnabled(!enabled);
+  }, [enabled, setStoredEnabled]);
 
   const setDurationMs = useCallback((ms: number) => {
     const clamped = Math.max(
       CROSSFADE_CONFIG.MIN_DURATION_MS,
       Math.min(CROSSFADE_CONFIG.MAX_DURATION_MS, ms)
     );
-    setDuration(clamped);
-  }, []);
+    setStoredDuration(clamped);
+  }, [setStoredDuration]);
 
   /**
    * Check if crossfade should start based on current progress

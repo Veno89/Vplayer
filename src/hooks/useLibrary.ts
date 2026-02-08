@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useLibraryData } from './library/useLibraryData';
 import { useLibraryScanner } from './library/useLibraryScanner';
 import { useLibraryFilters } from './library/useLibraryFilters';
@@ -34,7 +35,7 @@ export function useLibrary() {
     setLibraryFolders,
     loadTracks,
     loadAllFolders,
-    addFolder,
+    addFolder: addFolderData,
     removeFolder,
     removeTrack
   } = useLibraryData(activeParams);
@@ -46,14 +47,25 @@ export function useLibrary() {
     scanCurrent,
     scanTotal,
     scanCurrentFile,
-    refreshFolders
+    refreshFolders,
+    scanNewFolder
   } = useLibraryScanner({
     libraryFolders,
     loadAllTracks: loadTracks, // Alias for scanner usage
     loadAllFolders // Pass full reload function
   });
 
-  // 4. Expose Unified API
+  // 4. Composed addFolder: select folder → add to state → scan → persist
+  const addFolder = useCallback(async () => {
+    const result = await addFolderData();
+    if (result) {
+      // Trigger scan which also adds the folder to DB and loads tracks
+      await scanNewFolder(result.path);
+    }
+    return result;
+  }, [addFolderData, scanNewFolder]);
+
+  // 5. Expose Unified API
   return {
     // Data
     tracks,

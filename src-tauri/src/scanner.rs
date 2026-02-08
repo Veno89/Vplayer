@@ -22,6 +22,24 @@ pub struct Track {
     pub rating: i32,
 }
 
+impl Track {
+    /// Build a Track from a rusqlite Row.
+    /// Expected column order: id, path, name, title, artist, album, duration, date_added, rating
+    pub fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            name: row.get(2)?,
+            title: row.get(3)?,
+            artist: row.get(4)?,
+            album: row.get(5)?,
+            duration: row.get(6)?,
+            date_added: row.get(7)?,
+            rating: row.get(8)?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ScanProgress {
     pub current: usize,
@@ -31,113 +49,71 @@ pub struct ScanProgress {
 
 pub struct Scanner;
 
+const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac"];
+
 impl Scanner {
-    /// Perform incremental scan: only process new or modified files
-    pub fn scan_directory_incremental(path: &str, window: Option<&Window>, cancel_flag: Option<Arc<AtomicBool>>, db: &Database) -> Result<Vec<Track>, String> {
-        info!("Starting incremental directory scan: {}", path);
-        let mut tracks = Vec::new();
-        let audio_extensions = ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac"];
-        
-        // Check for cancellation before starting
-        if let Some(flag) = &cancel_flag {
-            if flag.load(Ordering::Relaxed) {
-                warn!("Incremental scan cancelled before starting");
-                return Ok(tracks);
-            }
-        }
-        
-        // Get existing tracks with their modification times
-        let existing_tracks_list = db.get_folder_tracks(path)
-            .map_err(|e| format!("Failed to get existing tracks: {}", e))?;
-        
-        // Convert to HashMap for efficient lookup: path -> mtime
-        use std::collections::HashMap;
-        let existing_tracks: HashMap<String, i64> = existing_tracks_list
-            .into_iter()
-            .map(|(_, path, mtime)| (path, mtime))
-            .collect();
-        
-        // First pass: count files that need scanning
-        let mut files_to_scan = Vec::new();
-        let walker = WalkDir::new(path)
+    /// Collect all audio file paths from a directory tree.
+    fn collect_audio_files(path: &str) -> Vec<std::path::PathBuf> {
+        WalkDir::new(path)
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file());
-        
-        for entry in walker {
-            if let Some(ext) = entry.path().extension() {
-                if let Some(ext_str) = ext.to_str() {
-                    if audio_extensions.contains(&ext_str.to_lowercase().as_str()) {
-                        let path_str = entry.path().to_string_lossy().to_string();
-                        
-                        // Check if file needs scanning (new or modified)
-                        let needs_scan = if let Some(&stored_mtime) = existing_tracks.get(&path_str) {
-                            // File exists in DB - check if modified
-                            if let Ok(metadata) = entry.metadata() {
-                                if let Ok(modified) = metadata.modified() {
-                                    let current_mtime = modified.duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs() as i64;
-                                    current_mtime > stored_mtime
-                                } else {
-                                    false // Can't get mtime, skip
-                                }
-                            } else {
-                                false // Can't get metadata, skip
-                            }
-                        } else {
-                            // File not in DB - needs scanning
-                            true
-                        };
-                        
-                        if needs_scan {
-                            files_to_scan.push(entry.path().to_path_buf());
-                        }
-                    }
-                }
-            }
-        }
-        
-        let total_files = files_to_scan.len();
-        info!("Incremental scan: {} files need processing (new or modified)", total_files);
-        
-        // Emit total count
+            .filter(|e| e.path().is_file())
+            .filter(|e| {
+                e.path().extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+                    .unwrap_or(false)
+            })
+            .map(|e| e.path().to_path_buf())
+            .collect()
+    }
+
+    /// Shared processing loop for scanning audio files.
+    /// Handles cancellation, progress events, failed-track skipping, and extraction.
+    fn process_files(
+        files: &[std::path::PathBuf],
+        window: Option<&Window>,
+        cancel_flag: &Option<Arc<AtomicBool>>,
+        db: Option<&Database>,
+    ) -> Result<Vec<Track>, String> {
+        let mut tracks = Vec::new();
+        let total = files.len();
+
         if let Some(win) = window {
-            let _ = win.emit("scan-total", total_files);
+            let _ = win.emit("scan-total", total);
         }
-        
-        // Process files that need scanning
-        let mut processed = 0;
-        
-        for path_buf in files_to_scan {
+
+        for (i, path_buf) in files.iter().enumerate() {
             // Check for cancellation
-            if let Some(flag) = &cancel_flag {
+            if let Some(flag) = cancel_flag {
                 if flag.load(Ordering::Relaxed) {
-                    warn!("Incremental scan cancelled after {} files", processed);
+                    warn!("Scan cancelled after {} files", i);
                     if let Some(win) = window {
-                        let _ = win.emit("scan-cancelled", processed);
+                        let _ = win.emit("scan-cancelled", i);
                     }
                     return Ok(tracks);
                 }
             }
-            
-            processed += 1;
+
+            let processed = i + 1;
             let path_str = path_buf.to_string_lossy().to_string();
-            
+
             // Skip if this path previously failed
-            if db.is_failed_track(&path_str) {
-                if let Some(win) = window {
-                    let _ = win.emit("scan-skip", format!("Skipping previously failed: {:?}", path_buf.file_name()));
+            if let Some(database) = db {
+                if database.is_failed_track(&path_str) {
+                    if let Some(win) = window {
+                        let _ = win.emit("scan-skip", format!("Skipping previously failed: {:?}", path_buf.file_name()));
+                    }
+                    continue;
                 }
-                continue;
             }
-            
+
             // Emit progress update
             if let Some(win) = window {
                 let progress = ScanProgress {
                     current: processed,
-                    total: total_files,
+                    total,
                     current_file: path_buf.file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("Unknown")
@@ -145,146 +121,93 @@ impl Scanner {
                 };
                 let _ = win.emit("scan-progress", &progress);
             }
-            
-            match Self::extract_track_info(&path_buf) {
+
+            match Self::extract_track_info(path_buf) {
                 Ok(track) => tracks.push(track),
                 Err(e) => {
                     error!("Failed to extract info from {:?}: {}", path_buf, e);
-                    let _ = db.add_failed_track(&path_str, &e);
-                    
+                    if let Some(database) = db {
+                        let _ = database.add_failed_track(&path_str, &e);
+                    }
                     if let Some(win) = window {
                         let _ = win.emit("scan-error", format!("Failed to read: {:?}", path_buf.file_name()));
                     }
                 }
             }
         }
-        
-        info!("Incremental scan completed: {} tracks successfully extracted", tracks.len());
-        if let Some(win) = window {
-            let _ = win.emit("scan-complete", tracks.len());
-        }
-        
-        Ok(tracks)
-    }
-    
-    pub fn scan_directory(path: &str, window: Option<&Window>, cancel_flag: Option<Arc<AtomicBool>>, db: Option<&Database>) -> Result<Vec<Track>, String> {
-        info!("Starting directory scan: {}", path);
-        let mut tracks = Vec::new();
-        let audio_extensions = ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac"];
-        
-        // Check for cancellation before starting
-        if let Some(flag) = &cancel_flag {
-            if flag.load(Ordering::Relaxed) {
-                warn!("Scan cancelled before starting");
-                return Ok(tracks);
-            }
-        }
-        
-        // First pass: count total audio files
-        let mut total_files = 0;
-        let walker = WalkDir::new(path)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file());
-        
-        for entry in walker {
-            if let Some(ext) = entry.path().extension() {
-                if let Some(ext_str) = ext.to_str() {
-                    if audio_extensions.contains(&ext_str.to_lowercase().as_str()) {
-                        total_files += 1;
-                    }
-                }
-            }
-        }
-        
-        // Emit total count
-        if let Some(win) = window {
-            let _ = win.emit("scan-total", total_files);
-        }
-        info!("Found {} audio files to scan", total_files);
-        
-        // Second pass: scan files with progress updates
-        let walker = WalkDir::new(path)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file());
-        
-        let mut processed = 0;
-        
-        for entry in walker {
-            // Check for cancellation
-            if let Some(flag) = &cancel_flag {
-                if flag.load(Ordering::Relaxed) {
-                    warn!("Scan cancelled after {} files", processed);
-                    if let Some(win) = window {
-                        let _ = win.emit("scan-cancelled", processed);
-                    }
-                    return Ok(tracks);
-                }
-            }
-            
-            let path_buf = entry.path();
-            
-            if let Some(ext) = path_buf.extension() {
-                if let Some(ext_str) = ext.to_str() {
-                    if audio_extensions.contains(&ext_str.to_lowercase().as_str()) {
-                        processed += 1;
-                        
-                        let path_str = path_buf.to_string_lossy().to_string();
-                        
-                        // Skip if this path previously failed
-                        if let Some(database) = db {
-                            if database.is_failed_track(&path_str) {
-                                if let Some(win) = window {
-                                    let _ = win.emit("scan-skip", format!("Skipping previously failed: {:?}", path_buf.file_name()));
-                                }
-                                continue;
-                            }
-                        }
-                        
-                        // Emit progress update
-                        if let Some(win) = window {
-                            let progress = ScanProgress {
-                                current: processed,
-                                total: total_files,
-                                current_file: path_buf.file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("Unknown")
-                                    .to_string(),
-                            };
-                            let _ = win.emit("scan-progress", &progress);
-                        }
-                        
-                        match Self::extract_track_info(path_buf) {
-                            Ok(track) => tracks.push(track),
-                            Err(e) => {
-                                error!("Failed to extract info from {:?}: {}", path_buf, e);
-                                
-                                // Mark as failed in database
-                                if let Some(database) = db {
-                                    let _ = database.add_failed_track(&path_str, &e);
-                                }
-                                
-                                // Emit error but continue scanning
-                                if let Some(win) = window {
-                                    let _ = win.emit("scan-error", format!("Failed to read: {:?}", path_buf.file_name()));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Emit completion
+
         info!("Scan completed: {} tracks successfully extracted", tracks.len());
         if let Some(win) = window {
             let _ = win.emit("scan-complete", tracks.len());
         }
-        
+
         Ok(tracks)
+    }
+
+    /// Perform incremental scan: only process new or modified files
+    pub fn scan_directory_incremental(path: &str, window: Option<&Window>, cancel_flag: Option<Arc<AtomicBool>>, db: &Database) -> Result<Vec<Track>, String> {
+        info!("Starting incremental directory scan: {}", path);
+
+        // Check for cancellation before starting
+        if let Some(flag) = &cancel_flag {
+            if flag.load(Ordering::Relaxed) {
+                warn!("Incremental scan cancelled before starting");
+                return Ok(Vec::new());
+            }
+        }
+
+        // Get existing tracks with their modification times
+        let existing_tracks_list = db.get_folder_tracks(path)
+            .map_err(|e| format!("Failed to get existing tracks: {}", e))?;
+        use std::collections::HashMap;
+        let existing_tracks: HashMap<String, i64> = existing_tracks_list
+            .into_iter()
+            .map(|(_, path, mtime)| (path, mtime))
+            .collect();
+
+        // Collect all audio files and filter to only new/modified
+        let all_files = Self::collect_audio_files(path);
+        let files_to_scan: Vec<std::path::PathBuf> = all_files
+            .into_iter()
+            .filter(|path_buf| {
+                let path_str = path_buf.to_string_lossy().to_string();
+                if let Some(&stored_mtime) = existing_tracks.get(&path_str) {
+                    // File exists in DB — check if modified
+                    std::fs::metadata(path_buf).ok()
+                        .and_then(|m| m.modified().ok())
+                        .map(|modified| {
+                            let current_mtime = modified.duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as i64;
+                            current_mtime > stored_mtime
+                        })
+                        .unwrap_or(false)
+                } else {
+                    true // Not in DB — needs scanning
+                }
+            })
+            .collect();
+
+        info!("Incremental scan: {} files need processing (new or modified)", files_to_scan.len());
+
+        Self::process_files(&files_to_scan, window, &cancel_flag, Some(db))
+    }
+
+    pub fn scan_directory(path: &str, window: Option<&Window>, cancel_flag: Option<Arc<AtomicBool>>, db: Option<&Database>) -> Result<Vec<Track>, String> {
+        info!("Starting directory scan: {}", path);
+
+        // Check for cancellation before starting
+        if let Some(flag) = &cancel_flag {
+            if flag.load(Ordering::Relaxed) {
+                warn!("Scan cancelled before starting");
+                return Ok(Vec::new());
+            }
+        }
+
+        let files = Self::collect_audio_files(path);
+        info!("Found {} audio files to scan", files.len());
+
+        Self::process_files(&files, window, &cancel_flag, db)
     }
     
     pub fn extract_track_info(path: &Path) -> Result<Track, String> {

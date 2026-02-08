@@ -3,6 +3,28 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.9] - 2026-02-08
+
+### Bug Fixes
+- **Library "0 Folders" Bug**: Fixed critical issue where library showed "0 folders" despite having tracks. `LibraryWindow` was reading 14 state values (`libraryFolders`, `isScanning`, `scanProgress`, `searchQuery`, `sortBy`, etc.) from the Zustand store where they didn't exist — all returned `undefined`. Rewired to read from `usePlayerContext().library` instead.
+- **Folder Scanning Not Triggered**: Adding a folder via file picker only added it to in-memory state without triggering the actual scan. Composed `addFolder` in `useLibrary.ts` now chains folder selection → `scanNewFolder()` → DB persistence → track loading.
+- **Playlist Tracks Not Playing**: Clicking a track in the playlist loaded it silently but never called `setPlaying(true)`, so no audio would start. `handleTrackSelect` in `PlaylistWindow` now explicitly starts playback.
+
+### Architecture Improvements (from Architecture Analysis)
+- **BiquadFilter Fix (§5.4)**: Changed EQ filter from incorrect Direct Form I to correct Direct Form II Transposed in `effects.rs`
+- **Track::from_row() DRY (§4.1)**: Extracted shared row-mapping logic in `database.rs`, replacing 7 duplicate inline closures
+- **Scanner Deduplication (§4.3)**: Extracted `collect_audio_files()` and `process_files()` helpers in `scanner.rs`, eliminating ~150 lines of duplicated scan logic
+- **TauriAPI Typed (§3.3)**: Replaced all `any` types with proper interfaces (`AudioEffectsConfig`, `TagUpdate`, `PerformanceStats`, `MissingFile`, `SelectFolderOptions`)
+- **Crossfade/EQ State Dedup (§4.4)**: Removed local `useState` copies from `useCrossfade.ts` and `useEqualizer.ts` — both now read/write directly from Zustand store
+- **Dead Type Removal (§5.3)**: Removed unused `WindowState`/`WindowConfig` types from `types/index.ts`
+- **Native Dialog (§5.1)**: Replaced `window.confirm()` in `useTrackLoading.ts` with Tauri native dialog
+- **Layout Templates Extracted (§6.3)**: Moved ~200 lines of hardcoded layout data from `uiSlice.ts` to `src/utils/layoutTemplates.ts`
+- **TODO Resolved (§5.7)**: Confirmed 40.0 divisor in `effects.rs` peaking EQ is correct per Audio EQ Cookbook
+
+### Test Coverage
+- All 159 tests passing across 10 files
+
+
 ## [0.9.8] - 2026-02-08
 
 ### Architecture Overhaul (6 Phases)

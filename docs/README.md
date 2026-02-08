@@ -10,8 +10,8 @@
 ## Quick Start
 
 ### For Users
-1. Download and install VPlayer
-2. Add music folders: `Ctrl+F` or click folder icon
+1. Download and install VPlayer from the [Releases](https://github.com/Veno89/Vplayer/releases/latest) page
+2. Add music folders via the Library window or drag & drop folders onto the app
 3. Play music: Double-click tracks or press `Space`
 
 ### For Developers
@@ -19,51 +19,84 @@
 git clone https://github.com/Veno89/Vplayer.git
 cd Vplayer
 npm install
-npm run tauri dev
+npm run tauri:dev
 ```
 
-**Prerequisites**: Node.js 18+, Rust 1.70+, Tauri CLI v2.x
+**Prerequisites**: Node.js 18+, Rust (2021 edition), Tauri CLI v2.x
 
 ---
 
 ## Architecture
 
 ### Tech Stack
-- **Frontend**: React 18, Zustand (state), Tailwind CSS, Vite
-- **Backend**: Rust, Tauri 2, rodio (audio), lofty (metadata), rusqlite (database)
+
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Native backend & IPC | Rust + Tauri | Tauri 2.9, Rust 2021 edition |
+| Audio engine | Rodio + Symphonia | rodio 0.21, symphonia 0.5 |
+| Metadata / tags | Lofty | 0.18 |
+| Database | SQLite (rusqlite) | 0.30 (bundled) |
+| UI framework | React | 18.2 |
+| State management | Zustand (sliced, persisted) | 5.x |
+| Styling | Tailwind CSS | 3.x |
+| Build tooling | Vite | 7.x |
+| Testing | Vitest + React Testing Library | vitest 4.x |
 
 ### System Design
 ```
-React Frontend ←→ Tauri IPC ←→ Rust Backend
-    ↓                              ↓
-Zustand Store                 Audio Engine
-Components                    Database
-Custom Hooks                  File Scanner
-                             File Watcher
+React Frontend  ←─ Tauri IPC ─→  Rust Backend
+      ↓                                ↓
+ Zustand Store                    Audio Engine (rodio)
+ Custom Hooks                     SQLite Database
+ TauriAPI Service (IPC bridge)    File Scanner / Watcher
+ Window Registry                  DSP Effects Pipeline
+ PlayerProvider (context)         ReplayGain Analysis
 ```
 
 ### Project Structure
 ```
 src/
-├── components/          # Reusable UI (AlbumArt, ContextMenu, TrackList, Window, Modal)
-├── hooks/              # Business logic (useAudio, useLibrary, usePlayer, useEqualizer)
-├── windows/            # App windows (PlayerWindow, LibraryWindow, EqualizerWindow, etc.)
-├── store/              # Zustand state management
-├── services/           # API services (TauriAPI, ErrorHandler)
-├── context/            # React context providers
-└── utils/              # Helpers (formatters, constants)
+├── components/          # Reusable UI (Window, TrackList, AlbumArt, Toast, Modal, etc.)
+├── hooks/               # Business logic hooks (useAudio, usePlayer, useLibrary, etc.)
+│   └── library/         # Library sub-hooks (useLibraryData, useLibraryFilters, useLibraryScanner)
+├── windows/             # Self-sufficient window components (15 windows)
+├── store/               # Zustand state management
+│   └── slices/          # Store slices (playerSlice, uiSlice, settingsSlice, musicBrainzSlice)
+├── services/            # External service wrappers (TauriAPI, ErrorHandler, MusicBrainzAPI)
+├── context/             # React context (PlayerProvider.tsx)
+├── types/               # Shared TypeScript interfaces
+├── utils/               # Helpers (formatters, constants, colorSchemes, logger)
+└── windowRegistry.jsx   # Declarative window ID → component mapping
 
 src-tauri/src/
-├── main.rs             # Tauri commands & IPC
-├── audio.rs            # Audio playback (rodio)
-├── database.rs         # SQLite operations
-├── scanner.rs          # File scanning & metadata
-├── watcher.rs          # File system monitoring
-├── effects.rs          # Audio effects processing
-├── lyrics.rs           # Lyrics fetching
-├── playlist_io.rs      # Playlist import/export
-├── smart_playlists.rs  # Smart playlist rules
-└── error.rs            # Error handling
+├── main.rs              # App setup, command registration, global shortcuts, tray
+├── database.rs          # SQLite schema, migrations, queries, caching
+├── scanner.rs           # Filesystem scanning & metadata extraction (lofty)
+├── error.rs             # Typed error system (AppError enum)
+├── effects.rs           # DSP: 10-band EQ, reverb, echo, bass boost
+├── lyrics.rs            # Lyrics parsing
+├── playlist_io.rs       # Playlist import/export (M3U, PLS)
+├── smart_playlists.rs   # Smart playlist rule engine
+├── replaygain.rs        # EBU R128 loudness analysis
+├── validation.rs        # Input validation & sanitization
+├── visualizer.rs        # Audio visualization data
+├── watcher.rs           # Filesystem change monitoring
+├── audio/               # Audio engine module
+│   ├── mod.rs           # AudioPlayer struct, playback state machine
+│   ├── device.rs        # Audio device selection & management
+│   ├── effects.rs       # DSP effects source wrapper
+│   └── visualizer.rs    # FFT / visualization buffer
+└── commands/            # Tauri IPC command handlers (80+ commands)
+    ├── audio.rs         # Play, pause, seek, volume, device, preload
+    ├── library.rs       # Scan, search, tracks, folders, album art, tags
+    ├── playlist.rs      # Playlist CRUD, import/export
+    ├── smart_playlist.rs
+    ├── effects.rs       # EQ & effects commands
+    ├── replaygain.rs    # ReplayGain commands
+    ├── visualizer.rs    # Visualization data commands
+    ├── lyrics.rs        # Lyrics commands
+    ├── watcher.rs       # Filesystem watcher commands
+    └── cache.rs         # Cache management & DB maintenance
 ```
 
 ---
@@ -71,34 +104,47 @@ src-tauri/src/
 ## Key Features
 
 ### Audio Playback
-- **Formats**: MP3, FLAC, OGG, WAV, AAC
-- **Gapless Playback**: Seamless track transitions
-- **Crossfade**: Smooth fades between tracks (1-10s configurable)
+- **Formats**: MP3, FLAC, OGG, WAV, AAC, Opus, M4A (via Symphonia)
+- **Gapless Playback**: Seamless track transitions with preloading
+- **Crossfade**: Smooth volume fades between tracks (configurable duration)
 - **ReplayGain**: Volume normalization using EBU R128 standard
-- **Playback Speed**: Adjust tempo from 0.5x to 2.0x
-- **10-band EQ**: 9 presets + custom settings
-- **Volume Control**: Per-app volume with system integration
+- **10-band EQ**: 9 presets + custom settings, real-time processing
+- **A-B Repeat**: Loop a section of a track
+- **Stereo Balance**: Left/right balance control
+- **Audio Effects**: Reverb, echo, bass boost (Rust DSP pipeline)
 
 ### Library Management
 - **Auto-scanning**: Add folders, auto-imports new files
-- **File Watching**: Automatic library updates
-- **Metadata**: Artist, album, title, genre, year, track #
-- **Album Art**: Embedded JPEG/PNG support
-- **Rating System**: 5-star ratings with play counts
+- **Incremental Scanning**: Only processes new or modified files
+- **File Watching**: Automatic library updates on filesystem changes
+- **Metadata**: Artist, album, title, duration, rating
+- **Album Art**: Embedded art extraction and caching
+- **Rating System**: 5-star ratings with play count tracking
+- **Duplicate Detection**: Find duplicate tracks in library
+- **Missing File Detection**: Identify and relocate missing tracks
 
 ### Playlists
-- **Manual Playlists**: Create, reorder, import/export M3U
-- **Smart Playlists**: Auto-populate by rules (rating, genre, date added)
-- **Queue System**: Temporary queue management
+- **Manual Playlists**: Create, rename, reorder, import/export (M3U, PLS)
+- **Smart Playlists**: Auto-populate by rules (rating, play count, date added, etc.)
+- **Queue System**: Add next, add to end, shuffle queue, queue history
 
-### Advanced Features
-- **Theme Editor**: Customize colors and appearance
-- **Visualizer**: Real-time FFT spectrum analyzer with bars, wave, and circular modes
-- **History**: Track listening history
-- **Duplicate Detection**: Find duplicate tracks in library
-- **Mini Player**: Compact always-on-top mode
-- **Lyrics**: Fetch and display song lyrics
+### Integrations
+- **MusicBrainz**: Artist resolution and discography matching
+- **CoverArtArchive**: Album art fetching
+- **Tag Editor**: Edit track metadata (title, artist, album) and write back to file
+
+### UI & Customization
+- **Multi-Window Layout**: 15 draggable/resizable windows, 8 layout presets
+- **Theme Editor**: Full color customization with custom theme save/load
+- **Background Image**: Custom wallpaper with blur and opacity controls
+- **Visualizer**: Real-time FFT spectrum analyzer (bars, wave, circular modes)
+- **Mini Player**: Compact player mode
+- **Lyrics Display**: Synced lyrics viewer
+- **Library Stats**: Statistics dashboard
+- **Keyboard Shortcuts**: Fully customizable, plus OS media key support
+- **System Tray**: Minimize to tray with click-to-show
 - **Drag & Drop**: Drop audio folders directly onto window to add to library
+- **Auto-Updater**: In-app update notifications and installation
 
 ---
 
@@ -124,227 +170,152 @@ src-tauri/src/
 - `Ctrl+E` - Equalizer window
 - `Ctrl+O` - Options window
 - `Ctrl+F` - Focus search
-- `?` - Show keyboard shortcuts (customizable)
+- `?` - Show keyboard shortcuts
 
-**List Navigation**:
-- `Ctrl+↑` / `↓` or `Ctrl+J` / `K` - Move selection
-- `Ctrl+Enter` - Play selected track
+All shortcuts are customizable via the Shortcuts window.
 
 ### Creating Playlists
-1. Click "Create Playlist" in Playlist window
+1. Click "Create Playlist" in the Playlist window
 2. Right-click tracks → "Add to Playlist"
-3. Drag to reorder tracks
+3. Drag to reorder tracks within a playlist
 
 ### Smart Playlists
 Create rules-based playlists:
-- **Fields**: artist, album, title, genre, rating, play_count, date_added
+- **Fields**: artist, album, title, rating, play_count, date_added, duration
 - **Operators**: equals, contains, greater_than, in_last, etc.
-- **Examples**: `genre equals "Rock" AND rating >= 4`
+- **Combine** multiple rules with AND/OR logic
 
 ---
 
 ## Development Guide
 
-### API Reference
+### Key Conventions
 
-**Playback Commands**:
-```rust
-load_track(path: String) -> Result<(), String>
-play_audio() / pause_audio() / stop_audio()
-set_volume(volume: f32)
-seek_to(position_secs: f64)
-get_position() -> Result<f64, String>
-```
-
-**Library Commands**:
-```rust
-scan_folder(folder_path: String) -> Result<Vec<Track>, String>
-get_all_tracks() -> Result<Vec<Track>, String>
-remove_track(track_id: String)
-```
-
-**Playlist Commands**:
-```rust
-create_playlist(name: String) -> Result<String, String>
-add_track_to_playlist(playlist_id, track_id, position)
-export_playlist(playlist_id, output_path) // M3U export
-import_playlist(playlist_name, input_path) // M3U import
-```
+1. **All IPC goes through `TauriAPI.ts`** — never call `invoke()` directly from components.
+2. **Granular Zustand selectors** — always `useStore(s => s.field)`, never `useStore()`.
+3. **Hooks and services are TypeScript** (`.ts` / `.tsx`). Components and windows are `.jsx` (gradual migration).
+4. **Windows are self-sufficient** — each reads its own state from `useStore` / `usePlayerContext`. No prop drilling.
+5. **`useToast()` and `useUpdater()`** are Zustand singletons — safe to call from anywhere.
 
 ### Adding a Tauri Command
 
-**Backend** (`main.rs`):
-```rust
-#[tauri::command]
-fn my_command(param: String) -> Result<String, String> {
-    Ok("Success".to_string())
-}
-
-// Register in handler
-.invoke_handler(tauri::generate_handler![my_command])
-```
-
-**Frontend**:
-```javascript
-import { invoke } from '@tauri-apps/api/core';
-const result = await invoke('my_command', { param: 'value' });
-```
+1. Add the handler function in the appropriate `src-tauri/src/commands/*.rs` file
+2. Register the command in `src-tauri/src/main.rs` → `invoke_handler`
+3. Add the TypeScript wrapper in `src/services/TauriAPI.ts`
+4. Call from hooks/components via `TauriAPI.myCommand()`
 
 ### Adding a Window
 
-**Create component** (`src/windows/MyWindow.jsx`):
+1. Create `src/windows/MyWindow.jsx` — the component is self-sufficient (reads its own state):
 ```jsx
-export function MyWindow({ currentColors, onClose }) {
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+
+export function MyWindow() {
+  const currentColors = useCurrentColors();
+  const someState = useStore(s => s.someState);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Content */}
+      {/* Content — no props needed */}
     </div>
   );
 }
 ```
 
-**Register** in `src/hooks/useWindowConfigs.jsx`:
-```javascript
-{
-  id: 'myWindow',
-  title: 'My Window',
-  icon: MyIcon,
-  content: (
-    <MyWindow
-      currentColors={currentColors}
-      onClose={() => toggleWindow('myWindow')}
-    />
-  ),
-}
+2. Register in `src/windowRegistry.jsx`:
+```jsx
+import { MyWindow } from './windows/MyWindow';
+import { MyIcon } from 'lucide-react';
+
+// Add to WINDOW_REGISTRY array:
+{ id: 'myWindow', title: 'My Window', icon: MyIcon, Component: MyWindow },
 ```
+
+3. The `WindowManager` automatically renders it when toggled via `useStore(s => s.toggleWindow)('myWindow')`.
+
+### Adding a Setting
+
+Settings use a DRY pattern — no manual wiring needed:
+
+1. Add the default value to `SETTINGS_DEFAULTS` in `src/store/slices/settingsSlice.ts`
+2. Add the type to `SettingsSliceState` in `src/store/types.ts`
+3. A setter (`setMyNewSetting`) is auto-generated automatically
+4. Persistence is automatic (all `SETTINGS_DEFAULTS` keys are persisted)
 
 ### State Management
 
-**Zustand Store** (`store/useStore.js`):
-```javascript
-const useStore = create((set, get) => ({
-  player: {
-    currentTrack: null,
-    isPlaying: false,
-    volume: 1.0,
-    setCurrentTrack: (track) => set(...),
-    togglePlayPause: () => set(...),
-  },
-  library: {
-    tracks: [],
-    updateTracks: (tracks) => set(...),
-  },
-  ui: {
-    windows: {},
-    openWindow: (id) => set(...),
-  },
-}));
-```
+The Zustand store is composed of 4 slices (all in `src/store/slices/`):
 
-**Custom Hooks** for cleaner access:
-```javascript
-export const usePlayerState = () => useStore(state => state.player);
-export const useLibraryState = () => useStore(state => state.library);
+| Slice | Responsibility |
+|-------|----------------|
+| `playerSlice` | Playback state, queue, current track, shuffle/repeat, A-B repeat |
+| `uiSlice` | Window positions/visibility, themes, color schemes, layouts |
+| `settingsSlice` | User preferences (DRY pattern: defaults + auto-generated setters) |
+| `musicBrainzSlice` | MusicBrainz integration state, discography cache |
+
+```typescript
+// Always use granular selectors:
+const volume = useStore(s => s.volume);
+const playing = useStore(s => s.playing);
+
+// For player actions that need the audio engine, use context:
+const { handleNextTrack, audio } = usePlayerContext();
 ```
 
 ### Testing
 
-**Frontend**:
 ```bash
-npm test              # Run tests
-npm test -- --watch   # Watch mode
-npm test -- --coverage
+npm test                # Run vitest (watch mode)
+npx vitest run          # Single run (CI-style)
+cd src-tauri && cargo test  # Rust tests
 ```
 
-**Backend**:
-```bash
-cd src-tauri
-cargo test
-cargo test -- --nocapture  # Show output
-```
+Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. As of v0.9.8: **159 tests across 10 files**.
 
 ### Building
 
 ```bash
-npm run tauri build           # Development build
-npm run tauri build --release # Production build
+npm run tauri:build     # Production build
 ```
 
-**Output**:
-- Windows: `src-tauri/target/release/vplayer.exe`
-- macOS: `src-tauri/target/release/bundle/macos/VPlayer.app`
-- Linux: `src-tauri/target/release/vplayer`
-
----
-
-## Design Patterns
-
-### Custom Hooks Pattern
-Extract reusable logic from components:
-```javascript
-// usePlayer.js
-export function usePlayer({ audio, player, tracks }) {
-  const handleNextTrack = useCallback(() => {
-    // Complex logic
-  }, [dependencies]);
-  return { handleNextTrack, handlePrevTrack };
-}
-```
-
-### Service Layer Pattern
-Centralize business logic:
-```javascript
-// ErrorHandler.js
-export class ErrorHandler {
-  handle(error, context) {
-    const message = this.getUserMessage(error);
-    this.toast.showError(message);
-  }
-}
-```
-
-### Component Composition
-Build complex UIs from simple parts:
-```jsx
-<Window title="Library" onClose={close}>
-  <Window.Header><SearchBar /></Window.Header>
-  <Window.Content><TrackList /></Window.Content>
-</Window>
-```
+**Output**: `src-tauri/target/release/bundle/` (MSI/NSIS installer on Windows)
 
 ---
 
 ## Performance
 
 ### Frontend
-- **Debounced search**: 300ms delay on search input
-- **Memoization**: `useMemo` for expensive filters
-- **Selective renders**: Zustand selectors for granular updates
-- **Virtualization** (planned): `react-window` for 10k+ tracks
+- **Virtualized lists**: `react-window` for smooth scrolling with large libraries (10k+ tracks)
+- **Debounced search**: Configurable delay on search input to reduce DB queries
+- **Memoization**: `useMemo` for expensive filter parameter construction
+- **Selective renders**: Zustand granular selectors prevent unnecessary re-renders
 
 ### Backend
-- **Database indexes**: On path, artist, album, title
-- **Parallel scanning**: `rayon` for concurrent file processing
-- **Event debouncing**: Batch file system changes
-- **Connection pooling**: Reuse SQLite connections
+- **Database indexes**: On artist, album, rating, play_count, last_played, date_added
+- **Query caching**: 5-minute TTL cache for `get_all_tracks`
+- **Incremental scanning**: Only processes new or modified files (mtime comparison)
+- **Event debouncing**: Batch file system changes via `notify` crate
+- **Schema migrations**: Versioned, idempotent migrations (v1–v5)
 
 ---
 
 ## Security
 
 ### Input Validation
-- **Path validation**: Prevent directory traversal (`../../../`)
+- **Path validation**: `validation.rs` prevents directory traversal (`../../../`)
 - **Sanitization**: Playlist names, user input
-- **Bounds checking**: Rating (0-5), volume (0-1)
+- **Bounds checking**: Rating (0–5), volume (0–1), EQ gains (−12 to +12 dB)
 
 ### Database
-- **Parameterized queries**: Prevent SQL injection
+- **Parameterized queries**: Prevent SQL injection throughout
 ```rust
-conn.execute("INSERT INTO tracks (path) VALUES (?)", params![path])?;
+conn.execute("INSERT INTO tracks (path) VALUES (?1)", params![path])?;
 ```
 
 ### File Access
 - **User-initiated only**: Tauri dialog for folder selection
+- **Tauri v2 capabilities**: Filesystem, dialog, shell permissions configured in `src-tauri/capabilities/`
 - **No arbitrary access**: Restricted to user-chosen folders
 
 ---
@@ -353,23 +324,23 @@ conn.execute("INSERT INTO tracks (path) VALUES (?)", params![path])?;
 
 ### No Sound
 - Check volume in both VPlayer and system
-- Verify audio device in Options
-- Test file in another player
+- Verify audio device in Options → Audio tab
+- VPlayer auto-recovers after long pauses or device changes
 
 ### Missing Tracks
-- Run "Check Missing Files" in Options
-- Re-scan folder if files moved
+- Run "Check Missing Files" in Options → Library tab
+- Re-scan folder if files were moved
 - Check file permissions
 
 ### Slow Performance
-- Use "Optimize Database" in Options
+- Use "Vacuum Database" in Options → Advanced tab
 - Disable visualizer if not needed
-- Consider smaller library folders
+- Large libraries benefit from the incremental scan (only processes changes)
 
 ### Import Failed
-- Check M3U file paths are correct
+- Check M3U/PLS file paths are correct
 - Use absolute paths for reliability
-- Ensure tracks exist in accessible locations
+- Ensure referenced tracks exist and are accessible
 
 ---
 
@@ -377,14 +348,14 @@ conn.execute("INSERT INTO tracks (path) VALUES (?)", params![path])?;
 
 ### Rust
 - Use `cargo fmt` for formatting
-- Handle errors with `Result<T, E>`
+- Handle errors with `Result<T, AppError>` (custom error type in `error.rs`)
 - Document public APIs with `///` comments
 
-### JavaScript/React
+### TypeScript / React
 - Functional components with hooks
-- Keep components small (<200 lines)
-- Extract logic to custom hooks
-- Use prop destructuring
+- Hooks and services are `.ts`; components are `.jsx` (gradual migration to `.tsx`)
+- Extract business logic to custom hooks — keep components focused on rendering
+- Use granular Zustand selectors, never destructure the entire store
 
 ### Commit Messages
 Follow conventional commits:
@@ -397,10 +368,11 @@ Follow conventional commits:
 
 ## Resources
 
-- [Tauri Documentation](https://tauri.app/)
+- [Tauri v2 Documentation](https://v2.tauri.app/)
 - [React Documentation](https://react.dev/)
 - [Rust Book](https://doc.rust-lang.org/book/)
-- [rodio Audio Library](https://github.com/RustAudio/rodio)
+- [Rodio Audio Library](https://github.com/RustAudio/rodio)
+- [Zustand](https://github.com/pmndrs/zustand)
 
 ---
 
@@ -413,4 +385,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.5.4 | **Updated**: December 2025
+**Version**: 0.9.8 | **Updated**: February 2026

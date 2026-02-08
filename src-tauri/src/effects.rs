@@ -63,7 +63,9 @@ impl BiquadFilter {
     pub fn set_peaking(&mut self, sample_rate: u32, freq: f32, q: f32, gain_db: f32) {
         let w0 = 2.0 * PI * freq / sample_rate as f32;
         let alpha = w0.sin() / (2.0 * q);
-        let a = 10_f32.powf(gain_db / 40.0); // TODO: Check if this should be 20 or 40 for peaking
+        // Peaking EQ uses A = sqrt(10^(dBgain/20)) = 10^(dBgain/40)
+        // per Audio EQ Cookbook (Robert Bristow-Johnson)
+        let a = 10_f32.powf(gain_db / 40.0);
 
         let cos_w0 = w0.cos();
 
@@ -123,13 +125,13 @@ impl BiquadFilter {
         self.b2 = a2 / a0;
     }
 
+    /// Process a single sample using Direct Form II Transposed.
+    /// State variables z1/z2 combine feedforward and feedback paths,
+    /// giving better numerical stability than Direct Form I.
     pub fn process(&mut self, input: f32) -> f32 {
-        let output = self.a0 * input + self.a1 * self.z1 + self.a2 * self.z2
-            - self.b1 * self.z1 - self.b2 * self.z2;
-        
-        self.z2 = self.z1;
-        self.z1 = input;
-        
+        let output = self.a0 * input + self.z1;
+        self.z1 = self.a1 * input - self.b1 * output + self.z2;
+        self.z2 = self.a2 * input - self.b2 * output;
         output
     }
 }

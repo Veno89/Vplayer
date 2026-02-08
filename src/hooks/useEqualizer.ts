@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { EQ_PRESETS } from '../utils/constants';
 import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
@@ -14,14 +14,12 @@ export interface EqualizerAPI {
 }
 
 export function useEqualizer(): EqualizerAPI {
-  // Load EQ bands from Zustand store (persisted)
-  const storedEqBands = useStore(state => state.eqBands);
+  // Read/write EQ bands directly from Zustand store (persisted) — no local copy
+  const eqBands = useStore(state => state.eqBands);
   const setStoredEqBands = useStore(state => state.setEqBands);
 
-  const [eqBands, setEqBandsLocal] = useState<EqBand[]>(storedEqBands);
-
-  const [currentPreset, setCurrentPreset] = useState('CUSTOM');
   const initialSyncDone = useRef(false);
+  const currentPresetRef = useRef('CUSTOM');
 
   // Convert UI bands (0-100) to backend format (-12 to +12 dB)
   const convertBandsToBackend = useCallback((bands: EqBand[]): number[] => {
@@ -56,10 +54,11 @@ export function useEqualizer(): EqualizerAPI {
     }
   }, [eqBands, syncWithBackend]);
 
-  // Persist EQ to store whenever it changes
-  useEffect(() => {
-    setStoredEqBands(eqBands);
-  }, [eqBands, setStoredEqBands]);
+  // Write to store and sync with backend
+  const setEqBands = useCallback((bands: EqBand[]) => {
+    setStoredEqBands(bands);
+    syncWithBackend(bands);
+  }, [setStoredEqBands, syncWithBackend]);
 
   // Apply preset
   const applyPreset = useCallback((presetName: string) => {
@@ -72,8 +71,8 @@ export function useEqualizer(): EqualizerAPI {
     }));
 
     setEqBands(newBands);
-    setCurrentPreset(presetName);
-  }, [eqBands]);
+    currentPresetRef.current = presetName;
+  }, [eqBands, setEqBands]);
 
   // Reset to flat
   const resetEQ = useCallback(() => {
@@ -89,11 +88,11 @@ export function useEqualizer(): EqualizerAPI {
       });
       
       if (matches) {
-        setCurrentPreset(presetName);
+        currentPresetRef.current = presetName;
         return;
       }
     }
-    setCurrentPreset('CUSTOM');
+    currentPresetRef.current = 'CUSTOM';
   }, [eqBands]);
 
   // Detect preset on mount and when bands change
@@ -103,8 +102,8 @@ export function useEqualizer(): EqualizerAPI {
 
   return { 
     eqBands, 
-    setEqBands: setEqBandsLocal, 
-    currentPreset, 
+    setEqBands, 
+    get currentPreset() { return currentPresetRef.current; }, 
     applyPreset, 
     resetEQ,
     presets: EQ_PRESETS 
