@@ -22,11 +22,13 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://asset.localhost data: https://coverartarchive.org https://archive.org https://*.archive.org; connect-src 'self' https://musicbrainz.org https://coverartarchive.org https://github.com; font-src 'self' data:; object-src 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "**"
+          "$HOME/**",
+          "$APPDATA/**",
+          "$RESOURCE/**"
         ]
       }
     }
