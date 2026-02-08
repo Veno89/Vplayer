@@ -2,17 +2,43 @@ import { useState, useEffect, useCallback } from 'react';
 import { TauriAPI } from '../../services/TauriAPI';
 import { useErrorHandler } from '../../services/ErrorHandler';
 import { useToast } from '../useToast';
+import type { Track, TrackFilter } from '../../types';
+
+interface LibraryFolder {
+  id: string;
+  path: string;
+  name: string;
+  dateAdded: number;
+}
+
+interface AddFolderResult {
+  path: string;
+  newFolder: LibraryFolder;
+}
+
+export interface LibraryDataAPI {
+  tracks: Track[];
+  setTracks: React.Dispatch<React.SetStateAction<Track[]>>;
+  libraryFolders: LibraryFolder[];
+  setLibraryFolders: React.Dispatch<React.SetStateAction<LibraryFolder[]>>;
+  loadTracks: () => Promise<void>;
+  loadAllTracks: () => Promise<void>;
+  loadAllFolders: () => Promise<void>;
+  addFolder: () => Promise<AddFolderResult | null>;
+  removeFolder: (folderId: string, folderPath: string) => Promise<void>;
+  removeTrack: (trackId: string) => Promise<void>;
+}
 
 /**
  * Hook to manage raw library data (tracks and folders)
  * Handles CRUD operations and database interactions
  */
-export function useLibraryData(filterParams = null) {
+export function useLibraryData(filterParams: Record<string, unknown> | null = null): LibraryDataAPI {
     const toast = useToast();
     const errorHandler = useErrorHandler(toast);
 
-    const [tracks, setTracks] = useState([]);
-    const [libraryFolders, setLibraryFolders] = useState([]);
+    const [tracks, setTracks] = useState<Track[]>([]);
+    const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([]);
 
     const loadTracks = useCallback(async () => {
         try {
@@ -30,7 +56,7 @@ export function useLibraryData(filterParams = null) {
         try {
             const dbFolders = await TauriAPI.getAllFolders();
             // Transform from database format: (id, path, name, dateAdded)
-            const folders = dbFolders.map(([id, path, name, dateAdded]) => ({
+            const folders = dbFolders.map(([id, path, name, dateAdded]: [string, string, string, number]) => ({
                 id,
                 path,
                 name,
@@ -64,7 +90,7 @@ export function useLibraryData(filterParams = null) {
     */
     // But `initLibrary` pattern is simple. Loading folders is cheap (few folders).
 
-    const addFolder = useCallback(async () => {
+    const addFolder = useCallback(async (): Promise<AddFolderResult | null> => {
         try {
             const selected = await TauriAPI.selectFolder();
 
@@ -100,7 +126,7 @@ export function useLibraryData(filterParams = null) {
         }
     }, [libraryFolders, toast]);
 
-    const removeFolder = useCallback(async (folderId, folderPath) => {
+    const removeFolder = useCallback(async (folderId: string, folderPath: string) => {
         try {
             // Stop watching this folder
             try {
@@ -120,7 +146,7 @@ export function useLibraryData(filterParams = null) {
         }
     }, [loadTracks, loadAllFolders]);
 
-    const removeTrack = useCallback(async (trackId) => {
+    const removeTrack = useCallback(async (trackId: string) => {
         try {
             await TauriAPI.removeTrack(trackId);
             setTracks(prev => prev.filter(t => t.id !== trackId));

@@ -9,13 +9,50 @@ import { useStore } from '../store/useStore';
 import { MusicBrainzAPI } from '../services/MusicBrainzAPI';
 import { CoverArtArchive } from '../services/CoverArtArchive';
 import { DiscographyMatcher } from '../services/DiscographyMatcher';
+import type { Track } from '../types';
+import type { DiscographyConfig, ResolvedArtist, ArtistDiscography as StoreDiscography } from '../store/types';
+
+interface DiscographyProgress {
+  current: number;
+  total: number;
+  artist: string;
+}
+
+interface ArtistListEntry {
+  name: string;
+  normalizedName: string;
+  localAlbumCount: number;
+  localAlbums: Map<string, LocalAlbumData>;
+  mbArtist: ResolvedArtist | null;
+  discography: StoreDiscography | null;
+  isResolved: boolean;
+  hasMissingAlbums: boolean;
+  nameVariants: Set<string>;
+}
+
+interface LocalAlbumData {
+  name: string;
+  artist: string;
+  fullArtist?: string;
+  trackCount: number;
+  trackIds: string[];
+}
+
+interface DiscographyStats {
+  totalArtists: number;
+  resolvedCount: number;
+  artistsWithMissing: number;
+  totalMissing: number;
+  totalPresent: number;
+  totalUncertain: number;
+}
 
 /**
  * Hook for discography lookup and matching
  * @param {Object[]} tracks - Library tracks for matching
  * @returns {Object} Discography management interface
  */
-export function useDiscography(tracks = []) {
+export function useDiscography(tracks: Track[] = []) {
   // Store state
   const resolvedArtists = useStore((state) => state.resolvedArtists);
   const artistDiscographies = useStore((state) => state.artistDiscographies);
@@ -39,11 +76,11 @@ export function useDiscography(tracks = []) {
   const needsDiscographyRefresh = useStore((state) => state.needsDiscographyRefresh);
 
   // Local state for search
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchResults, setSearchResults] = useState<ResolvedArtist[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   // Abort controller for cancellation
-  const abortRef = useRef(null);
+  const abortRef = useRef<{ aborted: boolean } | null>(null);
 
   // Extract unique artists from tracks
   const libraryArtists = useMemo(() => {
@@ -138,7 +175,7 @@ export function useDiscography(tracks = []) {
   /**
    * Search for an artist on MusicBrainz
    */
-  const searchArtist = useCallback(async (query) => {
+  const searchArtist = useCallback(async (query: string) => {
     if (!query || query.trim().length < 2) {
       setSearchResults([]);
       return [];
@@ -163,7 +200,7 @@ export function useDiscography(tracks = []) {
   /**
    * Resolve an artist (link local artist to MusicBrainz)
    */
-  const resolveArtist = useCallback(async (artistName, mbArtistData) => {
+  const resolveArtist = useCallback(async (artistName: string, mbArtistData: ResolvedArtist) => {
     setResolvedArtist(artistName, mbArtistData);
 
     // Auto-fetch discography if configured
@@ -175,7 +212,7 @@ export function useDiscography(tracks = []) {
   /**
    * Fetch discography for a resolved artist
    */
-  const fetchArtistDiscography = useCallback(async (artistName, artistMbid) => {
+  const fetchArtistDiscography = useCallback(async (artistName: string, artistMbid: string) => {
     setDiscographyLoading(true);
     setDiscographyError(null);
     setDiscographyProgress({ current: 0, total: 0, artist: artistName });
@@ -235,7 +272,7 @@ export function useDiscography(tracks = []) {
   /**
    * Fetch cover art for albums in background
    */
-  const fetchCoverArtInBackground = useCallback(async (albums) => {
+  const fetchCoverArtInBackground = useCallback(async (albums: Array<{ mbReleaseGroupId: string }>) => {
     const releaseGroupIds = albums.map(a => a.mbReleaseGroupId);
 
     // This runs in background, no need to await
@@ -413,7 +450,7 @@ export function useDiscography(tracks = []) {
   /**
    * Get cover art URL for a release group
    */
-  const getCoverArtUrl = useCallback((releaseGroupId, size = 'small') => {
+  const getCoverArtUrl = useCallback((releaseGroupId: string, size: 'small' | 'medium' | 'large' = 'small'): string | null => {
     if (!releaseGroupId) return null;
 
     const sizeMap = {
@@ -428,14 +465,14 @@ export function useDiscography(tracks = []) {
   /**
    * Mark album as owned/present manually
    */
-  const markAlbumAsOwned = useCallback((artistMbid, releaseGroupId) => {
+  const markAlbumAsOwned = useCallback((artistMbid: string, releaseGroupId: string) => {
     updateAlbumMatchStatus(artistMbid, releaseGroupId, 'present');
   }, [updateAlbumMatchStatus]);
 
   /**
    * Mark album as missing manually
    */
-  const markAlbumAsMissing = useCallback((artistMbid, releaseGroupId) => {
+  const markAlbumAsMissing = useCallback((artistMbid: string, releaseGroupId: string) => {
     updateAlbumMatchStatus(artistMbid, releaseGroupId, 'missing');
   }, [updateAlbumMatchStatus]);
 
@@ -443,7 +480,7 @@ export function useDiscography(tracks = []) {
    * Re-resolve a specific artist using album verification
    * This clears the existing match and re-matches using the improved logic
    */
-  const reResolveArtist = useCallback(async (artistName) => {
+  const reResolveArtist = useCallback(async (artistName: string) => {
     console.log('[useDiscography] reResolveArtist called with:', artistName);
 
     const normalizedName = artistName.toLowerCase().trim();

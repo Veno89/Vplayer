@@ -2,17 +2,45 @@ import { useState, useMemo } from 'react';
 import { useDebounce } from '../useDebounce';
 import { SEARCH_DEBOUNCE_MS } from '../../utils/constants';
 
+interface AdvancedFilters {
+  genre: string;
+  artist: string;
+  album: string;
+  yearFrom: string;
+  yearTo: string;
+  minRating: number;
+  durationFrom: string;
+  durationTo: string;
+  playCountMin: string;
+  playCountMax: string;
+  format: string;
+  bitrateMin: string;
+  folderId: string;
+}
+
+export interface LibraryFiltersAPI {
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  sortBy: string;
+  setSortBy: (sort: string) => void;
+  sortOrder: string;
+  setSortOrder: (order: string) => void;
+  advancedFilters: AdvancedFilters;
+  setAdvancedFilters: React.Dispatch<React.SetStateAction<AdvancedFilters>>;
+  activeParams: Record<string, unknown>;
+}
+
 /**
  * Hook to manage library filtering and sorting
  * Handles search, advanced filters, and sorting logic
  * 
  * @param {Array} tracks - Raw tracks array to filter
  */
-export function useLibraryFilters() {
+export function useLibraryFilters(): LibraryFiltersAPI {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('album'); // Default to album sorting (artist + album)
     const [sortOrder, setSortOrder] = useState('asc');
-    const [advancedFilters, setAdvancedFilters] = useState({
+    const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
         genre: '',
         artist: '',
         album: '',
@@ -33,7 +61,7 @@ export function useLibraryFilters() {
 
     // Construct backend filter object (memoized)
     const activeParams = useMemo(() => {
-        const filter = {}; // TrackFilter
+        const filter: Record<string, unknown> = {}; // TrackFilter
 
         if (debouncedSearchQuery) filter.searchQuery = debouncedSearchQuery;
 

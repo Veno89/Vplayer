@@ -3,9 +3,10 @@
  */
 import { WINDOW_MIN_SIZES } from '../../utils/constants';
 import { COLOR_SCHEMES } from '../../utils/colorSchemes';
+import type { AppStore, UISlice, UISliceState, WindowsState, LayoutTemplate, ColorScheme } from '../types';
 
 // === Layout Templates ===
-export const LAYOUT_TEMPLATES = {
+export const LAYOUT_TEMPLATES: Record<string, LayoutTemplate> = {
   classic: {
     name: 'classic',
     label: 'Classic',
@@ -169,9 +170,9 @@ export const LAYOUT_TEMPLATES = {
 /**
  * Get initial windows state from full layout
  */
-export const getInitialWindows = () => {
+export const getInitialWindows = (): WindowsState => {
   const fullLayout = LAYOUT_TEMPLATES.full.windows;
-  const windowsWithZIndex = {};
+  const windowsWithZIndex: WindowsState = {};
   let zIndex = 10;
   Object.keys(fullLayout).forEach(key => {
     windowsWithZIndex[key] = { ...fullLayout[key], zIndex: zIndex++ };
@@ -179,10 +180,13 @@ export const getInitialWindows = () => {
   return windowsWithZIndex;
 };
 
+type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
+type GetFn = () => AppStore;
+
 /**
  * UI Slice creator
  */
-export const createUISlice = (set, get) => ({
+export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
   // === Window State ===
   windows: getInitialWindows(),
   maxZIndex: 15,
@@ -206,7 +210,7 @@ export const createUISlice = (set, get) => ({
   isDraggingTracks: false,
 
   // === Window Actions ===
-  setWindows: (windowsOrUpdater) =>
+  setWindows: (windowsOrUpdater: WindowsState | ((prev: WindowsState) => WindowsState)) =>
     set((state) => {
       const windows = typeof windowsOrUpdater === 'function'
         ? windowsOrUpdater(state.windows)
@@ -214,7 +218,7 @@ export const createUISlice = (set, get) => ({
       return { windows };
     }),
 
-  updateWindow: (id, updates) =>
+  updateWindow: (id: string, updates: Partial<import('../types').WindowPosition>) =>
     set((state) => ({
       windows: {
         ...state.windows,
@@ -222,9 +226,9 @@ export const createUISlice = (set, get) => ({
       }
     })),
 
-  setMaxZIndex: (zIndex) => set({ maxZIndex: zIndex }),
+  setMaxZIndex: (zIndex: number) => set({ maxZIndex: zIndex }),
 
-  bringToFront: (id) =>
+  bringToFront: (id: string) =>
     set((state) => {
       if (!state.windows[id]) {
         console.warn(`Attempted to bring non-existent window '${id}' to front`);
@@ -240,7 +244,7 @@ export const createUISlice = (set, get) => ({
       };
     }),
 
-  toggleWindow: (id) =>
+  toggleWindow: (id: string) =>
     set((state) => {
       if (!state.windows[id]) {
         return {
@@ -274,9 +278,9 @@ export const createUISlice = (set, get) => ({
     }),
 
   // === Theme Actions ===
-  setColorScheme: (scheme) => set({ colorScheme: scheme }),
+  setColorScheme: (scheme: string) => set({ colorScheme: scheme }),
 
-  getCurrentColors: () => {
+  getCurrentColors: (): ColorScheme => {
     const state = get();
     return state.customThemes[state.colorScheme] || COLOR_SCHEMES[state.colorScheme] || COLOR_SCHEMES.default;
   },
@@ -286,14 +290,14 @@ export const createUISlice = (set, get) => ({
     return { ...COLOR_SCHEMES, ...state.customThemes };
   },
 
-  saveCustomTheme: (theme) => {
+  saveCustomTheme: (theme: ColorScheme) => {
     const themeKey = theme.name.toLowerCase().replace(/\s+/g, '-');
     set((state) => ({
       customThemes: { ...state.customThemes, [themeKey]: theme }
     }));
   },
 
-  deleteCustomTheme: (themeName) => {
+  deleteCustomTheme: (themeName: string) => {
     const themeKey = themeName.toLowerCase().replace(/\s+/g, '-');
     set((state) => {
       const newThemes = { ...state.customThemes };
@@ -306,13 +310,13 @@ export const createUISlice = (set, get) => ({
     });
   },
 
-  applyCustomTheme: (theme) => {
+  applyCustomTheme: (theme: ColorScheme) => {
     const themeKey = theme.name.toLowerCase().replace(/\s+/g, '-');
     set({ colorScheme: themeKey });
   },
 
   // === Layout Actions ===
-  applyLayout: (layoutName) => {
+  applyLayout: (layoutName: string) => {
     const template = LAYOUT_TEMPLATES[layoutName];
     if (!template) return;
 
@@ -351,20 +355,20 @@ export const createUISlice = (set, get) => ({
     });
   },
 
-  getLayouts: () => Object.values(LAYOUT_TEMPLATES),
+  getLayouts: () => Object.values(LAYOUT_TEMPLATES) as LayoutTemplate[],
 
   // === Visual Settings Actions ===
-  setBackgroundImage: (image) => set({ backgroundImage: image }),
-  setBackgroundBlur: (blur) => set({ backgroundBlur: blur }),
-  setBackgroundOpacity: (opacity) => set({ backgroundOpacity: opacity }),
-  setWindowOpacity: (opacity) => set({ windowOpacity: opacity }),
-  setFontSize: (size) => set({ fontSize: size }),
-  setDebugVisible: (visible) => set({ debugVisible: visible }),
+  setBackgroundImage: (image: string | null) => set({ backgroundImage: image }),
+  setBackgroundBlur: (blur: number) => set({ backgroundBlur: blur }),
+  setBackgroundOpacity: (opacity: number) => set({ backgroundOpacity: opacity }),
+  setWindowOpacity: (opacity: number) => set({ windowOpacity: opacity }),
+  setFontSize: (size: number) => set({ fontSize: size }),
+  setDebugVisible: (visible: boolean) => set({ debugVisible: visible }),
 
   // === Transient UI Actions ===
-  setTagEditorTrack: (track) => set({ tagEditorTrack: track }),
-  setThemeEditorOpen: (open) => set({ themeEditorOpen: open }),
-  setIsDraggingTracks: (dragging) => set({ isDraggingTracks: dragging }),
+  setTagEditorTrack: (track: import('../../types').Track | null) => set({ tagEditorTrack: track }),
+  setThemeEditorOpen: (open: boolean) => set({ themeEditorOpen: open }),
+  setIsDraggingTracks: (dragging: boolean) => set({ isDraggingTracks: dragging }),
 
   // Reset all windows to default layout (classic)
   resetWindowPositions: () => {
@@ -410,7 +414,7 @@ export const createUISlice = (set, get) => ({
 /**
  * UI state to persist
  */
-export const uiPersistState = (state) => ({
+export const uiPersistState = (state: UISliceState) => ({
   windows: state.windows,
   maxZIndex: state.maxZIndex,
   colorScheme: state.colorScheme,

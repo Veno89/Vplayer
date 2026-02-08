@@ -2,6 +2,24 @@ import { useState, useCallback, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
+import type { ToastService, Track } from '../types';
+
+interface DragDropParams {
+  addFolder?: () => Promise<{ path: string } | null>;
+  refreshTracks?: () => Promise<void>;
+  toast?: ToastService;
+}
+
+export interface DragDropAPI {
+  isDraggingTracks: boolean;
+  isDraggingExternal: boolean;
+  dragData: unknown;
+  handleDrop: (e: React.DragEvent) => Promise<void>;
+  handleDragOver: (e: React.DragEvent) => void;
+  handleDragLeave: (e: React.DragEvent) => void;
+  handleLibraryDragStart: (data: unknown) => void;
+  handleLibraryDragEnd: () => void;
+}
 
 /**
  * Drag and drop hook for track management
@@ -25,11 +43,11 @@ import { useStore } from '../store/useStore';
  * @returns {Function} returns.handleLibraryDragStart - Library drag start handler
  * @returns {Function} returns.handleLibraryDragEnd - Library drag end handler
  */
-export function useDragDrop({ addFolder, refreshTracks, toast }) {
+export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams): DragDropAPI {
   const isDraggingTracks = useStore(s => s.isDraggingTracks);
   const setIsDraggingTracks = useStore(s => s.setIsDraggingTracks);
   const [isDraggingExternal, setIsDraggingExternal] = useState(false);
-  const [dragData, setDragData] = useState(null);
+  const [dragData, setDragData] = useState<unknown>(null);
   const [tauriDropHandled, setTauriDropHandled] = useState(false);
 
   // Listen for Tauri file drop events
@@ -128,7 +146,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
     };
   }, [refreshTracks, toast]);
 
-  const handleDrop = useCallback(async (e) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingExternal(false);
 
@@ -154,7 +172,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
     }
   }, [tauriDropHandled]);
 
-  const handleDragOver = useCallback((e) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     const types = Array.from(e.dataTransfer.types);
     if (types.includes('application/json')) {
       e.preventDefault();
@@ -167,14 +185,14 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
     setIsDraggingExternal(true);
   }, []);
 
-  const handleDragLeave = useCallback((e) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     // Only reset if leaving the window entirely
     if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
       setIsDraggingExternal(false);
     }
   }, []);
 
-  const handleLibraryDragStart = useCallback((data) => {
+  const handleLibraryDragStart = useCallback((data: unknown) => {
     // Defer state updates to avoid re-render during drag initialization
     setTimeout(() => {
       setIsDraggingTracks(true);
@@ -188,7 +206,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }) {
   }, []);
 
   useEffect(() => {
-    const handleGlobalDragOver = (e) => {
+    const handleGlobalDragOver = (e: DragEvent) => {
       console.log('[useDragDrop] Global dragover fired');
       e.preventDefault();
       const types = Array.from(e.dataTransfer.types);

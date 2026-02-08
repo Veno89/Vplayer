@@ -1,8 +1,10 @@
-import { StateCreator } from 'zustand';
-import { PlayerSlice, PlayerSliceState } from '../types';
+import type { AppStore, PlayerSlice, PlayerSliceState } from '../types';
 import { Track } from '../../types';
 
-export const createPlayerSlice: StateCreator<PlayerSlice> = (set, get) => ({
+type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
+type GetFn = () => AppStore;
+
+export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     // === Player State ===
     currentTrack: null,
     playing: false,

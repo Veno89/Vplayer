@@ -42,7 +42,9 @@ export interface TrackFilter {
 // Player Types
 // =============================================================================
 
-export type RepeatMode = 'off' | 'one' | 'all';
+import type { RepeatMode } from '../store/types';
+
+export type { RepeatMode } from '../store/types';
 
 export interface PlayerState {
     currentTrack: number | null;
@@ -133,15 +135,22 @@ export interface CrossfadeOptions {
 // Store Types
 // =============================================================================
 
-export interface QueueTrack extends Track {
-    queueId: string;
-}
+// Re-export the full store type from the store module
+export type { AppStore as StoreState } from '../store/types';
+export type { AppStore } from '../store/types';
 
-export interface StoreState {
-    queue: QueueTrack[];
-    peekNextInQueue: () => QueueTrack | undefined;
-    nextInQueue: () => QueueTrack | undefined;
-}
+// Re-export commonly used store sub-types
+export type {
+    PlayerSlice, PlayerSliceState, PlayerSliceActions,
+    UISlice, UISliceState, UISliceActions,
+    SettingsSlice, SettingsSliceState, SettingsSliceActions,
+    MusicBrainzSlice, MusicBrainzSliceState, MusicBrainzSliceActions,
+    WindowPosition, WindowsState, WindowId,
+    ColorScheme as StoreColorScheme,
+    EqBand, KeyboardShortcut,
+    LayoutTemplate, DiscographyConfig,
+    RepeatMode, ABRepeatState,
+} from '../store/types';
 
 // =============================================================================
 // Playlist Types
@@ -179,7 +188,7 @@ export interface WindowConfig {
 }
 
 // =============================================================================
-// Theme Types
+// Theme Types (legacy — prefer StoreColorScheme from store/types for full schema)
 // =============================================================================
 
 export interface ColorScheme {

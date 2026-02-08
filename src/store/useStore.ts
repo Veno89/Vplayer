@@ -9,6 +9,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { AppStore } from './types';
 import {
   createPlayerSlice,
   playerPersistState,
@@ -21,7 +22,7 @@ import {
   getInitialWindows
 } from './slices';
 
-export const useStore = create(
+export const useStore = create<AppStore>()(
   persist(
     (set, get) => ({
       // Combine all slices
@@ -41,15 +42,15 @@ export const useStore = create(
       }),
       // Merge persisted state with fresh defaults to add new windows
       merge: (persistedState, currentState) => {
-        const merged = { ...currentState, ...persistedState };
+        const merged = { ...currentState, ...(persistedState as Partial<AppStore>) };
         
         // Ensure new windows from layouts are added to existing persisted windows
-        if (persistedState?.windows) {
+        if ((persistedState as Partial<AppStore>)?.windows) {
           const defaultWindows = getInitialWindows();
-          merged.windows = { ...defaultWindows, ...persistedState.windows };
+          merged.windows = { ...defaultWindows, ...(persistedState as Partial<AppStore>).windows };
         }
         
-        return merged;
+        return merged as AppStore;
       }
     }
   )

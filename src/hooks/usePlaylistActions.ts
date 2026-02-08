@@ -1,5 +1,36 @@
 import { useCallback } from 'react';
 import { useStore } from '../store/useStore';
+import type { Track } from '../types';
+import type { PlaylistsAPI } from './usePlaylists';
+
+interface SortConfig {
+  key: string;
+  direction: 'asc' | 'desc';
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  track: Track;
+  index: number;
+}
+
+interface PlaylistActionsParams {
+  playlists: PlaylistsAPI;
+  displayTracks: Track[];
+  currentTrack: number | null;
+  setCurrentTrack: (index: number | null) => void;
+  draggedIndex: number | null;
+  setDraggedIndex: (index: number | null) => void;
+  setDragOverIndex: (index: number | null) => void;
+  setIsDraggingOver: (isDragging: boolean) => void;
+  setContextMenu: (menu: ContextMenuState | null) => void;
+  setShowNewPlaylistDialog: (show: boolean) => void;
+  newPlaylistName: string;
+  setNewPlaylistName: (name: string) => void;
+  setSortConfig: (updater: (current: SortConfig) => SortConfig) => void;
+  onActiveTracksChange?: (tracks: Track[]) => void;
+}
 
 /**
  * Custom hook that extracts playlist action handlers from PlaylistWindow.
@@ -36,9 +67,9 @@ export function usePlaylistActions({
     setNewPlaylistName,
     setSortConfig,
     onActiveTracksChange,
-}) {
+}: PlaylistActionsParams) {
     // Sort handler
-    const handleSort = useCallback((key) => {
+    const handleSort = useCallback((key: string) => {
         setSortConfig(current => ({
             key,
             direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
@@ -46,18 +77,18 @@ export function usePlaylistActions({
     }, [setSortConfig]);
 
     // Drag and drop handlers for playlist reordering
-    const handleDragStart = useCallback((e, index) => {
+    const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
         setDraggedIndex(index);
         e.dataTransfer.effectAllowed = 'move';
     }, [setDraggedIndex]);
 
-    const handleDragOver = useCallback((e, index) => {
+    const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         setDragOverIndex(index);
     }, [setDragOverIndex]);
 
-    const handleDrop = useCallback(async (e, dropIndex) => {
+    const handleDrop = useCallback(async (e: React.DragEvent, dropIndex: number) => {
         e.preventDefault();
 
         // Only handle internal reordering
@@ -85,7 +116,7 @@ export function usePlaylistActions({
     }, [draggedIndex, displayTracks, playlists, setDraggedIndex, setDragOverIndex]);
 
     // Remove track from playlist
-    const handleRemoveFromPlaylist = useCallback(async (track) => {
+    const handleRemoveFromPlaylist = useCallback(async (track: Track) => {
         if (!playlists.currentPlaylist) return;
 
         try {
@@ -96,7 +127,7 @@ export function usePlaylistActions({
     }, [playlists]);
 
     // Handle external track drops
-    const handleExternalDrop = useCallback(async (e) => {
+    const handleExternalDrop = useCallback(async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDraggingOver(false);
@@ -138,7 +169,7 @@ export function usePlaylistActions({
     }, [setContextMenu]);
 
     // Handle track removal with confirmation
-    const handleRemoveTrack = useCallback((index) => {
+    const handleRemoveTrack = useCallback((index: number) => {
         const track = displayTracks[index];
         if (!track || !playlists.currentPlaylist) return;
 
@@ -175,7 +206,7 @@ export function usePlaylistActions({
     }, [newPlaylistName, playlists, setNewPlaylistName, setShowNewPlaylistDialog]);
 
     // Delete playlist
-    const handleDeletePlaylist = useCallback(async (playlistId) => {
+    const handleDeletePlaylist = useCallback(async (playlistId: string) => {
         console.log('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
         try {
             await playlists.deletePlaylist(playlistId);
@@ -191,12 +222,12 @@ export function usePlaylistActions({
     }, [playlists]);
 
     // Switch to playlist
-    const handleSelectPlaylist = useCallback((playlistId) => {
+    const handleSelectPlaylist = useCallback((playlistId: string) => {
         playlists.setCurrentPlaylist(playlistId);
     }, [playlists]);
 
     // Track selection handler
-    const handleTrackSelect = useCallback((index) => {
+    const handleTrackSelect = useCallback((index: number) => {
         if (onActiveTracksChange) {
             onActiveTracksChange(displayTracks);
         }

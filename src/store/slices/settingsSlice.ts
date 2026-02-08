@@ -1,8 +1,11 @@
 /**
  * Settings Slice - All user preferences and settings
  */
+import type { AppStore, SettingsSlice, SettingsSliceState } from '../types';
 
-export const createSettingsSlice = (set) => ({
+type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
+
+export const createSettingsSlice = (set: SetFn): SettingsSlice => ({
   // === Playback Settings ===
   gaplessPlayback: true,
   autoPlayOnStartup: false,
@@ -126,7 +129,7 @@ export const createSettingsSlice = (set) => ({
 /**
  * Settings state to persist
  */
-export const settingsPersistState = (state) => ({
+export const settingsPersistState = (state: SettingsSliceState) => ({
   // Playback Settings
   gaplessPlayback: state.gaplessPlayback,
   autoPlayOnStartup: state.autoPlayOnStartup,

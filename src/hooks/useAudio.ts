@@ -3,8 +3,9 @@ import { TauriAPI } from '../services/TauriAPI';
 import { AUDIO_RETRY_CONFIG } from '../utils/constants';
 import { useErrorHandler } from '../services/ErrorHandler';
 import { useToast } from './useToast';
+import type { Track, AudioHookParams, AudioService } from '../types';
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 // Threshold for considering audio "long idle" - matches Rust LONG_PAUSE_THRESHOLD
 const LONG_IDLE_THRESHOLD_SECONDS = 5 * 60; // 5 minutes
@@ -15,10 +16,10 @@ const BACKEND_TIMEOUT_MS = 5000; // 5 seconds
 /**
  * Wrap a promise with a timeout to prevent indefinite hangs
  */
-const withTimeout = (promise, ms, errorMsg = 'Operation timed out') => {
+const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation timed out'): Promise<T> => {
   return Promise.race([
     promise,
-    new Promise((_, reject) => 
+    new Promise<T>((_, reject) => 
       setTimeout(() => reject(new Error(errorMsg)), ms)
     )
   ]);
@@ -54,12 +55,12 @@ const withTimeout = (promise, ms, errorMsg = 'Operation timed out') => {
  * @returns {Function} returns.changeVolume - Change volume level
  * @returns {string|null} returns.audioBackendError - Error message if backend unavailable
  */
-export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
+export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHookParams): AudioService {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [audioBackendError, setAudioBackendError] = useState(null);
+  const [audioBackendError, setAudioBackendError] = useState<string | null>(null);
   
   // Track if we're currently seeking to avoid polling race conditions
   const isSeekingRef = useRef(false);
@@ -81,8 +82,8 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   // Volume state - initialVolume comes from the Zustand store (persisted)
   const [volume, setVolumeState] = useState(initialVolume);
   
-  const progressIntervalRef = useRef(null);
-  const currentTrackRef = useRef(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentTrackRef = useRef<Track | null>(null);
   const retryCountRef = useRef(0);
   const pollErrorCountRef = useRef(0);
   const MAX_POLL_ERRORS = 5;
@@ -230,7 +231,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   // This prevents the polling interval from being torn down & rebuilt every time a parent
   // re-renders, which was causing stale state after long idle periods.
 
-  const loadTrack = useCallback(async (track) => {
+  const loadTrack = useCallback(async (track: Track) => {
     // Check if audio backend is available
     if (audioBackendError) {
       console.error('Cannot load track - audio backend unavailable:', audioBackendError);
@@ -374,7 +375,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     }
   }, [audioBackendError]);
 
-  const changeVolume = useCallback(async (newVolume) => {
+  const changeVolume = useCallback(async (newVolume: number) => {
     if (audioBackendError) {
       errorHandler.logOnly('Cannot change volume - audio backend unavailable', 'Audio Volume');
       return;
@@ -390,7 +391,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
     }
   }, [audioBackendError, errorHandler]);
 
-  const seek = useCallback(async (position) => {
+  const seek = useCallback(async (position: number) => {
     if (audioBackendError) return; // Silently fail
     if (isRecoveringRef.current) return; // Don't seek during recovery
     

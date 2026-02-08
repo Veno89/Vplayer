@@ -1,14 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
+import type { Track } from '../types';
 
-export function usePlaylists() {
-  const [playlists, setPlaylists] = useState([]);
-  const [currentPlaylist, setCurrentPlaylist] = useState(null);
-  const [playlistTracks, setPlaylistTracks] = useState([]);
+interface PlaylistItem {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+interface AddingProgress {
+  current: number;
+  total: number;
+  isAdding: boolean;
+}
+
+export interface PlaylistsAPI {
+  playlists: PlaylistItem[];
+  currentPlaylist: string | null;
+  setCurrentPlaylist: (id: string | null) => void;
+  playlistTracks: Track[];
+  isLoading: boolean;
+  addingProgress: AddingProgress;
+  createPlaylist: (name: string) => Promise<string>;
+  deletePlaylist: (playlistId: string) => Promise<void>;
+  renamePlaylist: (playlistId: string, newName: string) => Promise<void>;
+  addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<void>;
+  addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>;
+  removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
+  reorderPlaylistTracks: (playlistId: string, trackPositions: [string, number][]) => Promise<void>;
+  loadPlaylists: () => Promise<void>;
+}
+
+export function usePlaylists(): PlaylistsAPI {
+  const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
+  const [currentPlaylist, setCurrentPlaylist] = useState<string | null>(null);
+  const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasRestoredPlaylist, setHasRestoredPlaylist] = useState(false);
-  const [addingProgress, setAddingProgress] = useState({ current: 0, total: 0, isAdding: false });
+  const [addingProgress, setAddingProgress] = useState<AddingProgress>({ current: 0, total: 0, isAdding: false });
 
   // Read last playlist from store (persisted)
   const lastPlaylistId = useStore(state => state.lastPlaylistId);
@@ -18,7 +48,7 @@ export function usePlaylists() {
     try {
       const data = await TauriAPI.getAllPlaylists();
       // Convert to objects with id, name, createdAt
-      const playlistObjects = data.map(([id, name, createdAt]) => ({
+      const playlistObjects: PlaylistItem[] = data.map(([id, name, createdAt]: [string, string, number]) => ({
         id,
         name,
         createdAt
@@ -29,7 +59,7 @@ export function usePlaylists() {
       if (!hasRestoredPlaylist && playlistObjects.length > 0) {
         if (lastPlaylistId) {
           // Check if saved playlist still exists
-          const exists = playlistObjects.some(p => p.id === lastPlaylistId);
+          const exists = playlistObjects.some((p: PlaylistItem) => p.id === lastPlaylistId);
           if (exists) {
             setCurrentPlaylist(lastPlaylistId);
           }
@@ -42,7 +72,7 @@ export function usePlaylists() {
     }
   }, [hasRestoredPlaylist, lastPlaylistId]);
 
-  const loadPlaylistTracks = useCallback(async (playlistId) => {
+  const loadPlaylistTracks = useCallback(async (playlistId: string | null) => {
     if (!playlistId) {
       setPlaylistTracks([]);
       return;
@@ -60,7 +90,7 @@ export function usePlaylists() {
     }
   }, []);
 
-  const createPlaylist = useCallback(async (name) => {
+  const createPlaylist = useCallback(async (name: string) => {
     try {
       const id = await TauriAPI.createPlaylist(name);
       await loadPlaylists();
@@ -71,7 +101,7 @@ export function usePlaylists() {
     }
   }, [loadPlaylists]);
 
-  const deletePlaylist = useCallback(async (playlistId) => {
+  const deletePlaylist = useCallback(async (playlistId: string) => {
     try {
       await TauriAPI.deletePlaylist(playlistId);
       await loadPlaylists();
@@ -85,7 +115,7 @@ export function usePlaylists() {
     }
   }, [loadPlaylists, currentPlaylist]);
 
-  const renamePlaylist = useCallback(async (playlistId, newName) => {
+  const renamePlaylist = useCallback(async (playlistId: string, newName: string) => {
     try {
       await TauriAPI.renamePlaylist(playlistId, newName);
       await loadPlaylists();
@@ -95,7 +125,7 @@ export function usePlaylists() {
     }
   }, [loadPlaylists]);
 
-  const addTrackToPlaylist = useCallback(async (playlistId, trackId) => {
+  const addTrackToPlaylist = useCallback(async (playlistId: string, trackId: string) => {
     try {
       await TauriAPI.addTrackToPlaylist(playlistId, trackId);
       if (currentPlaylist === playlistId) {
@@ -107,7 +137,7 @@ export function usePlaylists() {
     }
   }, [currentPlaylist, loadPlaylistTracks]);
 
-  const addTracksToPlaylist = useCallback(async (playlistId, trackIds) => {
+  const addTracksToPlaylist = useCallback(async (playlistId: string, trackIds: string[]) => {
     try {
       console.log('Adding', trackIds.length, 'tracks to playlist', playlistId);
       setAddingProgress({ current: 0, total: trackIds.length, isAdding: true });
@@ -130,7 +160,7 @@ export function usePlaylists() {
     }
   }, [currentPlaylist, loadPlaylistTracks]);
 
-  const removeTrackFromPlaylist = useCallback(async (playlistId, trackId) => {
+  const removeTrackFromPlaylist = useCallback(async (playlistId: string, trackId: string) => {
     try {
       await TauriAPI.removeTrackFromPlaylist(playlistId, trackId);
       if (currentPlaylist === playlistId) {
@@ -142,7 +172,7 @@ export function usePlaylists() {
     }
   }, [currentPlaylist, loadPlaylistTracks]);
 
-  const reorderPlaylistTracks = useCallback(async (playlistId, trackPositions) => {
+  const reorderPlaylistTracks = useCallback(async (playlistId: string, trackPositions: [string, number][]) => {
     try {
       await TauriAPI.reorderPlaylistTracks(playlistId, trackPositions);
       if (currentPlaylist === playlistId) {

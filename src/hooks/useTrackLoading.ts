@@ -2,6 +2,27 @@ import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
 import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
+import type { Track, AudioService, ToastService } from '../types';
+
+export interface TrackLoadingParams {
+  audio: AudioService;
+  tracks: Track[];
+  currentTrack: number | null;
+  playing: boolean;
+  setDuration: (d: number) => void;
+  setLoadingTrackIndex: (i: number | null) => void;
+  progress: number;
+  toast: ToastService;
+  removeTrack: (id: string) => Promise<void>;
+  setCurrentTrack: (i: number | null) => void;
+  handleNextTrack: () => void;
+}
+
+export interface TrackLoadingReturn {
+  loadedTrackId: string | null;
+  hasRestoredTrack: boolean;
+  setHasRestoredTrack: (v: boolean) => void;
+}
 
 export function useTrackLoading({
   audio,
@@ -15,11 +36,11 @@ export function useTrackLoading({
   removeTrack,
   setCurrentTrack,
   handleNextTrack
-}) {
-  const [loadedTrackId, setLoadedTrackId] = useState(null);
+}: TrackLoadingParams): TrackLoadingReturn {
+  const [loadedTrackId, setLoadedTrackId] = useState<string | null>(null);
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
-  const lastToastTrackId = useRef(null);
-  const shouldRestorePosition = useRef(true); // Track if we should restore position on next load
+  const lastToastTrackId = useRef<string | null>(null);
+  const shouldRestorePosition = useRef(true);
 
   // ReplayGain hook for volume normalization
   const replayGain = useReplayGain();

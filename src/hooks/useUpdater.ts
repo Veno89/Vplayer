@@ -2,20 +2,34 @@ import { useState, useEffect, useCallback } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
-/**
- * Hook for managing app updates
- * 
- * @returns {Object} Update state and controls
- */
-export function useUpdater() {
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  body: string | null;
+  date: string | null;
+}
+
+export interface UpdaterAPI {
+  updateAvailable: boolean;
+  updateInfo: UpdateInfo | null;
+  downloading: boolean;
+  downloadProgress: number;
+  checking: boolean;
+  error: string | null;
+  checkForUpdates: (silent?: boolean) => Promise<boolean>;
+  downloadAndInstall: () => Promise<void>;
+  dismissUpdate: () => void;
+}
+
+export function useUpdater(): UpdaterAPI {
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
-  const checkForUpdates = useCallback(async (silent = false) => {
+  const checkForUpdates = useCallback(async (silent = false): Promise<boolean> => {
     try {
       setChecking(true);
       setError(null);
@@ -57,7 +71,7 @@ export function useUpdater() {
     }
   }, []);
 
-  const downloadAndInstall = useCallback(async () => {
+  const downloadAndInstall = useCallback(async (): Promise<void> => {
     try {
       setDownloading(true);
       setError(null);
@@ -94,7 +108,7 @@ export function useUpdater() {
     }
   }, []);
 
-  const dismissUpdate = useCallback(() => {
+  const dismissUpdate = useCallback((): void => {
     setUpdateAvailable(false);
     setUpdateInfo(null);
   }, []);

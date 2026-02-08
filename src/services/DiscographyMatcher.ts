@@ -5,46 +5,75 @@
  * Implements normalization rules for accurate matching.
  */
 
-/**
- * Album match status
- * @typedef {'present' | 'missing' | 'uncertain'} AlbumMatchStatus
- */
+export type AlbumMatchStatus = 'present' | 'missing' | 'uncertain';
 
-/**
- * Local album data
- * @typedef {Object} LocalAlbum
- * @property {string} name - Album name
- * @property {string} artist - Artist name
- * @property {number} trackCount - Number of tracks in library
- * @property {string[]} trackIds - Track IDs in library
- */
+export interface LocalAlbum {
+  name: string;
+  artist: string;
+  fullArtist?: string;
+  trackCount: number;
+  trackIds: string[];
+}
 
-/**
- * Match result for an album
- * @typedef {Object} AlbumMatch
- * @property {string} mbReleaseGroupId - MusicBrainz release group ID
- * @property {string} mbTitle - MusicBrainz album title
- * @property {string} [mbFirstReleaseDate] - First release year
- * @property {string} mbPrimaryType - Album type (Album, EP)
- * @property {string[]} mbSecondaryTypes - Secondary types
- * @property {AlbumMatchStatus} status - Match status
- * @property {LocalAlbum|null} localAlbum - Local album if present
- * @property {number} matchConfidence - Match confidence 0-100
- * @property {string} [coverArtUrl] - Cover art URL if available
- */
+export interface AlbumMatch {
+  mbReleaseGroupId: string;
+  mbTitle: string;
+  mbFirstReleaseDate?: string;
+  mbPrimaryType: string;
+  mbSecondaryTypes: string[];
+  status: AlbumMatchStatus;
+  localAlbum: LocalAlbum | null;
+  matchConfidence: number;
+  coverArtUrl?: string;
+}
 
-/**
- * Artist discography result
- * @typedef {Object} ArtistDiscography
- * @property {string} mbArtistId - MusicBrainz artist ID
- * @property {string} artistName - Artist name
- * @property {string} [disambiguation] - Disambiguation text
- * @property {number} totalAlbums - Total albums in discography
- * @property {number} presentAlbums - Albums in local library
- * @property {number} missingAlbums - Missing albums
- * @property {number} uncertainAlbums - Uncertain matches
- * @property {AlbumMatch[]} albums - All album matches
- */
+interface MatchResult {
+  matches: boolean;
+  confidence: number;
+}
+
+interface ArtistExtraction {
+  primary: string;
+  full: string;
+  isCollaboration: boolean;
+}
+
+interface ArtistData {
+  name: string;
+  fullNames: Set<string>;
+  nameVariants: Set<string>;
+  albumCount: number;
+  albums: Map<string, LocalAlbum>;
+  collaborations: Set<string>;
+}
+
+interface VerificationResult {
+  verified: boolean;
+  matchedAlbums: number;
+  confidence: number;
+  matchRatio?: number;
+}
+
+interface MatchSummary {
+  total: number;
+  present: number;
+  missing: number;
+  uncertain: number;
+}
+
+interface MBAlbum {
+  id: string;
+  title: string;
+  firstReleaseDate?: string;
+  primaryType: string;
+  secondaryTypes?: string[];
+}
+
+interface TrackInput {
+  id: string;
+  artist?: string;
+  album?: string;
+}
 
 // Patterns to remove during normalization
 const NORMALIZATION_PATTERNS = [
@@ -92,7 +121,7 @@ class DiscographyMatchingService {
    * @param {string} artistString - Full artist string which may contain multiple artists
    * @returns {{ primary: string, full: string, isCollaboration: boolean }}
    */
-  extractPrimaryArtist(artistString) {
+  extractPrimaryArtist(artistString: string): ArtistExtraction {
     if (!artistString) {
       return { primary: '', full: '', isCollaboration: false };
     }
@@ -129,7 +158,7 @@ class DiscographyMatchingService {
    * @param {string} str - Artist name to normalize
    * @returns {string} Normalized artist name
    */
-  normalizeArtistName(str) {
+  normalizeArtistName(str: string): string {
     if (!str) return '';
     return str
       .toLowerCase()
@@ -147,7 +176,7 @@ class DiscographyMatchingService {
    * @param {string} str - String to normalize
    * @returns {string} Normalized string
    */
-  normalizeString(str) {
+  normalizeString(str: string): string {
     if (!str) return '';
 
     let normalized = str.toLowerCase().trim();
@@ -176,7 +205,7 @@ class DiscographyMatchingService {
    * @param {string} b - Second string
    * @returns {number} Similarity score 0-100
    */
-  calculateSimilarity(a, b) {
+  calculateSimilarity(a: string, b: string): number {
     if (!a || !b) return 0;
     if (a === b) return 100;
 
@@ -222,7 +251,7 @@ class DiscographyMatchingService {
    * @param {string} mbAlbum - MusicBrainz album name
    * @returns {{ matches: boolean, confidence: number }}
    */
-  matchAlbumNames(localAlbum, mbAlbum) {
+  matchAlbumNames(localAlbum: string, mbAlbum: string): MatchResult {
     const normLocal = this.normalizeString(localAlbum);
     const normMb = this.normalizeString(mbAlbum);
 
@@ -262,7 +291,7 @@ class DiscographyMatchingService {
    * @param {Object[]} tracks - Track objects with artist property
    * @returns {Map<string, { name: string, albumCount: number, albums: Map<string, LocalAlbum>, collaborations: Set<string>, nameVariants: Set<string> }>}
    */
-  extractArtistsFromTracks(tracks) {
+  extractArtistsFromTracks(tracks: TrackInput[]): Map<string, ArtistData> {
     const artistsMap = new Map();
     // Secondary index for fuzzy matching - maps normalized names to their canonical key
     const fuzzyIndex = new Map();
@@ -367,7 +396,7 @@ class DiscographyMatchingService {
    * @param {Map<string, LocalAlbum>} localAlbums - Local albums map
    * @returns {AlbumMatch[]}
    */
-  matchDiscography(mbAlbums, localAlbums) {
+  matchDiscography(mbAlbums: MBAlbum[], localAlbums: Map<string, LocalAlbum>): AlbumMatch[] {
     const results = [];
     const matchedLocalAlbums = new Set();
 
@@ -424,7 +453,7 @@ class DiscographyMatchingService {
    * @param {AlbumMatch[]} matches - Array of album matches
    * @returns {{ total: number, present: number, missing: number, uncertain: number }}
    */
-  getMatchSummary(matches) {
+  getMatchSummary(matches: AlbumMatch[]): MatchSummary {
     return {
       total: matches.length,
       present: matches.filter(m => m.status === 'present').length,
@@ -440,7 +469,7 @@ class DiscographyMatchingService {
    * @param {Map<string, LocalAlbum>} localAlbums - Local albums for this artist
    * @returns {{ verified: boolean, matchedAlbums: number, confidence: number }}
    */
-  verifyArtistByAlbums(mbAlbums, localAlbums) {
+  verifyArtistByAlbums(mbAlbums: MBAlbum[], localAlbums: Map<string, LocalAlbum>): VerificationResult {
     if (!mbAlbums || mbAlbums.length === 0 || !localAlbums || localAlbums.size === 0) {
       return { verified: false, matchedAlbums: 0, confidence: 0 };
     }
@@ -492,7 +521,7 @@ class DiscographyMatchingService {
    * @param {string} dateStr - Date string (YYYY or YYYY-MM-DD)
    * @returns {number|null}
    */
-  parseReleaseYear(dateStr) {
+  parseReleaseYear(dateStr: string): number | null {
     if (!dateStr) return null;
     const year = parseInt(dateStr.substring(0, 4), 10);
     return isNaN(year) ? null : year;

@@ -1,9 +1,10 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useStore } from '../store/useStore';
+import type { KeyboardShortcut } from '../store/types';
 
 // Default shortcuts - can be customized via ShortcutsWindow
-const DEFAULT_SHORTCUTS = [
+const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
   { id: 'play-pause', name: 'Play/Pause', key: 'Space', category: 'Playback' },
   { id: 'next-track', name: 'Next Track', key: 'ArrowRight', category: 'Playback' },
   { id: 'prev-track', name: 'Previous Track', key: 'ArrowLeft', category: 'Playback' },
@@ -30,7 +31,14 @@ const DEFAULT_SHORTCUTS = [
  * Parse a shortcut key string into components
  * e.g., "Ctrl+Shift+F" => { ctrl: true, shift: true, alt: false, key: "f" }
  */
-function parseShortcut(shortcutKey) {
+interface ParsedShortcut {
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+  key: string;
+}
+
+function parseShortcut(shortcutKey: string): ParsedShortcut {
   const parts = shortcutKey.split('+');
   const result = {
     ctrl: false,
@@ -59,7 +67,7 @@ function parseShortcut(shortcutKey) {
 /**
  * Check if keyboard event matches a shortcut
  */
-function matchesShortcut(event, shortcut) {
+function matchesShortcut(event: KeyboardEvent, shortcut: KeyboardShortcut): boolean {
   const parsed = parseShortcut(shortcut.key);
   
   // Check modifiers
@@ -82,8 +90,22 @@ function matchesShortcut(event, shortcut) {
  * Handles both DOM keyboard events (in-app) and Tauri global events (OS media keys)
  * Reads customizable shortcuts from Zustand store
  */
+export interface ShortcutsParams {
+  togglePlay?: () => void;
+  nextTrack?: () => void;
+  prevTrack?: () => void;
+  volumeUp?: () => void;
+  volumeDown?: () => void;
+  mute?: () => void;
+  stop?: () => void;
+  toggleShuffle?: () => void;
+  toggleRepeat?: () => void;
+  toggleWindow?: (id: string) => void;
+  focusSearch?: () => void;
+  audio?: { seek?: (pos: number) => void; pause?: () => void; currentTime?: number; duration?: number };
+}
+
 export function useShortcuts({
-  // Playback callbacks
   togglePlay,
   nextTrack,
   prevTrack,
@@ -93,12 +115,10 @@ export function useShortcuts({
   stop,
   toggleShuffle,
   toggleRepeat,
-  // UI callbacks
   toggleWindow,
   focusSearch,
-  // Audio reference for seeking and global shortcuts
   audio,
-}) {
+}: ShortcutsParams): void {
   // Load shortcuts from Zustand store (persisted); null means use defaults
   const storedShortcuts = useStore(state => state.keyboardShortcuts);
   const shortcuts = storedShortcuts || DEFAULT_SHORTCUTS;
@@ -112,7 +132,7 @@ export function useShortcuts({
   }, []);
 
   // Action handlers map
-  const actionHandlers = useCallback(() => ({
+  const actionHandlers = useCallback((): Record<string, (() => void) | undefined> => ({
     'play-pause': togglePlay,
     'next-track': nextTrack,
     'prev-track': prevTrack,
@@ -137,7 +157,7 @@ export function useShortcuts({
 
   // DOM keyboard events (in-app shortcuts)
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       // Skip when typing in inputs (except for some shortcuts like Escape)
       if (isInputFocused() && e.key !== 'Escape') return;
       

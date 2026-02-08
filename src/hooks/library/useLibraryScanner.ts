@@ -4,6 +4,30 @@ import { TauriAPI } from '../../services/TauriAPI';
 import { EVENTS } from '../../utils/constants';
 import { useStore } from '../../store/useStore';
 
+interface LibraryFolder {
+  id: string;
+  path: string;
+  name: string;
+  dateAdded: number;
+}
+
+interface LibraryScannerParams {
+  libraryFolders: LibraryFolder[];
+  loadAllTracks: () => Promise<void>;
+  loadAllFolders?: () => Promise<void>;
+}
+
+export interface LibraryScannerAPI {
+  isScanning: boolean;
+  setIsScanning: React.Dispatch<React.SetStateAction<boolean>>;
+  scanProgress: number;
+  scanCurrent: number;
+  scanTotal: number;
+  scanCurrentFile: string;
+  refreshFolders: () => Promise<number>;
+  scanNewFolder: (path: string) => Promise<void>;
+}
+
 /**
  * Hook to manage library scanning and file watching
  * Handles background scanning processes and event listeners
@@ -12,7 +36,7 @@ import { useStore } from '../../store/useStore';
  * @param {Array} libraryData.libraryFolders - Current library folders
  * @param {Function} libraryData.loadAllTracks - Function to reload tracks
  */
-export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolders }) {
+export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolders }: LibraryScannerParams): LibraryScannerAPI {
     const autoScanOnStartup = useStore(state => state.autoScanOnStartup);
     const watchFolderChanges = useStore(state => state.watchFolderChanges);
 
@@ -147,7 +171,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         };
     }, []);
 
-    const refreshFolders = useCallback(async () => {
+    const refreshFolders = useCallback(async (): Promise<number> => {
         try {
             setIsScanning(true);
             setScanProgress(0);
@@ -178,7 +202,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
     }, [libraryFolders, loadAllTracks]);
 
     // Manually scan a single new folder (used when adding a folder)
-    const scanNewFolder = useCallback(async (path) => {
+    const scanNewFolder = useCallback(async (path: string) => {
         try {
             setIsScanning(true);
             setScanProgress(0);

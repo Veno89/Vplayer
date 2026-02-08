@@ -15,6 +15,20 @@ const COVER_ART_CACHE_KEY = 'vplayer_caa_cache';
 // Maximum cache size (in entries)
 const MAX_CACHE_SIZE = 500;
 
+interface CoverArtResult {
+  releaseGroupId: string;
+  thumbnailUrl?: string;
+  smallUrl?: string;
+  largeUrl?: string;
+  imageUrl?: string;
+  found: boolean;
+}
+
+interface CacheData {
+  timestamp: number;
+  entries: Record<string, CoverArtResult>;
+}
+
 /**
  * Cover art result
  * @typedef {Object} CoverArtResult
@@ -27,16 +41,19 @@ const MAX_CACHE_SIZE = 500;
  */
 
 class CoverArtArchiveService {
+  cache: Record<string, CoverArtResult>;
+  pendingRequests: Map<string, Promise<CoverArtResult>>;
+
   constructor() {
     this.cache = this._loadCache();
-    this.pendingRequests = new Map(); // Prevent duplicate requests
+    this.pendingRequests = new Map();
   }
 
   /**
    * Load cache from localStorage
    * @private
    */
-  _loadCache() {
+  _loadCache(): Record<string, CoverArtResult> {
     try {
       const cached = localStorage.getItem(COVER_ART_CACHE_KEY);
       if (cached) {
@@ -57,7 +74,7 @@ class CoverArtArchiveService {
    * Save cache to localStorage
    * @private
    */
-  _saveCache() {
+  _saveCache(): void {
     try {
       // Limit cache size
       const keys = Object.keys(this.cache);
@@ -82,7 +99,7 @@ class CoverArtArchiveService {
    * @param {string} releaseGroupId - MusicBrainz release group ID
    * @returns {Promise<CoverArtResult>}
    */
-  async getCoverArt(releaseGroupId) {
+  async getCoverArt(releaseGroupId: string): Promise<CoverArtResult> {
     if (!releaseGroupId) {
       return { releaseGroupId: '', found: false };
     }
@@ -118,7 +135,7 @@ class CoverArtArchiveService {
    * Actually fetch cover art from API
    * @private
    */
-  async _fetchCoverArt(releaseGroupId) {
+  async _fetchCoverArt(releaseGroupId: string): Promise<CoverArtResult> {
     try {
       // First try to get front cover directly (most efficient)
       const frontUrl = `${CAA_BASE_URL}/release-group/${releaseGroupId}/front`;
@@ -159,7 +176,7 @@ class CoverArtArchiveService {
    * @param {Function} [onProgress] - Progress callback (current, total)
    * @returns {Promise<Map<string, CoverArtResult>>}
    */
-  async batchGetCoverArt(releaseGroupIds, onProgress) {
+  async batchGetCoverArt(releaseGroupIds: string[], onProgress?: (current: number, total: number) => void): Promise<Map<string, CoverArtResult>> {
     const results = new Map();
     const uniqueIds = [...new Set(releaseGroupIds)];
     
@@ -184,7 +201,7 @@ class CoverArtArchiveService {
   /**
    * Clear cover art cache
    */
-  clearCache() {
+  clearCache(): void {
     this.cache = {};
     localStorage.removeItem(COVER_ART_CACHE_KEY);
     console.log('[CoverArtArchive] Cache cleared');
@@ -193,7 +210,7 @@ class CoverArtArchiveService {
   /**
    * Get cache statistics
    */
-  getCacheStats() {
+  getCacheStats(): { totalEntries: number; foundCovers: number; missingCovers: number } {
     const entries = Object.values(this.cache);
     return {
       totalEntries: entries.length,

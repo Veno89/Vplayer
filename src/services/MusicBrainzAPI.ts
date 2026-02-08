@@ -16,7 +16,39 @@ const STORAGE_KEYS = {
   ARTIST_CACHE: 'vplayer_mb_artist_cache',
   DISCOGRAPHY_CACHE: 'vplayer_mb_discography_cache',
   LAST_REQUEST_TIME: 'vplayer_mb_last_request',
-};
+} as const;
+
+export interface MBArtistResult {
+  id: string;
+  name: string;
+  sortName?: string;
+  type?: string;
+  country?: string;
+  disambiguation?: string;
+  score: number;
+}
+
+export interface MBReleaseGroup {
+  id: string;
+  title: string;
+  firstReleaseDate?: string;
+  primaryType: string;
+  secondaryTypes?: string[];
+}
+
+interface DiscographyOptions {
+  includeEPs?: boolean;
+  includeLive?: boolean;
+  includeCompilations?: boolean;
+  includeBootlegs?: boolean;
+  quickCheck?: boolean;
+  bypassCache?: boolean;
+}
+
+interface CacheData<T> {
+  timestamp: number;
+  entries: Record<string, T>;
+}
 
 /**
  * Artist search result from MusicBrainz
@@ -41,6 +73,12 @@ const STORAGE_KEYS = {
  */
 
 class MusicBrainzAPIService {
+  lastRequestTime: number;
+  requestQueue: Array<() => void>;
+  isProcessingQueue: boolean;
+  artistCache: Record<string, MBArtistResult[]>;
+  discographyCache: Record<string, MBReleaseGroup[]>;
+
   constructor() {
     this.lastRequestTime = this._getLastRequestTime();
     this.requestQueue = [];
@@ -53,7 +91,7 @@ class MusicBrainzAPIService {
    * Load cache from localStorage
    * @private
    */
-  _loadCache(key) {
+  _loadCache<T>(key: string): Record<string, T> {
     try {
       const cached = localStorage.getItem(key);
       if (cached) {
@@ -74,7 +112,7 @@ class MusicBrainzAPIService {
    * Save cache to localStorage
    * @private
    */
-  _saveCache(key, entries) {
+  _saveCache<T>(key: string, entries: Record<string, T>): void {
     try {
       const data = {
         timestamp: Date.now(),
@@ -90,7 +128,7 @@ class MusicBrainzAPIService {
    * Get last request time from storage
    * @private
    */
-  _getLastRequestTime() {
+  _getLastRequestTime(): number {
     try {
       return parseInt(localStorage.getItem(STORAGE_KEYS.LAST_REQUEST_TIME) || '0', 10);
     } catch {
@@ -102,7 +140,7 @@ class MusicBrainzAPIService {
    * Update last request time in storage
    * @private
    */
-  _setLastRequestTime(time) {
+  _setLastRequestTime(time: number): void {
     this.lastRequestTime = time;
     try {
       localStorage.setItem(STORAGE_KEYS.LAST_REQUEST_TIME, time.toString());
@@ -115,7 +153,7 @@ class MusicBrainzAPIService {
    * Rate-limited fetch wrapper
    * @private
    */
-  async _rateLimitedFetch(url) {
+  async _rateLimitedFetch(url: string): Promise<any> {
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
     
@@ -152,7 +190,7 @@ class MusicBrainzAPIService {
    * @param {number} [limit=5] - Maximum number of results
    * @returns {Promise<MBArtistResult[]>}
    */
-  async searchArtist(artistName, limit = 5, bypassCache = false) {
+  async searchArtist(artistName: string, limit: number = 5, bypassCache: boolean = false): Promise<MBArtistResult[]> {
     if (!artistName || artistName.trim() === '') {
       return [];
     }
@@ -204,7 +242,7 @@ class MusicBrainzAPIService {
    * @param {string} mbid - MusicBrainz Artist ID
    * @returns {Promise<MBArtistResult|null>}
    */
-  async getArtist(mbid) {
+  async getArtist(mbid: string): Promise<MBArtistResult | null> {
     if (!mbid) return null;
 
     // Check cache
@@ -251,7 +289,7 @@ class MusicBrainzAPIService {
    * @param {boolean} [options.bypassCache=false] - Bypass and clear the cache
    * @returns {Promise<MBReleaseGroup[]>}
    */
-  async getArtistDiscography(artistMbid, options = {}) {
+  async getArtistDiscography(artistMbid: string, options: DiscographyOptions = {}): Promise<MBReleaseGroup[]> {
     if (!artistMbid) return [];
 
     const {
@@ -354,7 +392,7 @@ class MusicBrainzAPIService {
    * Clear search cache for a specific artist
    * @param {string} artistName - Artist name to clear from cache
    */
-  clearArtistSearchCache(artistName) {
+  clearArtistSearchCache(artistName: string): void {
     if (!artistName) return;
     const normalizedName = artistName.trim().toLowerCase();
     const cacheKey = `search:${normalizedName}`;
@@ -368,7 +406,7 @@ class MusicBrainzAPIService {
   /**
    * Clear all caches
    */
-  clearCache() {
+  clearCache(): void {
     this.artistCache = {};
     this.discographyCache = {};
     localStorage.removeItem(STORAGE_KEYS.ARTIST_CACHE);
@@ -380,7 +418,7 @@ class MusicBrainzAPIService {
    * Get cache statistics
    * @returns {Object}
    */
-  getCacheStats() {
+  getCacheStats(): { artistCacheSize: number; discographyCacheSize: number } {
     return {
       artistCacheSize: Object.keys(this.artistCache).length,
       discographyCacheSize: Object.keys(this.discographyCache).length,

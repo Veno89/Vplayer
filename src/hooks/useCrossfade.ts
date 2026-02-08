@@ -2,6 +2,33 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { CROSSFADE_CONFIG } from '../utils/constants';
 import { useStore } from '../store/useStore';
 
+export interface CrossfadeParams {
+  setVolume: (vol: number) => void;
+  currentVolume: number;
+  onMidpoint: () => void;
+  onComplete: () => void;
+}
+
+export interface FadeInParams {
+  setVolume: (vol: number) => void;
+  targetVolume: number;
+  onComplete?: () => void;
+}
+
+export interface CrossfadeAPI {
+  enabled: boolean;
+  duration: number;
+  toggleEnabled: () => void;
+  setDuration: (ms: number) => void;
+  shouldCrossfade: (currentProgress: number, trackDuration: number) => boolean;
+  startCrossfade: (params: CrossfadeParams) => void;
+  startFadeIn: (params: FadeInParams) => (() => void) | undefined;
+  cancelCrossfade: (setVolume: (vol: number) => void) => void;
+  getFadeOutMultiplier: (elapsedMs: number) => number;
+  getFadeInMultiplier: (elapsedMs: number) => number;
+  readonly isFading: boolean;
+}
+
 /**
  * Crossfade hook for smooth transitions between tracks
  * 
@@ -10,7 +37,7 @@ import { useStore } from '../store/useStore';
  * 
  * @returns {Object} Crossfade control interface
  */
-export function useCrossfade() {
+export function useCrossfade(): CrossfadeAPI {
   // Read initial values from store (persisted via Zustand persist)
   const storedEnabled = useStore(state => state.crossfadeEnabled);
   const storedDuration = useStore(state => state.crossfadeDuration);
@@ -20,11 +47,11 @@ export function useCrossfade() {
   const [enabled, setEnabled] = useState(storedEnabled);
   const [duration, setDuration] = useState(storedDuration);
 
-  const fadeIntervalRef = useRef(null);
-  const fadeTimeoutRef = useRef(null);
-  const isFadingRef = useRef(false);
-  const originalVolumeRef = useRef(1.0);
-  const fadeStartTimeRef = useRef(null);
+  const fadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFadingRef = useRef<boolean>(false);
+  const originalVolumeRef = useRef<number>(1.0);
+  const fadeStartTimeRef = useRef<number | null>(null);
 
   // Persist to store when values change
   useEffect(() => {
@@ -39,7 +66,7 @@ export function useCrossfade() {
     setEnabled(prev => !prev);
   }, []);
 
-  const setDurationMs = useCallback((ms) => {
+  const setDurationMs = useCallback((ms: number) => {
     const clamped = Math.max(
       CROSSFADE_CONFIG.MIN_DURATION_MS,
       Math.min(CROSSFADE_CONFIG.MAX_DURATION_MS, ms)
@@ -51,7 +78,7 @@ export function useCrossfade() {
    * Check if crossfade should start based on current progress
    * Returns true when we're within the crossfade duration of the end
    */
-  const shouldCrossfade = useCallback((currentProgress, trackDuration) => {
+  const shouldCrossfade = useCallback((currentProgress: number, trackDuration: number) => {
     if (!enabled || isFadingRef.current || trackDuration <= 0) return false;
     const timeRemaining = trackDuration - currentProgress;
     const crossfadeSecs = duration / 1000;
@@ -63,7 +90,7 @@ export function useCrossfade() {
    * Calculate the fade-out volume multiplier based on elapsed time
    * Uses smooth easing curve for natural sounding fade
    */
-  const getFadeOutMultiplier = useCallback((elapsedMs) => {
+  const getFadeOutMultiplier = useCallback((elapsedMs: number): number => {
     const progress = Math.min(1, elapsedMs / duration);
     // Use ease-out curve: starts fast, slows down at end
     // This sounds more natural as volume drops quickly at first
@@ -74,7 +101,7 @@ export function useCrossfade() {
    * Calculate the fade-in volume multiplier for the next track
    * Inverse of fade-out for smooth crossover
    */
-  const getFadeInMultiplier = useCallback((elapsedMs) => {
+  const getFadeInMultiplier = useCallback((elapsedMs: number): number => {
     const progress = Math.min(1, elapsedMs / duration);
     // Use ease-in curve: starts slow, speeds up
     return Math.sin(progress * Math.PI * 0.5);
@@ -89,7 +116,7 @@ export function useCrossfade() {
    * @param {Function} params.onMidpoint - Called at 50% through fade (time to switch tracks)
    * @param {Function} params.onComplete - Called when fade completes
    */
-  const startCrossfade = useCallback(({ setVolume, currentVolume, onMidpoint, onComplete }) => {
+  const startCrossfade = useCallback(({ setVolume, currentVolume, onMidpoint, onComplete }: CrossfadeParams) => {
     if (!enabled || isFadingRef.current) {
       // If disabled, just call complete immediately
       if (onComplete) onComplete();
@@ -143,7 +170,7 @@ export function useCrossfade() {
    * @param {number} params.targetVolume - Target volume to reach
    * @param {Function} params.onComplete - Called when fade-in completes
    */
-  const startFadeIn = useCallback(({ setVolume, targetVolume, onComplete }) => {
+  const startFadeIn = useCallback(({ setVolume, targetVolume, onComplete }: FadeInParams): (() => void) | undefined => {
     if (!enabled) {
       setVolume(targetVolume);
       if (onComplete) onComplete();
@@ -179,7 +206,7 @@ export function useCrossfade() {
   /**
    * Cancel any active crossfade and restore volume
    */
-  const cancelCrossfade = useCallback((setVolume) => {
+  const cancelCrossfade = useCallback((setVolume: (vol: number) => void) => {
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;

@@ -3,6 +3,18 @@
  * 
  * Manages state for MusicBrainz integration and discography matching.
  */
+import type {
+  AppStore,
+  MusicBrainzSlice,
+  MusicBrainzSliceState,
+  ResolvedArtist,
+  ArtistDiscography,
+  DiscographyProgress,
+  DiscographyConfig,
+} from '../types';
+
+type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
+type GetFn = () => AppStore;
 
 // Storage key for persisted discography data
 const DISCOGRAPHY_STORAGE_KEY = 'vplayer_discography_data';
@@ -10,7 +22,7 @@ const DISCOGRAPHY_STORAGE_KEY = 'vplayer_discography_data';
 /**
  * Load persisted discography data
  */
-const loadPersistedData = () => {
+const loadPersistedData = (): { resolvedArtists: Record<string, ResolvedArtist>; artistDiscographies: Record<string, ArtistDiscography> } => {
   try {
     const stored = localStorage.getItem(DISCOGRAPHY_STORAGE_KEY);
     if (stored) {
@@ -32,7 +44,7 @@ const loadPersistedData = () => {
 /**
  * MusicBrainz slice creator
  */
-export const createMusicBrainzSlice = (set, get) => {
+export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice => {
   const persistedData = loadPersistedData();
 
   return {
@@ -67,10 +79,10 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Set a resolved artist mapping
      */
-    setResolvedArtist: (artistName, mbArtistData) =>
+    setResolvedArtist: (artistName: string, mbArtistData: Omit<ResolvedArtist, 'resolvedAt'>) =>
       set((state) => {
         const normalizedName = artistName.toLowerCase().trim();
-        const newResolved = {
+        const newResolved: Record<string, ResolvedArtist> = {
           ...state.resolvedArtists,
           [normalizedName]: {
             ...mbArtistData,
@@ -85,7 +97,7 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Remove a resolved artist mapping
      */
-    removeResolvedArtist: (artistName) =>
+    removeResolvedArtist: (artistName: string) =>
       set((state) => {
         const normalizedName = artistName.toLowerCase().trim();
         const { [normalizedName]: removed, ...rest } = state.resolvedArtists;
@@ -96,7 +108,7 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Set discography for an artist
      */
-    setArtistDiscography: (artistMbid, discographyData) =>
+    setArtistDiscography: (artistMbid: string, discographyData: Omit<ArtistDiscography, 'fetchedAt'>) =>
       set((state) => {
         const newDiscographies = {
           ...state.artistDiscographies,
@@ -112,7 +124,7 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Update album match status manually
      */
-    updateAlbumMatchStatus: (artistMbid, releaseGroupId, newStatus, localAlbum = null) =>
+    updateAlbumMatchStatus: (artistMbid: string, releaseGroupId: string, newStatus: string, localAlbum: string | null = null) =>
       set((state) => {
         const discography = state.artistDiscographies[artistMbid];
         if (!discography || !discography.albums) return state;
@@ -144,27 +156,27 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Set selected artist for viewing
      */
-    setSelectedArtistMbid: (mbid) => set({ selectedArtistMbid: mbid }),
+    setSelectedArtistMbid: (mbid: string | null) => set({ selectedArtistMbid: mbid }),
 
     /**
      * Set loading state
      */
-    setDiscographyLoading: (loading) => set({ discographyLoading: loading }),
+    setDiscographyLoading: (loading: boolean) => set({ discographyLoading: loading }),
 
     /**
      * Set progress state
      */
-    setDiscographyProgress: (progress) => set({ discographyProgress: progress }),
+    setDiscographyProgress: (progress: DiscographyProgress) => set({ discographyProgress: progress }),
 
     /**
      * Set error state
      */
-    setDiscographyError: (error) => set({ discographyError: error }),
+    setDiscographyError: (error: string | null) => set({ discographyError: error }),
 
     /**
      * Update configuration
      */
-    setDiscographyConfig: (config) =>
+    setDiscographyConfig: (config: Partial<DiscographyConfig>) =>
       set((state) => ({
         discographyConfig: { ...state.discographyConfig, ...config },
       })),
@@ -185,7 +197,7 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Get resolved artist by name
      */
-    getResolvedArtist: (artistName) => {
+    getResolvedArtist: (artistName: string): ResolvedArtist | null => {
       const state = get();
       const normalizedName = artistName.toLowerCase().trim();
       return state.resolvedArtists[normalizedName] || null;
@@ -194,7 +206,7 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Get discography for an artist
      */
-    getArtistDiscography: (artistMbid) => {
+    getArtistDiscography: (artistMbid: string): ArtistDiscography | null => {
       const state = get();
       return state.artistDiscographies[artistMbid] || null;
     },
@@ -202,7 +214,7 @@ export const createMusicBrainzSlice = (set, get) => {
     /**
      * Check if discography needs refresh
      */
-    needsDiscographyRefresh: (artistMbid) => {
+    needsDiscographyRefresh: (artistMbid: string): boolean => {
       const state = get();
       const discography = state.artistDiscographies[artistMbid];
       if (!discography) return true;
@@ -216,7 +228,7 @@ export const createMusicBrainzSlice = (set, get) => {
 /**
  * Save discography data to localStorage
  */
-function saveDiscographyData(resolvedArtists, artistDiscographies) {
+function saveDiscographyData(resolvedArtists: Record<string, ResolvedArtist>, artistDiscographies: Record<string, ArtistDiscography>) {
   try {
     const data = {
       timestamp: Date.now(),
@@ -232,6 +244,6 @@ function saveDiscographyData(resolvedArtists, artistDiscographies) {
 /**
  * MusicBrainz state to persist
  */
-export const musicBrainzPersistState = (state) => ({
+export const musicBrainzPersistState = (state: MusicBrainzSliceState) => ({
   discographyConfig: state.discographyConfig,
 });

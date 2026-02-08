@@ -1,6 +1,21 @@
 import { useCallback, useRef } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
+import type { Track } from '../types';
+
+interface ReplayGainData {
+  track_gain: number;
+  loudness: number;
+}
+
+export interface ReplayGainAPI {
+  applyReplayGain: (track: Track) => Promise<boolean>;
+  analyzeTrack: (track: Track) => Promise<ReplayGainData | null>;
+  clearReplayGain: () => Promise<void>;
+  isEnabled: boolean;
+  mode: 'off' | 'track' | 'album';
+  preamp: number;
+}
 
 /**
  * ReplayGain hook for volume normalization
@@ -9,10 +24,10 @@ import { useStore } from '../store/useStore';
  * Supports track gain mode (normalize each track) and off mode.
  * Album gain mode is reserved for future implementation.
  */
-export function useReplayGain() {
+export function useReplayGain(): ReplayGainAPI {
   const replayGainMode = useStore(state => state.replayGainMode);
   const replayGainPreamp = useStore(state => state.replayGainPreamp);
-  const lastAppliedTrackRef = useRef(null);
+  const lastAppliedTrackRef = useRef<string | null>(null);
 
   /**
    * Apply ReplayGain for a track
@@ -21,7 +36,7 @@ export function useReplayGain() {
    * @param {Object} track - Track object with path property
    * @returns {Promise<boolean>} - True if ReplayGain was applied
    */
-  const applyReplayGain = useCallback(async (track) => {
+  const applyReplayGain = useCallback(async (track: Track): Promise<boolean> => {
     if (!track?.path) return false;
 
     // If ReplayGain is disabled, clear any existing adjustment
@@ -67,7 +82,7 @@ export function useReplayGain() {
    * @param {Object} track - Track object with path property
    * @returns {Promise<Object|null>} - ReplayGain data or null on error
    */
-  const analyzeTrack = useCallback(async (track) => {
+  const analyzeTrack = useCallback(async (track: Track): Promise<ReplayGainData | null> => {
     if (!track?.path) return null;
 
     try {

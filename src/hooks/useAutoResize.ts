@@ -2,21 +2,22 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/window';
 import { useStore } from '../store/useStore';
+import type { WindowsState } from '../store/types';
 
-const PADDING = 60; // Extra padding around windows
+const PADDING = 60;
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
-const DEBOUNCE_MS = 200; // Increased for stability - resize happens after drag/resize ends
-const INITIAL_SETTLE_MS = 2000; // Wait for windows to settle on startup
+const DEBOUNCE_MS = 200;
+const INITIAL_SETTLE_MS = 2000;
 
 // Global drag state tracker - shared across all components
 let isDraggingOrResizing = false;
-let dragEndTimer = null;
+let dragEndTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Notify auto-resize that dragging/resizing has started
  */
-export function notifyDragStart() {
+export function notifyDragStart(): void {
   isDraggingOrResizing = true;
   if (dragEndTimer) {
     clearTimeout(dragEndTimer);
@@ -27,7 +28,7 @@ export function notifyDragStart() {
 /**
  * Notify auto-resize that dragging/resizing has ended
  */
-export function notifyDragEnd() {
+export function notifyDragEnd(): void {
   // Small delay to ensure window state is updated
   dragEndTimer = setTimeout(() => {
     isDraggingOrResizing = false;
@@ -41,10 +42,10 @@ export function notifyDragEnd() {
  *
  * Call this once at the app root (VPlayer).
  */
-export function useAutoResize() {
+export function useAutoResize(): { recalculateSize: () => Promise<void>; isReady: boolean } {
   const windows = useStore(s => s.windows);
   const enabled = useStore(s => s.autoResizeWindow);
-  const debounceTimer = useRef(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isReady, setIsReady] = useState(false);
   const lastResizeRef = useRef({ width: 0, height: 0 });
 
@@ -162,7 +163,7 @@ export function useAutoResize() {
   // Ctrl+R shortcut to recalculate
   useEffect(() => {
     if (!enabled || !isReady) return;
-    const handleKeyPress = (e) => {
+    const handleKeyPress = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'r') calculateAndResize(true);
     };
     window.addEventListener('keydown', handleKeyPress);
