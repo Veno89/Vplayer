@@ -42,7 +42,7 @@ export interface TrackFilter {
 // Player Types
 // =============================================================================
 
-export type RepeatMode = 'none' | 'one' | 'all';
+export type RepeatMode = 'off' | 'one' | 'all';
 
 export interface PlayerState {
     currentTrack: number | null;
@@ -61,7 +61,7 @@ export interface PlayerHookParams {
     tracks: Track[];
     toast: ToastService;
     crossfade?: CrossfadeService;
-    store?: StoreState;
+    storeGetter?: () => StoreState;
 }
 
 export interface PlayerHookReturn {

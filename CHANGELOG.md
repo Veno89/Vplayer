@@ -3,6 +3,15 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.7] - 2026-02-08
+
+### Fixed
+- **Stale Closures After Long Idle**: Fixed player crashing or playing wrong tracks after the app sat idle for hours. `onEnded`, `repeatMode`, `currentTrack`, and `tracks` callbacks now use refs so they always read fresh state.
+- **Stale Store Snapshot in usePlayer**: Replaced one-time `useStore.getState()` snapshot with a `storeGetter` function so queue, shuffle, and next-track logic always reads current store state.
+- **Stale Polling Callbacks in useAudio**: Stored `onEnded`/`onTimeUpdate` in refs and removed them from the polling `useEffect` dependency array, preventing the interval from using outdated callbacks.
+- **RepeatMode Type Mismatch**: Fixed `RepeatMode` type using `'none'` in types while the store used `'off'`, which caused the keyboard repeat-toggle shortcut to break.
+- **Playlist Sort Sync Race Condition**: Replaced `setTimeout`-based index remap with synchronous `setCurrentTrack` when playlist display order changes, preventing the highlight from drifting to the wrong track.
+
 ## [0.9.5] - 2026-01-21
 
 ### Fixed

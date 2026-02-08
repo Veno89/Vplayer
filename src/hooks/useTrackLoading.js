@@ -59,6 +59,15 @@ export function useTrackLoading({
           return;
         }
 
+        // Safety check: if the store has a known last-played track ID, and we're being
+        // asked to load a different track at the same index, it may mean the tracks array
+        // was re-sorted and the index is now stale. Log a warning for diagnostics.
+        const lastSavedId = localStorage.getItem('vplayer_last_track');
+        if (loadedTrackId && loadedTrackId !== track.id && lastSavedId && lastSavedId === loadedTrackId) {
+          console.log('[useTrackLoading] Track at index', currentTrack, 'changed from', loadedTrackId, 'to', track.id,
+            '- array may have been re-sorted, loading new track');
+        }
+
         // Don't reload if already loaded
         if (loadedTrackId === track.id) {
           // Position will be saved by the separate progress effect

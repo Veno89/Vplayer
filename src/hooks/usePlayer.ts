@@ -17,7 +17,7 @@ interface UsePlayerParams {
     tracks: Track[];
     toast: ToastService;
     crossfade?: CrossfadeService;
-    store?: StoreState;
+    storeGetter?: () => StoreState;
 }
 
 /**
@@ -36,7 +36,7 @@ export function usePlayer({
     tracks,
     toast,
     crossfade,
-    store
+    storeGetter
 }: UsePlayerParams): PlayerHookReturn {
     const {
         currentTrack, setCurrentTrack,
@@ -57,6 +57,17 @@ export function usePlayer({
     const seekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSeekTimeRef = useRef<number>(0);
 
+    // Keep fresh refs for values used in callbacks to prevent stale closures
+    const tracksRef = useRef<Track[]>(tracks);
+    const shuffleRef = useRef<boolean>(shuffle);
+    const repeatModeRef = useRef<RepeatMode>(repeatMode);
+    const currentTrackRef = useRef<number | null>(currentTrack);
+
+    useEffect(() => { tracksRef.current = tracks; }, [tracks]);
+    useEffect(() => { shuffleRef.current = shuffle; }, [shuffle]);
+    useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
+    useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+
     // Keep user volume in sync
     useEffect(() => {
         if (!crossfadeInProgressRef.current) {
@@ -76,6 +87,7 @@ export function usePlayer({
     /**
      * Calculate the next track index based on playback mode
      * Prioritizes queue over shuffle/normal playback
+     * Uses fresh store state via storeGetter to avoid stale closures
      */
     const getNextTrackIndex = useCallback((
         current: number,
@@ -83,14 +95,20 @@ export function usePlayer({
         isShuffled: boolean,
         repeat: RepeatMode
     ): number | null => {
-        console.log('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', totalTracks);
+        // Always read fresh state from the store to avoid stale closures
+        const store = storeGetter ? storeGetter() : null;
+        // Use ref for tracks to get the freshest array
+        const currentTracks = tracksRef.current;
+        const effectiveTotalTracks = currentTracks.length || totalTracks;
+
+        console.log('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks);
 
         // Check queue first - queue always takes priority
         if (store && store.queue && store.queue.length > 0) {
             const nextQueueTrack = store.peekNextInQueue();
             if (nextQueueTrack) {
                 // Find the track in the tracks array
-                const queueTrackIndex = tracks.findIndex(t => t.id === nextQueueTrack.id);
+                const queueTrackIndex = currentTracks.findIndex(t => t.id === nextQueueTrack.id);
                 if (queueTrackIndex !== -1) {
                     store.nextInQueue();
                     console.log('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
@@ -98,7 +116,7 @@ export function usePlayer({
                 } else {
                     console.warn('[getNextTrackIndex] Queue track not found in library, skipping:', nextQueueTrack.id);
                     store.nextInQueue();
-                    return getNextTrackIndex(current, totalTracks, isShuffled, repeat);
+                    return getNextTrackIndex(current, effectiveTotalTracks, isShuffled, repeat);
                 }
             }
         }
@@ -107,13 +125,13 @@ export function usePlayer({
         if (isShuffled) {
             let nextIdx: number;
             do {
-                nextIdx = Math.floor(Math.random() * totalTracks);
-            } while (nextIdx === current && totalTracks > 1);
+                nextIdx = Math.floor(Math.random() * effectiveTotalTracks);
+            } while (nextIdx === current && effectiveTotalTracks > 1);
             console.log('[getNextTrackIndex] Shuffled to:', nextIdx);
             return nextIdx;
         } else {
             const nextIdx = current + 1;
-            if (nextIdx < totalTracks) {
+            if (nextIdx < effectiveTotalTracks) {
                 console.log('[getNextTrackIndex] Sequential to:', nextIdx);
                 return nextIdx;
             } else if (repeat === 'all') {
@@ -123,7 +141,7 @@ export function usePlayer({
             console.log('[getNextTrackIndex] No next track');
             return null;
         }
-    }, [store, tracks]);
+    }, [storeGetter]);
 
     // Crossfade monitoring effect
     useEffect(() => {
@@ -193,9 +211,11 @@ export function usePlayer({
      * Skip to the next track
      * Respects shuffle and repeat modes
      * Cancels any active crossfade
+     * Uses refs to always read fresh state
      */
     const handleNextTrack = useCallback(() => {
-        if (!tracks.length) return;
+        const currentTracks = tracksRef.current;
+        if (!currentTracks.length) return;
 
         // Cancel any in-progress crossfade
         if (crossfade && crossfadeInProgressRef.current) {
@@ -205,21 +225,28 @@ export function usePlayer({
             crossfadeInProgressRef.current = false;
         }
 
-        const nextIdx = getNextTrackIndex(currentTrack ?? 0, tracks.length, shuffle, repeatMode);
+        // Read fresh values from refs to prevent stale closure bugs
+        const currentShuffle = shuffleRef.current;
+        const currentRepeatMode = repeatModeRef.current;
+        const currentTrackIdx = currentTrackRef.current ?? 0;
+
+        const nextIdx = getNextTrackIndex(currentTrackIdx, currentTracks.length, currentShuffle, currentRepeatMode);
         if (nextIdx !== null) {
             setCurrentTrack(nextIdx);
             nextTrackPreloadedRef.current = false;
             crossfadeStartedRef.current = false;
         }
-    }, [currentTrack, tracks, shuffle, repeatMode, setCurrentTrack, crossfade, audio, getNextTrackIndex]);
+    }, [setCurrentTrack, crossfade, audio, getNextTrackIndex]);
 
     /**
      * Go to previous track or restart current track
      * If progress > threshold (3s), restarts current track
      * Otherwise goes to previous track
+     * Uses refs to always read fresh state
      */
     const handlePrevTrack = useCallback(() => {
-        if (!tracks.length) return;
+        const currentTracks = tracksRef.current;
+        if (!currentTracks.length) return;
 
         // Cancel any in-progress crossfade
         if (crossfade && crossfadeInProgressRef.current) {
@@ -237,24 +264,28 @@ export function usePlayer({
             return;
         }
 
-        if (shuffle) {
+        // Read fresh values from refs
+        const currentShuffle = shuffleRef.current;
+        const currentRepeatMode = repeatModeRef.current;
+        const currentTrackIdx = currentTrackRef.current ?? 0;
+
+        if (currentShuffle) {
             let prevIdx: number;
             do {
-                prevIdx = Math.floor(Math.random() * tracks.length);
-            } while (prevIdx === currentTrack && tracks.length > 1);
+                prevIdx = Math.floor(Math.random() * currentTracks.length);
+            } while (prevIdx === currentTrackIdx && currentTracks.length > 1);
             setCurrentTrack(prevIdx);
         } else {
-            const current = currentTrack ?? 0;
-            const prevIdx = current - 1;
+            const prevIdx = currentTrackIdx - 1;
             if (prevIdx >= 0) {
                 setCurrentTrack(prevIdx);
-            } else if (repeatMode === 'all') {
-                setCurrentTrack(tracks.length - 1);
+            } else if (currentRepeatMode === 'all') {
+                setCurrentTrack(currentTracks.length - 1);
             }
         }
         nextTrackPreloadedRef.current = false;
         crossfadeStartedRef.current = false;
-    }, [currentTrack, tracks, shuffle, repeatMode, progress, audio, setCurrentTrack, toast, crossfade]);
+    }, [progress, audio, setCurrentTrack, toast, crossfade]);
 
     /**
      * Seek to a position in the current track

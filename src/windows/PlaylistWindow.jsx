@@ -302,15 +302,19 @@ export const PlaylistWindow = React.memo(function PlaylistWindow({
     // Find where this track is in the new displayTracks order
     const newIndex = displayTracks.findIndex(t => t?.id === currentlyPlayingTrack.id);
 
+    console.log('[PlaylistWindow] displayTracks changed, remapping track:', currentlyPlayingTrack.id,
+      'old index:', currentTrack, 'new index:', newIndex);
+
     // Update the active playback tracks to match the new display order
     onActiveTracksChange(displayTracks);
 
     // Remap the current track index if the track is still in the list
+    // Use synchronous update - React batches both state changes in the same effect
     if (newIndex !== -1 && newIndex !== currentTrack) {
-      // Use setTimeout to ensure state update ordering
-      setTimeout(() => {
-        setCurrentTrack(newIndex);
-      }, 0);
+      setCurrentTrack(newIndex);
+    } else if (newIndex === -1) {
+      // Track was filtered out entirely - keep playing but clear the visual highlight
+      console.warn('[PlaylistWindow] Currently playing track filtered out of display');
     }
 
     prevDisplayTracksRef.current = displayTracks;

@@ -66,6 +66,14 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
   // Track if we're in the middle of a recovery
   const isRecoveringRef = useRef(false);
   
+  // CRITICAL: Store callbacks in refs so the polling interval always calls the latest version.
+  // Without this, the setInterval closure captures the initial onEnded/onTimeUpdate and
+  // they become stale after hours of idle, causing wrong-track or crash bugs.
+  const onEndedRef = useRef(onEnded);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+  useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
+  
   // Error handling
   const toast = useToast();
   const errorHandler = useErrorHandler(toast);
@@ -118,8 +126,9 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
           // Reset error count on successful poll
           pollErrorCountRef.current = 0;
           
-          if (onTimeUpdate) {
-            onTimeUpdate(position);
+          // Use ref to always call the latest onTimeUpdate callback
+          if (onTimeUpdateRef.current) {
+            onTimeUpdateRef.current(position);
           }
           
           // Check if track finished (only when playing)
@@ -132,7 +141,8 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
             if (finished) {
               setIsPlaying(false);
               setProgress(0);
-              if (onEnded) onEnded();
+              // Use ref to always call the latest onEnded callback
+              if (onEndedRef.current) onEndedRef.current();
             }
           }
           
@@ -216,7 +226,11 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }) {
         clearInterval(progressIntervalRef.current);
       }
     };
-  }, [isPlaying, duration, onEnded, onTimeUpdate]);
+  }, [isPlaying, duration]);
+  // Note: onEnded and onTimeUpdate are NOT in deps - we use refs (onEndedRef, onTimeUpdateRef)
+  // so the interval always calls the latest callbacks without needing to be recreated.
+  // This prevents the polling interval from being torn down & rebuilt every time a parent
+  // re-renders, which was causing stale state after long idle periods.
 
   const loadTrack = useCallback(async (track) => {
     // Check if audio backend is available

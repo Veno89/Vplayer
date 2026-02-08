@@ -38,6 +38,9 @@ const VPlayerInner = () => {
   // Refs to prevent stale closures in callbacks (especially onEnded)
   const activePlaybackTracksRef = useRef([]);
   const playerHookRef = useRef(null);
+  const repeatModeRef = useRef('off');
+  const currentTrackRef = useRef(null);
+  const tracksRef = useRef([]);
 
   // Auto-updater
   const updater = useUpdater();
@@ -75,15 +78,20 @@ const VPlayerInner = () => {
     onEnded: () => {
       // Use refs to get current values, avoiding stale closures
       const currentActivePlaybackTracks = activePlaybackTracksRef.current;
-      const playbackTracks = currentActivePlaybackTracks.length > 0 ? currentActivePlaybackTracks : tracks;
+      const currentTracks = tracksRef.current;
+      const playbackTracks = currentActivePlaybackTracks.length > 0 ? currentActivePlaybackTracks : currentTracks;
+      const currentRepeatMode = repeatModeRef.current;
+      const currentTrackIdx = currentTrackRef.current;
 
-      if (repeatMode === 'one') {
+      console.log('[onEnded] repeatMode:', currentRepeatMode, 'currentTrack:', currentTrackIdx, 'totalTracks:', playbackTracks.length);
+
+      if (currentRepeatMode === 'one') {
         audio.seek(0);
         audio.play().catch(err => {
           console.error('Failed to replay:', err);
           toast.showError('Failed to replay track');
         });
-      } else if (repeatMode === 'all' || currentTrack < playbackTracks.length - 1) {
+      } else if (currentRepeatMode === 'all' || currentTrackIdx < playbackTracks.length - 1) {
         // Use ref to get latest playerHook
         if (playerHookRef.current) {
           playerHookRef.current.handleNextTrack();
@@ -100,13 +108,16 @@ const VPlayerInner = () => {
   const equalizer = useEqualizer();
   const crossfade = useCrossfade();
 
+  // Use a stable getter so usePlayer always reads fresh store state
+  const storeGetterRef = useRef(() => useStore.getState());
+
   const playerHook = usePlayerHook({
     audio,
     player: { currentTrack, setCurrentTrack, shuffle, repeatMode, progress, duration, volume, setVolume },
     tracks: activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks,
     toast,
     crossfade,
-    store: useStore.getState()
+    storeGetter: storeGetterRef.current
   });
 
   // Keep refs in sync with state to prevent stale closures
@@ -117,6 +128,18 @@ const VPlayerInner = () => {
   useEffect(() => {
     playerHookRef.current = playerHook;
   }, [playerHook]);
+
+  useEffect(() => {
+    repeatModeRef.current = repeatMode;
+  }, [repeatMode]);
+
+  useEffect(() => {
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
+
+  useEffect(() => {
+    tracksRef.current = tracks;
+  }, [tracks]);
 
   const playbackTracks = activePlaybackTracks.length > 0 ? activePlaybackTracks : tracks;
 
@@ -181,7 +204,7 @@ const VPlayerInner = () => {
       setPlaying(false);
     },
     toggleShuffle: () => setShuffle(s => !s),
-    toggleRepeat: () => setRepeatMode(r => r === 'none' ? 'all' : r === 'all' ? 'one' : 'none'),
+    toggleRepeat: () => setRepeatMode(r => r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'),
     toggleWindow: (id) => {
       toggleWindow(id);
       if (autoResizeWindow) {
