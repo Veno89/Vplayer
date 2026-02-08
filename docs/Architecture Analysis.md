@@ -1,7 +1,8 @@
 # VPlayer Codebase Deep Analysis
 
-> **Date:** February 8, 2026  
-> **Scope:** Full frontend + backend architecture review focusing on SOLID, DRY, KISS principles
+> **Date:** February 8, 2026 (last updated: February 8, 2026)  
+> **Scope:** Full frontend + backend architecture review focusing on SOLID, DRY, KISS principles  
+> **Overall Progress:** **6 of 16 findings fully fixed**, 3 partially fixed, 7 remaining (Phases 1–2 complete, Phases 3–5 pending)
 
 ---
 
@@ -12,61 +13,62 @@
 | Desktop shell | Tauri 2.x (Rust backend) |
 | Frontend | React 18 + Zustand 5 + Tailwind 3 |
 | Build | Vite 7, PostCSS |
-| Language | ~85% JavaScript, ~15% TypeScript (gradual migration started) |
+| Language | ~94% JavaScript (95 files), ~6% TypeScript (6 files) — migration planned in Phase 3 |
 | Virtualization | react-window |
 | Audio backend | rodio + symphonia (Rust) |
 | Database | rusqlite (SQLite, bundled) |
-| Testing | Vitest + Testing Library (minimal coverage) |
+| Testing | Vitest + Testing Library (54 tests across 6 files, all passing) |
 
 ---
 
 ## Ranked Improvement Suggestions (Most → Least Critical)
 
-### 1. CRITICAL: God Component in VPlayer.jsx (SRP Violation)
+### 1. ~~CRITICAL: God Component in VPlayer.jsx (SRP Violation)~~ ✅ FIXED
 
-`VPlayer.jsx` is a ~350-line orchestrator that:
+> **Status:** Resolved in Phase 2. VPlayer.jsx reduced from ~350 lines to **83 lines** (76% reduction). Now a thin shell that only handles: shortcuts, auto-resize trigger, updater, mini-player mode toggle, and render orchestration.
 
-- Instantiates **15+ hooks** (audio, player, library, equalizer, crossfade, drag-drop, shortcuts, updater, toast, auto-resize, window configs...)
-- Manages **~10 local `useState` calls** + **5 `useRef` workarounds** to prevent stale closures
-- Wires **~80 props** through to `useWindowConfigs`, which itself produces JSX for 15 windows
-- Contains side-effects for play/pause, track restoration, play count increment, background image conversion, A-B repeat, volume, progress saving...
+~~`VPlayer.jsx` is a ~350-line orchestrator that:~~
 
-This is the single biggest architectural debt. It violates SRP, OCP, and makes the entire app fragile — any change to any feature risks breaking unrelated features because everything flows through this one component.
+- ~~Instantiates **15+ hooks** (audio, player, library, equalizer, crossfade, drag-drop, shortcuts, updater, toast, auto-resize, window configs...)~~
+- ~~Manages **~10 local `useState` calls** + **5 `useRef` workarounds** to prevent stale closures~~
+- ~~Wires **~80 props** through to `useWindowConfigs`, which itself produces JSX for 15 windows~~
+- ~~Contains side-effects for play/pause, track restoration, play count increment, background image conversion, A-B repeat, volume, progress saving...~~
 
-**Recommendation:** Extract a `PlayerController` (or context-provider) that encapsulates audio + player + crossfade + track-loading as a single coherent unit. Use React Context or Zustand selectors to let windows access what they need without prop-drilling through VPlayer.
-
----
-
-### 2. CRITICAL: Bypassed Service Layer — Inconsistent `invoke()` Usage (DRY Violation)
-
-A well-designed `TauriAPI.ts` singleton exists with logging, error formatting, and type safety. But **50+ direct `invoke()` calls** scatter across the codebase:
-
-| Location | Direct `invoke` calls |
-|----------|----------------------|
-| `useAudio.js` | ~20 calls (entire audio API) |
-| `usePlaylists.js` | 8 calls |
-| `VPlayer.jsx` | 1 call |
-| `Row.jsx` | 1 call |
-| Window files (History, Library, Lyrics, Stats, Options tabs) | ~15 calls |
-| Library hooks | 3 calls |
-
-The `TauriAPI` service exists but is mostly unused. The audio hook doesn't use it at all. This means error handling, logging, and user-friendly error messages are inconsistent depending on which code path is hit.
-
-**Recommendation:** Mandate all Tauri communication through `TauriAPI`. Add the missing audio methods to it, and lint/ban direct `invoke()` imports outside of `TauriAPI.ts`.
+**What was done:**
+- Created `PlayerProvider` context encapsulating audio + player + crossfade + trackLoading + library
+- Windows read scalar state (playing, progress, volume) directly from `useStore`, use context only for actions
+- Background image conversion moved to `AppContainer`
+- Onboarding logic moved to self-managing `OnboardingGuard` component
+- `useAutoResize` made fully self-contained (reads store, manages Ctrl+R shortcut internally)
 
 ---
 
-### 3. HIGH: Massive Prop Drilling & useWindowConfigs Anti-Pattern
+### 2. ~~CRITICAL: Bypassed Service Layer — Inconsistent `invoke()` Usage (DRY Violation)~~ ✅ FIXED
 
-`useWindowConfigs.jsx` accepts **~70 destructured parameters** and passes them into 15 window components inside a single `useMemo`. This means:
+> **Status:** Resolved in Phase 1.1. All 50+ direct `invoke()` calls migrated to `TauriAPI`. Only `TauriAPI.ts` now imports `invoke` from `@tauri-apps/api/core`. Two files import `convertFileSrc` from the same package (utility function, not an `invoke` call).
 
-- Every parameter change re-evaluates the memo (the dependency array is **50+ items**)
-- All 15 windows are coupled to the same hook
-- Adding a new feature to any window requires touching VPlayer.jsx, useWindowConfigs, and the window itself
+~~A well-designed `TauriAPI.ts` singleton exists with logging, error formatting, and type safety. But **50+ direct `invoke()` calls** scatter across the codebase.~~
 
-This is the "prop plumbing" anti-pattern at extreme scale.
+**What was done:**
+- Added 19 new methods to `TauriAPI.ts` (audio, watcher, stats, maintenance commands)
+- Migrated 50+ direct `invoke()` calls across 20+ files
+- Only `TauriAPI.ts` imports `invoke`; `AppContainer.jsx` and `AppearanceTab.jsx` import `convertFileSrc` (a URL utility, not a command)
 
-**Recommendation:** Each window should be self-contained and read its own state from Zustand or a context. Windows shouldn't receive 15 props — they should `useStore(s => s.playing)` directly. This would eliminate useWindowConfigs entirely.
+---
+
+### 3. ~~HIGH: Massive Prop Drilling & useWindowConfigs Anti-Pattern~~ ✅ FIXED
+
+> **Status:** Resolved in Phase 2.2–2.3. `useWindowConfigs.jsx` deleted (~300 lines). All 15 windows are self-sufficient. `WindowManager` renders `<Component />` with zero props.
+
+~~`useWindowConfigs.jsx` accepts **~70 destructured parameters** and passes them into 15 window components inside a single `useMemo`.~~
+
+**What was done:**
+- Converted all 15 window components from props-based to store-based (each reads its own state via `useStore` selectors and `usePlayerContext`)
+- Created `WINDOW_REGISTRY` — static declarative array of `{ id, title, icon, Component }`
+- `WindowManager` is fully self-sufficient (reads store, renders from registry with zero props)
+- Also made self-sufficient: `AppContainer`, `ThemeEditorWindow`, `MiniPlayerWindow`, `OnboardingWindow`
+- Created `useCurrentColors()` reusable hook for derived theme colors
+- Promoted transient cross-window state to Zustand `uiSlice`: `tagEditorTrack`, `themeEditorOpen`, `isDraggingTracks`
 
 ---
 
@@ -80,41 +82,38 @@ The type definitions in `types/index.ts` are good but have no enforcement on con
 
 ---
 
-### 5. HIGH: Stale Closure Epidemic — Ref Workarounds Everywhere
+### 5. ~~HIGH: Stale Closure Epidemic — Ref Workarounds Everywhere~~ ✅ FIXED
 
-The codebase has **11+ `useRef` instances** solely to work around stale closures:
+> **Status:** Resolved in Phase 2.4. All 13 state-mirroring refs eliminated. Remaining refs are legitimate (DOM refs, interval handles, function callback refs).
 
-| File | Refs for stale closure prevention |
-|------|----------------------------------|
-| `VPlayer.jsx` | `activePlaybackTracksRef`, `playerHookRef`, `repeatModeRef`, `currentTrackRef`, `tracksRef` |
-| `useAudio.js` | `onEndedRef`, `onTimeUpdateRef`, `currentTrackRef` |
-| `usePlayer.ts` | `tracksRef`, `shuffleRef`, `repeatModeRef`, `currentTrackRef` |
+~~The codebase has **11+ `useRef` instances** solely to work around stale closures.~~
 
-This is a symptom of the architecture: callbacks passed through many layers go stale because the component tree re-renders don't propagate refs correctly. The `onEnded` callback in `useAudio` is the most dangerous — it's called from a `setInterval` that captures old state.
+**What was done:**
+- **VPlayer.jsx:** All 5 stale-closure refs removed (component slimmed to 83 lines, no refs needed)
+- **PlayerProvider.jsx:** 4 state-mirroring refs (`activePlaybackTracksRef`, `repeatModeRef`, `currentTrackRef`, `tracksRef`) replaced with `useStore.getState()` reads in `onEnded` callback
+- **usePlayer.ts:** 4 state-mirroring refs (`tracksRef`, `shuffleRef`, `repeatModeRef`, `currentTrackRef`) replaced with `storeGetter()` reads in `handleNextTrack`/`handlePrevTrack`/`getNextTrackIndex`
 
-**Recommendation:** Move playback state to Zustand and read it via `useStore.getState()` inside callbacks. This eliminates the need for ref mirroring entirely. The `storeGetter` pattern in `usePlayer.ts` already does this correctly — extend it to `useAudio` and VPlayer.
+**Remaining legitimate refs (not stale-closure workarounds):**
+- `useAudio.js`: `onEndedRef`/`onTimeUpdateRef` (function callback refs synced each render — avoids recreating the polling interval), `currentTrackRef` (tracks the loaded file path, not store index), `isSeekingRef`/`isRecoveringRef`/`progressIntervalRef`/`retryCountRef`/`pollErrorCountRef` (transient internal state)
+- `PlayerProvider.jsx`: `playerHookRef` (hook instance ref), `prevPlayingRef` (previous playing state), `storeGetterRef` (stable getter)
+- Various windows: DOM refs (`canvasRef`, `containerRef`, `progressBarRef`, etc.) — these are standard React usage
 
 ---
 
-### 6. HIGH: Duplicated State Management — Store vs. localStorage vs. Hooks
+### 6. ~~HIGH: Duplicated State Management — Store vs. localStorage vs. Hooks~~ ✅ FIXED
 
-State is managed in three parallel systems with no clear ownership:
+> **Status:** Resolved in Phase 1.2. All persistent state consolidated into Zustand `persist` middleware. No more triple state management.
 
-| State | Zustand Store | localStorage | Hook local state |
-|-------|:---:|:---:|:---:|
-| Volume | `playerSlice` | `vplayer_volume` in useAudio | `useState` in useAudio |
-| EQ bands | — | `vplayer_eq_bands` | `useState` in useEqualizer |
-| Crossfade | — | `crossfade_enabled/duration` | `useState` in useCrossfade |
-| Last track | — | `vplayer_last_track` | — |
-| Last position | — | `vplayer_last_position` | — |
-| Last playlist | — | `vplayer_last_playlist` | — |
-| Keyboard shortcuts | — | `keyboard-shortcuts` | `useState` in useShortcuts |
-| Playlists | — | — | `useState` in usePlaylists |
-| Player prefs | `settingsSlice` persists | `STORAGE_KEYS.PREFERENCES` | — |
+~~State is managed in three parallel systems with no clear ownership.~~
 
-The `STORAGE_KEYS` constants exist but aren't used consistently — `'vplayer_last_playlist'` is hardcoded as a string in two files. Volume has THREE sources: the store persists it, `useAudio` reads from localStorage on mount, and VPlayer passes it from the store.
-
-**Recommendation:** Consolidate all persistent state into Zustand with `persist` middleware (already used). Remove all direct `localStorage` reads/writes. The store is the single source of truth.
+**What was done:**
+- Added to `playerSlice.ts`: `lastTrackId`, `lastPosition`, `lastPlaylistId` (with setters and persist config)
+- Added to `settingsSlice.js`: `eqBands`, `crossfadeEnabled`, `crossfadeDuration`, `keyboardShortcuts`, `onboardingComplete` (with setters and persist config)
+- Migrated 15 files from direct `localStorage` access to Zustand store reads/writes
+- Remaining intentional `localStorage` usage (API caches, not app state):
+  - `CoverArtArchive.js` / `MusicBrainzAPI.js` — HTTP response caches with TTL
+  - `musicBrainzSlice.js` — discography cache (large data, separate from Zustand persist)
+  - `AdvancedTab.jsx` — `localStorage.removeItem('vplayer-storage')` for factory reset functionality
 
 ---
 
@@ -179,11 +178,11 @@ All slices merge into a single flat store with `persist`. The `partialize` funct
 
 ---
 
-### 12. MEDIUM: `@testing-library/react-hooks` in Production Dependencies
+### 12. ~~MEDIUM: `@testing-library/react-hooks` in Production Dependencies~~ ✅ FIXED
 
-`package.json` lists `@testing-library/react-hooks` under `dependencies` instead of `devDependencies`. This ships test utilities in the production bundle.
+> **Status:** Resolved in Phase 1.3. Moved to `devDependencies`.
 
-**Recommendation:** Move to `devDependencies`.
+~~`package.json` lists `@testing-library/react-hooks` under `dependencies` instead of `devDependencies`. This ships test utilities in the production bundle.~~
 
 ---
 
@@ -213,96 +212,68 @@ Audio polling, crossfade, drag-drop, track loading all emit verbose console outp
 
 ### 16. LOW: `useEffect` Dependency Suppressions
 
-Several hooks use `// eslint-disable-next-line react-hooks/exhaustive-deps` to suppress stale dependency warnings, notably in `useTrackLoading.js` and `useAudio.js`. These are symptoms of the stale closure issue (finding #5) rather than legitimate exceptions.
+Several hooks use `// eslint-disable-next-line react-hooks/exhaustive-deps` to suppress stale dependency warnings. Current count: **4 suppressions** (down from ~8):
+- `useTrackLoading.js` (1) — intentional `[]` deps for one-time restore
+- `PlayerProvider.jsx` (3) — stable callback refs, `useStore.getState()` pattern
+
+These are now mostly legitimate suppressions (stable refs, intentional mount-only effects) rather than symptoms of the stale closure issue. The worst offenders (VPlayer, usePlayer) have been cleaned up.
 
 ---
 
 ## Cross-Cutting Findings Detail
 
-### Direct `invoke` bypassing TauriAPI service
+### ~~Direct `invoke` bypassing TauriAPI service~~ ✅ FIXED
 
-| File | Occurrences |
-|------|------------|
-| `useAudio.js` | ~20 (entire audio API) |
-| `usePlaylists.js` | 8 (all playlist CRUD) |
-| `HistoryWindow.jsx` | 2 |
-| `DiscographyWindow.jsx` | 1 |
-| `LyricsWindow.jsx` | 1 |
-| `LibraryWindow.jsx` | 3 |
-| `LibraryStatsWindow.jsx` | 5 |
-| `AdvancedTab.jsx` | 4 |
-| `AudioTab.jsx` | 1 |
-| `useLibraryScanner.js` | 2 |
-| `useLibraryData.js` | 1 |
-| `Row.jsx` | 1 |
-| `VPlayer.jsx` | 1 |
+> All 50+ direct `invoke` calls now route through `TauriAPI`. Only `TauriAPI.ts` imports `invoke` from `@tauri-apps/api/core`.
 
-**Total: 50+ direct `invoke` calls** that should route through `TauriAPI` for consistency, error handling, and testability.
+### ~~Direct `localStorage` usage (bypassing store and constants)~~ ✅ FIXED
 
-### Direct `localStorage` usage (bypassing store and constants)
+> All app state localStorage usage migrated to Zustand `persist`. Remaining localStorage usage is only for API response caches (`CoverArtArchive.js`, `MusicBrainzAPI.js`, `musicBrainzSlice.js`) and a factory reset button (`AdvancedTab.jsx`).
 
-| File | Usage |
-|------|-------|
-| `usePlaylists.js` | `getItem('vplayer_last_playlist')` |
-| `usePlaylistActions.js` | `getItem/removeItem('vplayer_last_playlist')` |
-| `useAudio.js` | `getItem(STORAGE_KEYS.PLAYER_STATE)`, `setItem('vplayer_volume')` |
-| `useEqualizer.js` | `getItem/setItem(STORAGE_KEYS.EQ_BANDS)` |
-| `useCrossfade.js` | `getItem/setItem` for crossfade settings |
-| `useShortcuts.js` | `getItem('keyboard-shortcuts')` |
-| `useTrackLoading.js` | `getItem/setItem('vplayer_last_track/position')` |
-| `VPlayer.jsx` | `getItem/setItem` for last track/position |
+### ~~Stale Closure / useRef Workarounds~~ ✅ MOSTLY FIXED
 
-The key `'vplayer_last_playlist'` isn't even defined in `STORAGE_KEYS` in constants.js.
+> **13 of 17 stale-closure refs eliminated.** VPlayer: 5→0, PlayerProvider: 4→0, usePlayer.ts: 4→0. Remaining refs in `useAudio.js` are legitimate (function callback refs, not store state mirrors). `useReplayGain.js` and `useLibraryScanner.js` refs are also legitimate (transient internal state, not store mirrors).
 
-### Stale Closure / useRef Workarounds
+### ~~Excessive Prop Drilling~~ ✅ MOSTLY FIXED
 
-| File | Pattern |
-|------|---------|
-| `VPlayer.jsx` | 5 refs mirroring state for `onEnded` callback |
-| `useAudio.js` | `onEndedRef`, `onTimeUpdateRef` to avoid recreating polling interval |
-| `usePlayer.ts` | `tracksRef`, `shuffleRef`, `repeatModeRef`, `currentTrackRef` |
-| `useReplayGain.js` | `lastAppliedTrackRef` |
-| `useLibraryScanner.js` | `autoScanDoneRef`; stale `refreshFolders` in `[]` deps effect |
-| `useAutoResize.js` | `lastResizeRef`, `debounceTimer`, module-level globals |
-
-### Excessive Prop Drilling
-
-- `useWindowConfigs` — **~70 parameters**
-- `usePlaylistActions` — **15 parameters**
-- `TrackList / TrackRow` — **25+ props** via `itemData` object
+> `useWindowConfigs` deleted (~70 parameters eliminated). Windows read their own state from store/context. Remaining prop-heavy areas:
+- `usePlaylistActions` — **15 parameters** (Phase 4 candidate)
+- `TrackList / TrackRow` — **25+ props** via `itemData` object (Phase 4.1 candidate)
 - `TrackRow`'s `data` object carries 20+ fields
 
 ### Large Functions/Components (100+ lines)
 
-| File | Entity | Lines |
-|------|--------|-------|
-| `VPlayer.jsx` | `VPlayerInner` | ~350 |
-| `TrackList.jsx` | `TrackList` | ~170 |
-| `TrackList.jsx` | `TrackRow` | ~140 |
-| `useWindowConfigs.jsx` | `useWindowConfigs` | ~300 |
-| `usePlaylistActions.js` | `usePlaylistActions` | ~175 |
-| `useLibraryScanner.js` | `useLibraryScanner` | ~165 |
-| `useDragDrop.js` | `useDragDrop` | ~170 |
-| `useAudio.js` | `useAudio` | ~300 |
+| File | Entity | Lines | Status |
+|------|--------|-------|--------|
+| ~~`VPlayer.jsx`~~ | ~~`VPlayerInner`~~ | ~~350~~ → **83** | ✅ Fixed |
+| `TrackList.jsx` | `TrackList` | ~170 | Phase 4.1 |
+| `TrackList.jsx` | `TrackRow` | ~140 | Phase 4.1 |
+| ~~`useWindowConfigs.jsx`~~ | ~~`useWindowConfigs`~~ | ~~300~~ → **deleted** | ✅ Fixed |
+| `usePlaylistActions.js` | `usePlaylistActions` | ~175 | Phase 4 |
+| `useLibraryScanner.js` | `useLibraryScanner` | ~165 | |
+| `useDragDrop.js` | `useDragDrop` | ~170 | |
+| `useAudio.js` | `useAudio` | ~300 | |
 
 ---
 
 ## Principle Violations Summary
 
-| Principle | Violation | Severity |
-|-----------|-----------|----------|
-| **SRP** | VPlayer.jsx orchestrates everything; useWindowConfigs builds all 15 windows | Critical |
-| **OCP** | Adding any feature requires modifying VPlayer + useWindowConfigs + the window | Critical |
-| **DIP** | Hooks depend on concrete `invoke()` calls instead of the `TauriAPI` abstraction | High |
-| **DRY** | Duplicate row components, duplicate cache management, duplicate state (store vs localStorage) | High |
-| **KISS** | 11 ref-based stale closure workarounds, 70-param hook, triple state management system | High |
-| **ISP** | Single mega Zustand store blob exposing 100+ properties to every consumer | Medium |
+| Principle | Violation | Severity | Status |
+|-----------|-----------|----------|--------|
+| **SRP** | ~~VPlayer.jsx orchestrates everything; useWindowConfigs builds all 15 windows~~ | ~~Critical~~ | ✅ Fixed |
+| **OCP** | ~~Adding any feature requires modifying VPlayer + useWindowConfigs + the window~~ | ~~Critical~~ | ✅ Fixed |
+| **DIP** | ~~Hooks depend on concrete `invoke()` calls instead of the `TauriAPI` abstraction~~ | ~~High~~ | ✅ Fixed |
+| **DRY** | Duplicate row components, duplicate cache management ~~, duplicate state (store vs localStorage)~~ | Medium | Partially fixed |
+| **KISS** | ~~11 ref-based stale closure workarounds, 70-param hook, triple state management system~~ | ~~High~~ | ✅ Fixed |
+| **ISP** | Single mega Zustand store blob exposing 100+ properties to every consumer | Medium | Phase 3 |
 
 ---
 
 ## Key Takeaway
 
-The Rust backend is well-structured — clean module separation, proper error types, and logical command grouping. The debt is concentrated on the frontend. The **single highest-impact refactor** would be making windows self-sufficient (reading from the store directly) which would eliminate `useWindowConfigs`, slash `VPlayer.jsx` by 70%, and kill most of the prop drilling chain.
+The Rust backend is well-structured — clean module separation, proper error types, and logical command grouping. The debt ~~is~~ **was** concentrated on the frontend. ~~The **single highest-impact refactor** would be making windows self-sufficient (reading from the store directly) which would eliminate `useWindowConfigs`, slash `VPlayer.jsx` by 70%, and kill most of the prop drilling chain.~~ **This has been completed.** Windows are now self-sufficient, `useWindowConfigs` is deleted, and VPlayer.jsx is 83 lines.
+
+**Remaining frontend debt** centers on: (1) incomplete TypeScript coverage (85% JS, only `PlayerSlice` typed), (2) duplicated components (TrackRow/Row), (3) excessive `console.log` in production paths, (4) module-level mutable globals, (5) security (CSP disabled, asset scope wide open).
 
 ---
 
