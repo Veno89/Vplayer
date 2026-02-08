@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TauriAPI } from '../../services/TauriAPI';
+import { log } from '../../utils/logger';
 import { useErrorHandler } from '../../services/ErrorHandler';
 import { useToast } from '../useToast';
 import type { Track, TrackFilter } from '../../types';
@@ -131,7 +132,7 @@ export function useLibraryData(filterParams: Record<string, unknown> | null = nu
             // Stop watching this folder
             try {
                 await TauriAPI.stopFolderWatch(folderPath);
-                console.log(`Stopped watching folder: ${folderPath}`);
+                log.info(`Stopped watching folder: ${folderPath}`);
             } catch (err) {
                 console.error('Failed to stop folder watch:', err);
             }

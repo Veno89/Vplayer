@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { SEEK_THRESHOLD_SECONDS } from '../utils/constants';
+import { log } from '../utils/logger';
 import type {
     Track,
     PlayerState,
@@ -90,7 +91,7 @@ export function usePlayer({
         const currentTracks = store?.tracks ?? tracks;
         const effectiveTotalTracks = currentTracks.length || totalTracks;
 
-        console.log('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks);
+        log.info('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks);
 
         // Check queue first - queue always takes priority
         if (store && store.queue && store.queue.length > 0) {
@@ -100,7 +101,7 @@ export function usePlayer({
                 const queueTrackIndex = currentTracks.findIndex(t => t.id === nextQueueTrack.id);
                 if (queueTrackIndex !== -1) {
                     store.nextInQueue();
-                    console.log('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
+                    log.info('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
                     return queueTrackIndex;
                 } else {
                     console.warn('[getNextTrackIndex] Queue track not found in library, skipping:', nextQueueTrack.id);
@@ -116,18 +117,18 @@ export function usePlayer({
             do {
                 nextIdx = Math.floor(Math.random() * effectiveTotalTracks);
             } while (nextIdx === current && effectiveTotalTracks > 1);
-            console.log('[getNextTrackIndex] Shuffled to:', nextIdx);
+            log.info('[getNextTrackIndex] Shuffled to:', nextIdx);
             return nextIdx;
         } else {
             const nextIdx = current + 1;
             if (nextIdx < effectiveTotalTracks) {
-                console.log('[getNextTrackIndex] Sequential to:', nextIdx);
+                log.info('[getNextTrackIndex] Sequential to:', nextIdx);
                 return nextIdx;
             } else if (repeat === 'all') {
-                console.log('[getNextTrackIndex] Repeat all, going to 0');
+                log.info('[getNextTrackIndex] Repeat all, going to 0');
                 return 0;
             }
-            console.log('[getNextTrackIndex] No next track');
+            log.info('[getNextTrackIndex] No next track');
             return null;
         }
     }, [storeGetter]);
@@ -144,7 +145,7 @@ export function usePlayer({
             if (nextIdx !== null && nextIdx !== currentTrack) {
                 crossfadeStartedRef.current = true;
                 crossfadeInProgressRef.current = true;
-                console.log('[Crossfade] Initiating crossfade to track:', nextIdx);
+                log.info('[Crossfade] Initiating crossfade to track:', nextIdx);
 
                 crossfade.startCrossfade({
                     setVolume: (vol: number) => {
@@ -185,7 +186,7 @@ export function usePlayer({
             if (nextIdx !== null && nextIdx !== currentTrack) {
                 const nextTrack = tracks[nextIdx];
                 if (nextTrack) {
-                    console.log(`[Gapless] Preloading next track: ${nextTrack.title || nextTrack.name}`);
+                    log.info(`[Gapless] Preloading next track: ${nextTrack.title || nextTrack.name}`);
                     nextTrackPreloadedRef.current = true;
                 }
             }

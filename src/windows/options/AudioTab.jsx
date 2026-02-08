@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Volume2, Speaker, RefreshCw, Loader, Check, Radio, Gauge } from 'lucide-react';
 import { SettingCard, SettingSlider, SettingToggle, SettingBadge, SettingDivider } from './SettingsComponents';
 import { TauriAPI } from '../../services/TauriAPI';
+import { nativeError } from '../../utils/nativeDialog';
 
 export function AudioTab({ crossfade }) {
   const [audioDevices, setAudioDevices] = useState([]);
@@ -63,7 +64,7 @@ export function AudioTab({ crossfade }) {
       setSelectedDevice(deviceName);
     } catch (err) {
       console.error('Failed to set audio device:', err);
-      alert(`Failed to set audio device: ${err}`);
+      await nativeError(`Failed to set audio device: ${err}`);
     } finally {
       setSwitchingDevice(false);
     }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
+import { log } from '../utils/logger';
 import { useStore } from '../store/useStore';
 import type { Track } from '../types';
 
@@ -139,7 +140,7 @@ export function usePlaylists(): PlaylistsAPI {
 
   const addTracksToPlaylist = useCallback(async (playlistId: string, trackIds: string[]) => {
     try {
-      console.log('Adding', trackIds.length, 'tracks to playlist', playlistId);
+      log.info('Adding', trackIds.length, 'tracks to playlist', playlistId);
       setAddingProgress({ current: 0, total: trackIds.length, isAdding: true });
       
       // Use batch operation for efficiency (single transaction)
@@ -151,7 +152,7 @@ export function usePlaylists(): PlaylistsAPI {
         await loadPlaylistTracks(playlistId);
       }
       
-      console.log('Successfully added', count, 'tracks to playlist');
+      log.info('Successfully added', count, 'tracks to playlist');
     } catch (err) {
       console.error('Failed to add tracks to playlist:', err);
       throw err;

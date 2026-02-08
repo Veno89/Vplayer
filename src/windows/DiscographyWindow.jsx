@@ -29,6 +29,7 @@ import {
 import { useDiscography } from '../hooks/useDiscography';
 import { save } from '@tauri-apps/plugin-dialog';
 import { TauriAPI } from '../services/TauriAPI';
+import { nativeAlert, nativeError } from '../utils/nativeDialog';
 import { desktopDir } from '@tauri-apps/api/path';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
@@ -132,7 +133,7 @@ const exportMissingAlbums = async (artistName, albums, allArtistsData = null) =>
     return false;
   } catch (error) {
     console.error('[DiscographyWindow] Failed to export missing albums:', error);
-    alert(`Failed to export file: ${error.message || error}`);
+    await nativeError(`Failed to export file: ${error.message || error}`);
     return false;
   }
 };
@@ -448,7 +449,7 @@ export function DiscographyWindow() {
       }));
     
     if (allArtistsData.length === 0) {
-      alert('No missing albums found. Fetch discographies first.');
+      await nativeAlert('No missing albums found. Fetch discographies first.');
       return;
     }
     

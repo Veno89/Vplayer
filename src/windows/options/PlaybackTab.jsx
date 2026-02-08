@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Play, SkipForward, Volume2, Clock, Mic2, Activity, Loader } from 'lucide-react';
 import { TauriAPI } from '../../services/TauriAPI';
 import { useStore } from '../../store/useStore';
+import { nativeAlert, nativeError } from '../../utils/nativeDialog';
 import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingDivider, SettingButton } from './SettingsComponents';
 
 export function PlaybackTab({ crossfade }) {
@@ -170,7 +171,7 @@ export function PlaybackTab({ crossfade }) {
                   const needsAnalysis = tracks.filter(t => t.loudness === null || t.loudness === undefined);
 
                   if (needsAnalysis.length === 0) {
-                    alert('All tracks have already been analyzed!');
+                    await nativeAlert('All tracks have already been analyzed!');
                     setAnalyzingRG(false);
                     return;
                   }
@@ -191,10 +192,10 @@ export function PlaybackTab({ crossfade }) {
                     setRgProgress({ current: analyzed + failed, total: needsAnalysis.length });
                   }
 
-                  alert(`Analysis complete!\n\nAnalyzed: ${analyzed} tracks\nFailed: ${failed} tracks`);
+                  await nativeAlert(`Analysis complete!\n\nAnalyzed: ${analyzed} tracks\nFailed: ${failed} tracks`);
                 } catch (err) {
                   console.error('ReplayGain analysis failed:', err);
-                  alert(`Analysis failed: ${err}`);
+                  await nativeError(`Analysis failed: ${err}`);
                 } finally {
                   setAnalyzingRG(false);
                   setRgProgress({ current: 0, total: 0 });

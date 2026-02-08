@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { TauriAPI } from '../../services/TauriAPI';
 import { EVENTS } from '../../utils/constants';
+import { log } from '../../utils/logger';
 import { useStore } from '../../store/useStore';
 
 interface LibraryFolder {
@@ -59,7 +60,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
                 for (const folder of libraryFolders) {
                     try {
                         await TauriAPI.startFolderWatch(folder.path);
-                        console.log(`Started watching folder: ${folder.path}`);
+                        log.info(`Started watching folder: ${folder.path}`);
                     } catch (err) {
                         console.error(`Failed to start watching ${folder.path}:`, err);
                     }
@@ -69,7 +70,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             // Auto-scan on startup if enabled (only once)
             if (autoScanOnStartup && !autoScanDoneRef.current) {
                 autoScanDoneRef.current = true;
-                console.log('Auto-scanning library on startup...');
+                log.info('Auto-scanning library on startup...');
                 refreshFolders();
             }
         };
@@ -84,12 +85,12 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         // Listen for folder changes (file watcher)
         unlistenPromises.push(
             listen('folder-changed', async (event) => {
-                console.log('File system change detected:', event.payload);
+                log.info('File system change detected:', event.payload);
                 // Trigger incremental scan for all folders
                 try {
                     const newTracksCount = await refreshFolders();
                     if (newTracksCount > 0) {
-                        console.log(`Auto-detected ${newTracksCount} new/modified track(s)`);
+                        log.info(`Auto-detected ${newTracksCount} new/modified track(s)`);
                     }
                 } catch (err) {
                     console.error('Auto-scan failed:', err);
@@ -123,7 +124,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         // Listen for scan completion
         unlistenPromises.push(
             TauriAPI.onEvent(EVENTS.SCAN_COMPLETE, (event) => {
-                console.log(`Scan complete: ${event.payload} tracks found`);
+                log.info(`Scan complete: ${event.payload} tracks found`);
                 setScanProgress(100);
                 setScanCurrentFile('');
 
@@ -140,7 +141,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         // Listen for scan cancellation
         unlistenPromises.push(
             TauriAPI.onEvent(EVENTS.SCAN_CANCELLED, (event) => {
-                console.log(`Scan cancelled: ${event.payload} tracks processed`);
+                log.info(`Scan cancelled: ${event.payload} tracks processed`);
                 setScanCurrentFile('Cancelled');
 
                 // Reset scanning state
@@ -215,7 +216,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             // Start watching this folder
             try {
                 await TauriAPI.startFolderWatch(path);
-                console.log(`Started watching folder: ${path}`);
+                log.info(`Started watching folder: ${path}`);
             } catch (err) {
                 console.error('Failed to start folder watch:', err);
             }

@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useStore } from '../store/useStore';
+import { log } from '../utils/logger';
 import type { Track } from '../types';
 import type { PlaylistsAPI } from './usePlaylists';
 
@@ -132,12 +133,12 @@ export function usePlaylistActions({
         e.stopPropagation();
         setIsDraggingOver(false);
 
-        console.log('[PlaylistWindow] handleExternalDrop called');
+        log.info('[PlaylistWindow] handleExternalDrop called');
         let data = e.dataTransfer.getData('application/json');
         if (!data) {
             data = e.dataTransfer.getData('text/plain');
         }
-        console.log('[PlaylistWindow] drop data:', data ? `${data.substring(0, 50)}...` : 'EMPTY');
+        log.info('[PlaylistWindow] drop data:', data ? `${data.substring(0, 50)}...` : 'EMPTY');
         if (!data) return;
 
         try {
@@ -155,7 +156,7 @@ export function usePlaylistActions({
                 return;
             }
 
-            console.log('Adding tracks to playlist:', tracks.length);
+            log.info('Adding tracks to playlist:', tracks.length);
             await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
         } catch (err) {
             console.error('Drop failed:', err);
@@ -207,7 +208,7 @@ export function usePlaylistActions({
 
     // Delete playlist
     const handleDeletePlaylist = useCallback(async (playlistId: string) => {
-        console.log('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
+        log.info('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
         try {
             await playlists.deletePlaylist(playlistId);
 

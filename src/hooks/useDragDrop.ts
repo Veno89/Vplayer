@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { log } from '../utils/logger';
 import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
 import type { ToastService, Track } from '../types';
@@ -68,7 +69,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
 
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
-              console.log('Files dropped via Tauri:', paths);
+              log.info('Files dropped via Tauri:', paths);
 
               // Collect all new tracks from scanning
               const newTrackIds = [];
@@ -133,7 +134,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
           }
         });
       } catch (err) {
-        console.debug('Tauri drag-drop not available:', err);
+        log.debug('Tauri drag-drop not available:', err);
       }
     };
 
@@ -168,7 +169,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       // Don't show confusing message - Tauri should handle it
-      console.debug('Web drop detected, Tauri should handle this');
+      log.debug('Web drop detected, Tauri should handle this');
     }
   }, [tauriDropHandled]);
 
@@ -207,7 +208,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
 
   useEffect(() => {
     const handleGlobalDragOver = (e: DragEvent) => {
-      console.log('[useDragDrop] Global dragover fired');
+      log.info('[useDragDrop] Global dragover fired');
       e.preventDefault();
       const types = Array.from(e.dataTransfer.types);
       if (types.includes('application/json')) {

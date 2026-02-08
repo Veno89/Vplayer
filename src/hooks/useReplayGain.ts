@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
+import { log } from '../utils/logger';
 import { useStore } from '../store/useStore';
 import type { Track } from '../types';
 
@@ -56,13 +57,13 @@ export function useReplayGain(): ReplayGainAPI {
         // Apply the gain with user's preamp setting
         await TauriAPI.setReplayGain(rgData.track_gain, replayGainPreamp);
         lastAppliedTrackRef.current = track.id;
-        console.log(`[ReplayGain] Applied ${rgData.track_gain.toFixed(1)}dB + ${replayGainPreamp}dB preamp for: ${track.title || track.name}`);
+        log.info(`[ReplayGain] Applied ${rgData.track_gain.toFixed(1)}dB + ${replayGainPreamp}dB preamp for: ${track.title || track.name}`);
         return true;
       } else {
         // No ReplayGain data - clear any existing adjustment
         await TauriAPI.clearReplayGain();
         lastAppliedTrackRef.current = null;
-        console.log(`[ReplayGain] No data for: ${track.title || track.name}`);
+        log.info(`[ReplayGain] No data for: ${track.title || track.name}`);
         return false;
       }
     } catch (err) {
@@ -86,9 +87,9 @@ export function useReplayGain(): ReplayGainAPI {
     if (!track?.path) return null;
 
     try {
-      console.log(`[ReplayGain] Analyzing: ${track.title || track.name}`);
+      log.info(`[ReplayGain] Analyzing: ${track.title || track.name}`);
       const rgData = await TauriAPI.analyzeReplayGain(track.path);
-      console.log(`[ReplayGain] Analysis complete: ${rgData.loudness.toFixed(1)} LUFS, gain: ${rgData.track_gain.toFixed(1)}dB`);
+      log.info(`[ReplayGain] Analysis complete: ${rgData.loudness.toFixed(1)} LUFS, gain: ${rgData.track_gain.toFixed(1)}dB`);
       return rgData;
     } catch (err) {
       console.error('[ReplayGain] Analysis failed:', err);

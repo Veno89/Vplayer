@@ -33,6 +33,9 @@ emit: vi.fn().mockResolvedValue(undefined),
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
 open: vi.fn().mockResolvedValue(null),
+ask: vi.fn().mockResolvedValue(true),
+message: vi.fn().mockResolvedValue('Ok'),
+save: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../storage/idb', () => {

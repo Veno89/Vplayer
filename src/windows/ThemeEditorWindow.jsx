@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { COLOR_SCHEMES } from '../utils/colorSchemes';
+import { nativeConfirm } from '../utils/nativeDialog';
 
 export default function ThemeEditorWindow() {
   const isOpen = useStore(s => s.themeEditorOpen);
@@ -78,8 +79,8 @@ export default function ThemeEditorWindow() {
     showSuccess(`Applied theme: ${theme.name}`);
   };
 
-  const handleDeleteTheme = (themeName) => {
-    if (confirm(`Delete theme "${themeName}"?`)) {
+  const handleDeleteTheme = async (themeName) => {
+    if (await nativeConfirm(`Delete theme "${themeName}"?`)) {
       deleteCustomTheme(themeName);
       showSuccess(`Theme "${themeName}" deleted`);
     }

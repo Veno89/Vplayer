@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 import { AUDIO_RETRY_CONFIG } from '../utils/constants';
+import { log } from '../utils/logger';
 import { useErrorHandler } from '../services/ErrorHandler';
 import { useToast } from './useToast';
 import type { Track, AudioHookParams, AudioService } from '../types';
@@ -164,7 +165,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
                       await TauriAPI.loadTrack(currentPath);
                       await TauriAPI.seekTo(position);
                       await TauriAPI.play();
-                      console.log('[useAudio] Recovered from premature audio stop');
+                      log.info('[useAudio] Recovered from premature audio stop');
                     } catch (recoveryErr) {
                       console.error('[useAudio] Recovery failed:', recoveryErr);
                       setIsPlaying(false);
@@ -174,7 +175,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
               }
             } catch (healthErr) {
               // Ignore health check errors
-              console.debug('[useAudio] Health check failed:', healthErr);
+              log.debug('[useAudio] Health check failed:', healthErr);
             }
           }
         } catch (err) {
@@ -198,7 +199,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
                 'Audio recovery timed out'
               );
               if (recovered) {
-                console.log('Audio backend recovered successfully');
+                log.info('Audio backend recovered successfully');
                 setAudioBackendError(null);
               } else {
                 console.error('Audio backend recovery returned false');
@@ -289,7 +290,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
     
     // Prevent concurrent recovery attempts
     if (isRecoveringRef.current) {
-      console.log('Recovery already in progress, skipping play');
+      log.info('Recovery already in progress, skipping play');
       return;
     }
     
@@ -309,10 +310,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       const inactiveDuration = await TauriAPI.getInactiveDuration();
       
       if (deviceChanged) {
-        console.log('Audio device changed, backend will reinitialize...');
+        log.info('Audio device changed, backend will reinitialize...');
         toast.showInfo('Audio device changed, reconnecting...', 2000);
       } else if (inactiveDuration > LONG_IDLE_THRESHOLD_SECONDS) {
-        console.log(`Audio has been idle for ${Math.round(inactiveDuration / 60)} minutes, backend will reinitialize...`);
+        log.info(`Audio has been idle for ${Math.round(inactiveDuration / 60)} minutes, backend will reinitialize...`);
         toast.showInfo('Resuming playback...', 2000);
       }
       
@@ -324,13 +325,13 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       
       // If play fails, try explicit recovery
       try {
-        console.log('Play failed, attempting explicit recovery...');
+        log.info('Play failed, attempting explicit recovery...');
         isRecoveringRef.current = true;
         toast.showWarning('Reinitializing audio system...');
         
         const recovered = await TauriAPI.recoverAudio();
         if (recovered) {
-          console.log('Recovery successful, retrying play...');
+          log.info('Recovery successful, retrying play...');
           await TauriAPI.play();
           setIsPlaying(true);
           setAudioBackendError(null);
@@ -352,9 +353,9 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
     if (audioBackendError) return;
     
     try {
-      console.log('Calling pause_audio command');
+      log.info('Calling pause_audio command');
       await TauriAPI.pause();
-      console.log('Pause command completed, setting isPlaying to false');
+      log.info('Pause command completed, setting isPlaying to false');
       setIsPlaying(false);
     } catch (err) {
       console.error('Failed to pause:', err);

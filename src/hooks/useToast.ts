@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 
 export interface Toast {
   id: number;
@@ -17,13 +17,12 @@ export interface ToastAPI {
   showInfo: (message: string, duration?: number) => number;
 }
 
-let toastId = 0;
-
 export function useToast(): ToastAPI {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = useRef(0);
 
   const addToast = useCallback((message: string, type: Toast['type'] = 'info', duration: number = 5000) => {
-    const id = ++toastId;
+    const id = ++toastIdRef.current;
     const newToast = { id, message, type, duration };
 
     setToasts((prev) => [...prev, newToast]);

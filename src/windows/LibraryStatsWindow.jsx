@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, Database, HardDrive, Music, Clock, Disc, User, Folder, Loader, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
-import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
+import { useMaintenanceActions } from '../hooks/useMaintenanceActions';
+import { formatBytes } from '../utils/formatters';
+import { nativeConfirm, nativeError } from '../utils/nativeDialog';
 
 /**
  * Library Statistics Window - Shows collection stats and performance info
@@ -11,12 +13,11 @@ export function LibraryStatsWindow() {
   const tracks = useStore(s => s.tracks) ?? [];
   const libraryFolders = useStore(s => s.libraryFolders) ?? [];
   const currentColors = useCurrentColors();
-  const [stats, setStats] = useState(null);
-  const [cacheSize, setCacheSize] = useState(0);
-  const [dbSize, setDbSize] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [vacuuming, setVacuuming] = useState(false);
-  const [clearingCache, setClearingCache] = useState(false);
+  const {
+    cacheSize, dbSize, perfStats, loadingStats: loading,
+    vacuuming, clearingCache,
+    loadStats, vacuumDatabase, clearCache,
+  } = useMaintenanceActions();
 
   // Calculate local stats from tracks
   const localStats = React.useMemo(() => {
@@ -61,56 +62,27 @@ export function LibraryStatsWindow() {
     };
   }, [tracks]);
 
-  // Load backend stats
+  // Load backend stats (including performance data for this window)
   useEffect(() => {
-    loadStats();
-  }, []);
-
-  const loadStats = async () => {
-    setLoading(true);
-    try {
-      const [perfStats, cache, db] = await Promise.all([
-        TauriAPI.getPerformanceStats(),
-        TauriAPI.getCacheSize().catch(() => 0),
-        TauriAPI.getDatabaseSize().catch(() => 0),
-      ]);
-      setStats(perfStats);
-      setCacheSize(cache);
-      setDbSize(db);
-    } catch (err) {
-      console.error('Failed to load stats:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    loadStats({ includePerf: true });
+  }, [loadStats]);
 
   const handleVacuum = async () => {
-    setVacuuming(true);
     try {
-      await TauriAPI.vacuumDatabase();
-      await loadStats();
+      await vacuumDatabase();
     } catch (err) {
-      console.error('Failed to vacuum database:', err);
-      alert('Failed to optimize database: ' + err);
-    } finally {
-      setVacuuming(false);
+      await nativeError('Failed to optimize database: ' + err);
     }
   };
 
   const handleClearCache = async () => {
-    if (!confirm('Clear album art cache? This will free up disk space but album art will need to be re-extracted.')) {
+    if (!await nativeConfirm('Clear album art cache? This will free up disk space but album art will need to be re-extracted.')) {
       return;
     }
-    
-    setClearingCache(true);
     try {
-      await TauriAPI.clearAlbumArtCache();
-      await loadStats();
+      await clearCache();
     } catch (err) {
-      console.error('Failed to clear cache:', err);
-      alert('Failed to clear cache: ' + err);
-    } finally {
-      setClearingCache(false);
+      await nativeError('Failed to clear cache: ' + err);
     }
   };
 
@@ -123,7 +95,7 @@ export function LibraryStatsWindow() {
           <h2 className="text-white font-semibold">Library Statistics</h2>
         </div>
         <button
-          onClick={loadStats}
+          onClick={() => loadStats({ includePerf: true })}
           disabled={loading}
           className="p-2 hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
           title="Refresh stats"
@@ -231,26 +203,26 @@ export function LibraryStatsWindow() {
           </div>
 
           {/* Backend Performance */}
-          {stats?.performance && (
+          {perfStats?.performance && (
             <div className="mt-3 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
               <p className="text-slate-500 text-xs mb-2">Performance</p>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-slate-400">Query Time:</span>
-                  <span className="text-white ml-2">{stats.performance.query_time_ms}ms</span>
+                  <span className="text-white ml-2">{perfStats.performance.query_time_ms}ms</span>
                 </div>
                 <div>
                   <span className="text-slate-400">Memory:</span>
-                  <span className="text-white ml-2">{stats.performance.memory_usage_mb?.toFixed(1)}MB</span>
+                  <span className="text-white ml-2">{perfStats.performance.memory_usage_mb?.toFixed(1)}MB</span>
                 </div>
               </div>
             </div>
           )}
 
           {/* Recommendations */}
-          {stats?.recommendations && (
+          {perfStats?.recommendations && (
             <div className="mt-3 space-y-2">
-              {stats.recommendations.vacuum_recommended && (
+              {perfStats.recommendations.vacuum_recommended && (
                 <div className="p-3 bg-yellow-900/20 border border-yellow-700/50 rounded-lg flex items-center gap-3">
                   <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
                   <p className="text-yellow-300 text-sm flex-1">Database optimization recommended</p>
@@ -336,15 +308,6 @@ function StatCard({ label, value, icon: Icon, color }) {
       <p className="text-2xl font-bold text-white">{value.toLocaleString()}</p>
     </div>
   );
-}
-
-// Helper functions
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 function formatDurationLong(seconds) {

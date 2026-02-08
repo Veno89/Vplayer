@@ -9,6 +9,7 @@ import { formatDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
 import { usePlaylistActions } from '../hooks/usePlaylistActions';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
+import { nativeConfirm } from '../utils/nativeDialog';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { usePlayerContext } from '../context/PlayerProvider';
@@ -355,7 +356,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       case 'delete':
         // Remove selected tracks from current playlist
         if (!playlists.currentPlaylist) return;
-        if (confirm(`Remove ${selectedTracks.length} track(s) from this playlist?`)) {
+        if (await nativeConfirm(`Remove ${selectedTracks.length} track(s) from this playlist?`)) {
           for (const track of selectedTracks) {
             await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
           }

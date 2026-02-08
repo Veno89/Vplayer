@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Trash2, RotateCw, Download, Upload, Bug, HardDrive, FileJson, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
-import { TauriAPI } from '../../services/TauriAPI';
 import { getVersion } from '@tauri-apps/api/app';
 import { useStore } from '../../store/useStore';
+import { useMaintenanceActions } from '../../hooks/useMaintenanceActions';
+import { formatBytes } from '../../utils/formatters';
+import { nativeConfirm, nativeAlert, nativeError } from '../../utils/nativeDialog';
 import { SettingCard, SettingButton, SettingInfo, SettingToggle, SettingDivider } from './SettingsComponents';
 
 export function AdvancedTab({ debugVisible, setDebugVisible }) {
-  const [cacheSize, setCacheSize] = useState(0);
-  const [dbSize, setDbSize] = useState(0);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [clearing, setClearing] = useState(false);
-  const [optimizing, setOptimizing] = useState(false);
+  const {
+    cacheSize, dbSize, loadingStats,
+    vacuuming: optimizing, clearingCache: clearing,
+    loadStats, vacuumDatabase, clearCache,
+  } = useMaintenanceActions();
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -20,57 +22,25 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
     loadStats();
     // Get actual version from Tauri
     getVersion().then(v => setAppVersion(v)).catch(() => {});
-  }, []);
-
-  const loadStats = async () => {
-    try {
-      setLoadingStats(true);
-      const [cache, db] = await Promise.all([
-        TauriAPI.getCacheSize().catch(() => 0),
-        TauriAPI.getDatabaseSize().catch(() => 0)
-      ]);
-      setCacheSize(cache || 0);
-      setDbSize(db || 0);
-    } catch (err) {
-      console.error('Failed to load stats:', err);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
-
-  const formatBytes = (bytes) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-  };
+  }, [loadStats]);
 
   const handleClearCache = async () => {
-    if (!confirm('Clear all cached album art? This will remove cached images but not affect your music files.')) return;
+    if (!await nativeConfirm('Clear all cached album art? This will remove cached images but not affect your music files.')) return;
     try {
-      setClearing(true);
-      await TauriAPI.clearAlbumArtCache();
-      await loadStats();
-      alert('Cache cleared successfully!');
+      await clearCache();
+      await nativeAlert('Cache cleared successfully!');
     } catch (err) {
-      alert(`Failed to clear cache: ${err}`);
-    } finally {
-      setClearing(false);
+      await nativeError(`Failed to clear cache: ${err}`);
     }
   };
 
   const handleOptimizeDb = async () => {
-    if (!confirm('Optimize the database? This may take a moment for large libraries.')) return;
+    if (!await nativeConfirm('Optimize the database? This may take a moment for large libraries.')) return;
     try {
-      setOptimizing(true);
-      await TauriAPI.vacuumDatabase();
-      await loadStats();
-      alert('Database optimized successfully!');
+      await vacuumDatabase();
+      await nativeAlert('Database optimized successfully!');
     } catch (err) {
-      alert(`Failed to optimize database: ${err}`);
-    } finally {
-      setOptimizing(false);
+      await nativeError(`Failed to optimize database: ${err}`);
     }
   };
 
@@ -133,10 +103,10 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      alert('Settings exported successfully!');
+      await nativeAlert('Settings exported successfully!');
     } catch (err) {
       console.error('Export failed:', err);
-      alert(`Failed to export settings: ${err}`);
+      await nativeError(`Failed to export settings: ${err}`);
     } finally {
       setExporting(false);
     }
@@ -175,10 +145,10 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
             }
           });
 
-          alert('Settings imported successfully! Some changes may require a restart.');
+          await nativeAlert('Settings imported successfully! Some changes may require a restart.');
         } catch (err) {
           console.error('Import failed:', err);
-          alert(`Failed to import settings: ${err}`);
+          await nativeError(`Failed to import settings: ${err}`);
         } finally {
           setImporting(false);
         }
@@ -188,22 +158,22 @@ export function AdvancedTab({ debugVisible, setDebugVisible }) {
       input.click();
     } catch (err) {
       console.error('Import failed:', err);
-      alert(`Failed to import settings: ${err}`);
+      await nativeError(`Failed to import settings: ${err}`);
       setImporting(false);
     }
   };
 
   const handleResetSettings = async () => {
-    if (!confirm('Reset ALL settings to defaults? This cannot be undone.')) return;
-    if (!confirm('Are you absolutely sure? All your preferences will be lost.')) return;
+    if (!await nativeConfirm('Reset ALL settings to defaults? This cannot be undone.')) return;
+    if (!await nativeConfirm('Are you absolutely sure? All your preferences will be lost.')) return;
     
     try {
       setResetting(true);
       localStorage.removeItem('vplayer-storage');
-      alert('Settings reset! The app will now reload.');
+      await nativeAlert('Settings reset! The app will now reload.');
       window.location.reload();
     } catch (err) {
-      alert(`Failed to reset settings: ${err}`);
+      await nativeError(`Failed to reset settings: ${err}`);
     } finally {
       setResetting(false);
     }

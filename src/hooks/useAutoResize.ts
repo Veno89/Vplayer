@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/window';
 import { useStore } from '../store/useStore';
+import { createStore, useStore as useZustandStore } from 'zustand';
 import type { WindowsState } from '../store/types';
 
 const PADDING = 60;
@@ -10,29 +11,42 @@ const MIN_HEIGHT = 600;
 const DEBOUNCE_MS = 200;
 const INITIAL_SETTLE_MS = 2000;
 
-// Global drag state tracker - shared across all components
-let isDraggingOrResizing = false;
-let dragEndTimer: ReturnType<typeof setTimeout> | null = null;
+// Zustand atom for drag/resize state — replaces module-level mutable globals
+interface DragState {
+  isDraggingOrResizing: boolean;
+  dragEndTimer: ReturnType<typeof setTimeout> | null;
+  notifyDragStart: () => void;
+  notifyDragEnd: () => void;
+}
+
+const dragStore = createStore<DragState>((set, get) => ({
+  isDraggingOrResizing: false,
+  dragEndTimer: null,
+  notifyDragStart: () => {
+    const { dragEndTimer } = get();
+    if (dragEndTimer) clearTimeout(dragEndTimer);
+    set({ isDraggingOrResizing: true, dragEndTimer: null });
+  },
+  notifyDragEnd: () => {
+    const timer = setTimeout(() => {
+      set({ isDraggingOrResizing: false });
+    }, 50);
+    set({ dragEndTimer: timer });
+  },
+}));
 
 /**
  * Notify auto-resize that dragging/resizing has started
  */
 export function notifyDragStart(): void {
-  isDraggingOrResizing = true;
-  if (dragEndTimer) {
-    clearTimeout(dragEndTimer);
-    dragEndTimer = null;
-  }
+  dragStore.getState().notifyDragStart();
 }
 
 /**
  * Notify auto-resize that dragging/resizing has ended
  */
 export function notifyDragEnd(): void {
-  // Small delay to ensure window state is updated
-  dragEndTimer = setTimeout(() => {
-    isDraggingOrResizing = false;
-  }, 50);
+  dragStore.getState().notifyDragEnd();
 }
 
 /**
@@ -51,7 +65,7 @@ export function useAutoResize(): { recalculateSize: () => Promise<void>; isReady
 
   const calculateAndResize = useCallback(async (force = false) => {
     // Skip resize while user is actively dragging or resizing
-    if (!force && isDraggingOrResizing) {
+    if (!force && dragStore.getState().isDraggingOrResizing) {
       return;
     }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { CROSSFADE_CONFIG } from '../utils/constants';
+import { log } from '../utils/logger';
 import { useStore } from '../store/useStore';
 
 export interface CrossfadeParams {
@@ -123,7 +124,7 @@ export function useCrossfade(): CrossfadeAPI {
       return;
     }
 
-    console.log('[Crossfade] Starting crossfade, duration:', duration, 'ms');
+    log.info('[Crossfade] Starting crossfade, duration:', duration, 'ms');
     isFadingRef.current = true;
     originalVolumeRef.current = currentVolume;
     fadeStartTimeRef.current = Date.now();
@@ -143,14 +144,14 @@ export function useCrossfade(): CrossfadeAPI {
       // Call midpoint when we're halfway through (for track switch)
       if (!midpointCalled && elapsed >= duration * 0.5) {
         midpointCalled = true;
-        console.log('[Crossfade] Midpoint reached, switching tracks');
+        log.info('[Crossfade] Midpoint reached, switching tracks');
         if (onMidpoint) onMidpoint();
       }
     }, FADE_INTERVAL_MS);
 
     // Complete the fade after duration
     fadeTimeoutRef.current = setTimeout(() => {
-      console.log('[Crossfade] Fade complete');
+      log.info('[Crossfade] Fade complete');
       clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
       isFadingRef.current = false;
@@ -177,7 +178,7 @@ export function useCrossfade(): CrossfadeAPI {
       return;
     }
 
-    console.log('[Crossfade] Starting fade-in to volume:', targetVolume);
+    log.info('[Crossfade] Starting fade-in to volume:', targetVolume);
     const startTime = Date.now();
     const fadeInDuration = duration * 0.5; // Fade in takes half the duration
     const FADE_INTERVAL_MS = 50;
@@ -195,7 +196,7 @@ export function useCrossfade(): CrossfadeAPI {
       if (progress >= 1) {
         clearInterval(fadeInInterval);
         setVolume(targetVolume);
-        console.log('[Crossfade] Fade-in complete');
+        log.info('[Crossfade] Fade-in complete');
         if (onComplete) onComplete();
       }
     }, FADE_INTERVAL_MS);
@@ -222,7 +223,7 @@ export function useCrossfade(): CrossfadeAPI {
     }
     
     isFadingRef.current = false;
-    console.log('[Crossfade] Cancelled');
+    log.info('[Crossfade] Cancelled');
   }, []);
 
   // Cleanup on unmount

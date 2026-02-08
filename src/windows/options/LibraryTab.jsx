@@ -3,6 +3,7 @@ import { Music, FolderOpen, Search, Image, RefreshCw, FileAudio, Eye, Globe, Plu
 import { TauriAPI } from '../../services/TauriAPI';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../store/useStore';
+import { nativeConfirm } from '../../utils/nativeDialog';
 import { SettingToggle, SettingSelect, SettingCard, SettingButton, SettingInfo, SettingDivider, SettingBadge } from './SettingsComponents';
 
 export function LibraryTab() {
@@ -84,7 +85,7 @@ export function LibraryTab() {
   const handleRemoveFolder = async (folder) => {
     const path = typeof folder === 'object' ? folder.path : folder;
     const folderId = typeof folder === 'object' ? folder.id : null;
-    if (!confirm(`Remove "${path}" from library? Files will not be deleted.`)) return;
+    if (!await nativeConfirm(`Remove "${path}" from library? Files will not be deleted.`)) return;
     try {
       if (folderId) {
         await TauriAPI.removeFolder(folderId, path);

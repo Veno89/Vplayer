@@ -4,6 +4,7 @@ import { FolderOpen, Search, RefreshCw, Trash2, X, Loader, AlertCircle, FileQues
 import { AdvancedSearch } from '../components/AdvancedSearch';
 import { TauriAPI } from '../services/TauriAPI';
 import { formatDuration } from '../utils/formatters';
+import { nativeConfirm, nativeError } from '../utils/nativeDialog';
 import { StarRating } from '../components/StarRating';
 import { FixedSizeList } from 'react-window';
 import { notifyDragStart, notifyDragEnd } from '../hooks/useAutoResize';
@@ -160,7 +161,7 @@ export function LibraryWindow() {
       setShowMissingFiles(true);
     } catch (err) {
       console.error('Failed to check missing files:', err);
-      alert('Failed to check for missing files');
+      await nativeError('Failed to check for missing files');
     } finally {
       setCheckingMissing(false);
     }
@@ -168,7 +169,7 @@ export function LibraryWindow() {
 
   // Handle folder removal with confirmation
   const handleRemove = async (folderId, folderPath, folderName) => {
-    if (!confirm(`Remove "${folderName}" and all its tracks from library?`)) {
+    if (!await nativeConfirm(`Remove "${folderName}" and all its tracks from library?`)) {
       return;
     }
 
@@ -176,7 +177,7 @@ export function LibraryWindow() {
     try {
       await handleRemoveFolder(folderId, folderPath);
     } catch (err) {
-      alert(`Failed to remove folder: ${err.message}`);
+      await nativeError(`Failed to remove folder: ${err.message}`);
     } finally {
       setRemovingFolder(null);
     }
