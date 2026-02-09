@@ -4,92 +4,75 @@ import { AUDIO_RETRY_CONFIG } from '../utils/constants';
 import { log } from '../utils/logger';
 import { useErrorHandler } from '../services/ErrorHandler';
 import { useToast } from './useToast';
+import { useStore } from '../store/useStore';
 import type { Track, AudioHookParams, AudioService } from '../types';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
-// Threshold for considering audio "long idle" - matches Rust LONG_PAUSE_THRESHOLD
+// Threshold for considering audio "long idle" – matches Rust LONG_PAUSE_THRESHOLD
 const LONG_IDLE_THRESHOLD_SECONDS = 5 * 60; // 5 minutes
 
 // Timeout for backend operations to prevent UI freezing
-const BACKEND_TIMEOUT_MS = 5000; // 5 seconds
+const BACKEND_TIMEOUT_MS = 5000;
 
-/**
- * Wrap a promise with a timeout to prevent indefinite hangs
- */
-const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation timed out'): Promise<T> => {
-  return Promise.race([
+/** Wrap a promise with a timeout. */
+const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation timed out'): Promise<T> =>
+  Promise.race([
     promise,
-    new Promise<T>((_, reject) => 
-      setTimeout(() => reject(new Error(errorMsg)), ms)
-    )
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms)),
   ]);
-};
+
+/** Playback-tick payload emitted by the Rust broadcast thread. */
+interface PlaybackTickPayload {
+  position: number;
+  duration: number;
+  isPlaying: boolean;
+  isFinished: boolean;
+}
 
 /**
- * Audio playback hook
- * 
- * Manages the audio engine with retry logic and error handling.
- * Handles:
- * - Track loading with automatic retries
- * - Play/pause control
- * - Volume management
- * - Progress tracking via polling
- * - Error recovery
- * - Long-idle detection and proactive recovery
- * 
- * @param {Object} params - Hook parameters
- * @param {Function} params.onEnded - Callback when track finishes
- * @param {Function} params.onTimeUpdate - Callback for progress updates
- * @param {number} params.initialVolume - Initial volume level (0-1)
- * 
- * @returns {Object} Audio control interface
- * @returns {boolean} returns.isPlaying - Whether audio is playing
- * @returns {boolean} returns.isLoading - Whether track is loading
- * @returns {number} returns.progress - Current position in seconds
- * @returns {number} returns.duration - Track duration in seconds
- * @returns {number} returns.volume - Current volume (0-1)
- * @returns {Function} returns.loadTrack - Load a track by path
- * @returns {Function} returns.play - Start playback
- * @returns {Function} returns.pause - Pause playback
- * @returns {Function} returns.seek - Seek to position
- * @returns {Function} returns.changeVolume - Change volume level
- * @returns {string|null} returns.audioBackendError - Error message if backend unavailable
+ * Audio playback hook – event-driven.
+ *
+ * Instead of polling Rust every 100 ms, it listens for `playback-tick` and
+ * `track-ended` events emitted by the Rust broadcast thread and writes
+ * position / duration directly to the Zustand store (#1 + #4).
+ *
+ * **Local state** kept here (not in Zustand):
+ *  - `isLoading` – transient loading indicator
+ *  - `audioBackendError` – error banner state
+ *
+ * **Zustand store** is the single source of truth for:
+ *  - `playing`, `progress`, `duration`, `volume`
  */
 export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHookParams): AudioService {
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [audioBackendError, setAudioBackendError] = useState<string | null>(null);
-  
-  // Track if we're currently seeking to avoid polling race conditions
+
+  // Track if we're currently seeking / recovering to suppress events briefly
   const isSeekingRef = useRef(false);
-  // Track if we're in the middle of a recovery
   const isRecoveringRef = useRef(false);
-  
-  // CRITICAL: Store callbacks in refs so the polling interval always calls the latest version.
-  // Without this, the setInterval closure captures the initial onEnded/onTimeUpdate and
-  // they become stale after hours of idle, causing wrong-track or crash bugs.
+
+  // Refs for callbacks – avoids stale closures in event listeners
   const onEndedRef = useRef(onEnded);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
   useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
-  
+
   // Error handling
   const toast = useToast();
   const errorHandler = useErrorHandler(toast);
-  
-  // Volume state - initialVolume comes from the Zustand store (persisted)
-  const [volume, setVolumeState] = useState(initialVolume);
-  
-  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const currentTrackRef = useRef<Track | null>(null);
   const retryCountRef = useRef(0);
-  const pollErrorCountRef = useRef(0);
-  const MAX_POLL_ERRORS = 5;
 
-  // Check if audio backend is available on mount
+  // ── Store reads (for return value only – components can also read directly) ──
+  const storeIsPlaying = useStore(s => s.playing);
+  const storeProgress = useStore(s => s.progress);
+  const storeDuration = useStore(s => s.duration);
+  const storeVolume = useStore(s => s.volume);
+
+  // ── Check audio backend on mount ──────────────────────────────────
   useEffect(() => {
     const checkAudioBackend = async () => {
       try {
@@ -100,248 +83,125 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
         errorHandler.handle(err, 'Audio Backend Initialization');
       }
     };
-    
     checkAudioBackend();
   }, []);
 
-  // Update progress by polling the backend for real position
-  // Uses adaptive polling: 100ms when playing, 1000ms when paused
+  // ── Event listeners: playback-tick + track-ended ──────────────────
   useEffect(() => {
-    const pollInterval = isPlaying ? 100 : 1000; // Slower polling when paused to reduce load
-    
-    if (duration > 0) {
-      progressIntervalRef.current = setInterval(async () => {
-        // Skip polling if we're in the middle of a seek or recovery operation
-        if (isSeekingRef.current || isRecoveringRef.current) return;
-        
-        try {
-          // Get real position from Rust backend with timeout to prevent hangs
-          const position = await withTimeout(
-            TauriAPI.getPosition(),
-            2000, // 2 second timeout for polling
-            'Position polling timed out'
-          );
-          
-          // Clamp position to duration to prevent UI showing time past end of track
-          const clampedPosition = duration > 0 ? Math.min(position, duration) : position;
-          setProgress(clampedPosition);
-          
-          // Reset error count on successful poll
-          pollErrorCountRef.current = 0;
-          
-          // Use ref to always call the latest onTimeUpdate callback
-          if (onTimeUpdateRef.current) {
-            onTimeUpdateRef.current(clampedPosition);
-          }
-          
-          // Check if track finished — always check when playing, not gated
-          // behind a narrow position window. This prevents the position from
-          // drifting past the track duration when the poll timer is throttled
-          // (e.g., background window on Windows) or when the reported duration
-          // doesn't exactly match the decoded length.
-          if (isPlaying) {
-            const finished = await withTimeout(
-              TauriAPI.isFinished(),
-              2000,
-              'Finished check timed out'
-            );
-            if (finished) {
-              setIsPlaying(false);
-              setProgress(0);
-              // Use ref to always call the latest onEnded callback
-              if (onEndedRef.current) onEndedRef.current();
-              return; // Don't run health check after ending
-            }
-          }
-          
-          // Periodic health check: verify audio is actually playing when we think it is
-          // This catches the case where audio stops unexpectedly mid-track
-          if (isPlaying && clampedPosition < duration - 1) {
-            try {
-              const actuallyPlaying = await TauriAPI.isPlaying();
-              if (!actuallyPlaying) {
-                console.warn('[useAudio] Audio stopped unexpectedly at position:', clampedPosition, '/', duration);
-                // Audio stopped but we think it's playing - try to recover
-                const isFinished = await TauriAPI.isFinished();
-                if (isFinished && clampedPosition < duration - 1) {
-                  // Audio finished prematurely - this is the bug!
-                  console.error('[useAudio] Audio finished prematurely, attempting recovery...');
-                  // Reload and seek to current position
-                  const currentPath = currentTrackRef.current?.path;
-                  if (currentPath) {
-                    try {
-                      await TauriAPI.loadTrack(currentPath);
-                      await TauriAPI.seekTo(position);
-                      await TauriAPI.play();
-                      log.info('[useAudio] Recovered from premature audio stop');
-                    } catch (recoveryErr) {
-                      console.error('[useAudio] Recovery failed:', recoveryErr);
-                      setIsPlaying(false);
-                    }
-                  }
-                }
-              }
-            } catch (healthErr) {
-              // Ignore health check errors
-              log.debug('[useAudio] Health check failed:', healthErr);
-            }
-          }
-        } catch (err) {
-          console.error('Failed to get position:', err);
-          pollErrorCountRef.current++;
-          
-          // If we get too many consecutive errors, try to recover
-          if (pollErrorCountRef.current >= MAX_POLL_ERRORS) {
-            console.warn('Too many poll errors, attempting audio backend recovery...');
-            pollErrorCountRef.current = 0;
-            
-            // Prevent concurrent recovery
-            if (isRecoveringRef.current) return;
-            isRecoveringRef.current = true;
-            
-            try {
-              // Try to reinitialize the audio backend connection
-              const recovered = await withTimeout(
-                TauriAPI.recoverAudio(),
-                BACKEND_TIMEOUT_MS,
-                'Audio recovery timed out'
-              );
-              if (recovered) {
-                log.info('Audio backend recovered successfully');
-                setAudioBackendError(null);
-              } else {
-                console.error('Audio backend recovery returned false');
-                setAudioBackendError('Audio system became unresponsive. Please restart the application.');
-              }
-            } catch (recoveryErr) {
-              console.error('Audio backend recovery failed:', recoveryErr);
-              setAudioBackendError('Audio system became unresponsive. Please restart the application.');
-            } finally {
-              isRecoveringRef.current = false;
-            }
-          }
-        }
-      }, pollInterval);
-    } else {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-    }
-    
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-    };
-  }, [isPlaying, duration]);
-  // Note: onEnded and onTimeUpdate are NOT in deps - we use refs (onEndedRef, onTimeUpdateRef)
-  // so the interval always calls the latest callbacks without needing to be recreated.
-  // This prevents the polling interval from being torn down & rebuilt every time a parent
-  // re-renders, which was causing stale state after long idle periods.
+    let unlistenTick: UnlistenFn | undefined;
+    let unlistenEnded: UnlistenFn | undefined;
 
+    const setup = async () => {
+      unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
+        if (isSeekingRef.current || isRecoveringRef.current) return;
+
+        const { position, duration } = event.payload;
+        const clamped = duration > 0 ? Math.min(position, duration) : position;
+
+        // Write directly to Zustand – single source of truth
+        useStore.getState().setProgress(clamped);
+        if (duration > 0) {
+          useStore.getState().setDuration(duration);
+        }
+
+        if (onTimeUpdateRef.current) {
+          onTimeUpdateRef.current(clamped);
+        }
+      });
+
+      unlistenEnded = await TauriAPI.onEvent<null>('track-ended', () => {
+        useStore.getState().setPlaying(false);
+        useStore.getState().setProgress(0);
+        if (onEndedRef.current) onEndedRef.current();
+      });
+    };
+
+    setup();
+
+    return () => {
+      unlistenTick?.();
+      unlistenEnded?.();
+    };
+  }, []);
+
+  // ── loadTrack ─────────────────────────────────────────────────────
   const loadTrack = useCallback(async (track: Track) => {
-    // Check if audio backend is available
     if (audioBackendError) {
-      console.error('Cannot load track - audio backend unavailable:', audioBackendError);
       throw new Error('Audio system unavailable. Please restart the application.');
     }
-    
+
     let attempt = 0;
-    let lastError = null;
-    
+    let lastError: unknown = null;
+
     while (attempt <= AUDIO_RETRY_CONFIG.MAX_RETRIES) {
       try {
         setIsLoading(true);
         await TauriAPI.loadTrack(track.path);
         currentTrackRef.current = track;
-        
-        // Get real duration from backend
+
+        // Get real duration from backend and write to store
         const realDuration = await TauriAPI.getDuration();
-        setDuration(realDuration > 0 ? realDuration : track.duration || 0);
-        setProgress(0);
+        const dur = realDuration > 0 ? realDuration : track.duration || 0;
+        useStore.getState().setDuration(dur);
+        useStore.getState().setProgress(0);
+
         setIsLoading(false);
-        retryCountRef.current = 0; // Reset retry count on success
-        return; // Success!
+        retryCountRef.current = 0;
+        return;
       } catch (err) {
         lastError = err;
         attempt++;
-        
         if (attempt > AUDIO_RETRY_CONFIG.MAX_RETRIES) {
-          console.error(`Failed to load track after ${AUDIO_RETRY_CONFIG.MAX_RETRIES} retries:`, err);
           setIsLoading(false);
           retryCountRef.current = 0;
           throw new Error(`Failed to load track: ${(err as Error).message || err}`);
         }
-        
-        // Calculate exponential backoff delay
         const delay = Math.min(
           AUDIO_RETRY_CONFIG.INITIAL_DELAY_MS * Math.pow(AUDIO_RETRY_CONFIG.BACKOFF_MULTIPLIER, attempt - 1),
-          AUDIO_RETRY_CONFIG.MAX_DELAY_MS
+          AUDIO_RETRY_CONFIG.MAX_DELAY_MS,
         );
-        
         console.warn(`Load attempt ${attempt} failed, retrying in ${delay}ms...`, err);
         await sleep(delay);
       }
     }
-    
-    // Should not reach here, but just in case
+
     setIsLoading(false);
     throw lastError || new Error('Failed to load track');
   }, [audioBackendError]);
 
+  // ── play ──────────────────────────────────────────────────────────
   const play = useCallback(async () => {
-    if (audioBackendError) {
-      console.error('Cannot play - audio backend unavailable:', audioBackendError);
-      return; // Silently fail for play
-    }
-    
-    // Prevent concurrent recovery attempts
-    if (isRecoveringRef.current) {
-      log.info('Recovery already in progress, skipping play');
-      return;
-    }
-    
+    if (audioBackendError || isRecoveringRef.current) return;
+
     try {
-      // Check if audio device is available
       const deviceAvailable = await TauriAPI.isAudioDeviceAvailable();
       if (!deviceAvailable) {
         toast.showError('No audio device found. Please connect headphones or speakers.');
         setAudioBackendError('No audio device available');
         return;
       }
-      
-      // Check if audio device has changed (e.g., external DAC reconnected)
+
       const deviceChanged = await TauriAPI.hasAudioDeviceChanged();
-      
-      // Check if audio has been idle for a long time
       const inactiveDuration = await TauriAPI.getInactiveDuration();
-      
+
       if (deviceChanged) {
         log.info('Audio device changed, backend will reinitialize...');
         toast.showInfo('Audio device changed, reconnecting...', 2000);
       } else if (inactiveDuration > LONG_IDLE_THRESHOLD_SECONDS) {
-        log.info(`Audio has been idle for ${Math.round(inactiveDuration / 60)} minutes, backend will reinitialize...`);
+        log.info(`Audio idle for ${Math.round(inactiveDuration / 60)} min, reinitializing...`);
         toast.showInfo('Resuming playback...', 2000);
       }
-      
+
       await TauriAPI.play();
-      setIsPlaying(true);
-      setAudioBackendError(null); // Clear any previous error
+      setAudioBackendError(null);
     } catch (err) {
       console.error('Failed to play:', err);
-      
-      // If play fails, try explicit recovery
       try {
-        log.info('Play failed, attempting explicit recovery...');
         isRecoveringRef.current = true;
         toast.showWarning('Reinitializing audio system...');
-        
         const recovered = await TauriAPI.recoverAudio();
         if (recovered) {
-          log.info('Recovery successful, retrying play...');
           await TauriAPI.play();
-          setIsPlaying(true);
           setAudioBackendError(null);
           toast.showSuccess('Audio resumed');
         } else {
@@ -351,94 +211,77 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
         console.error('Recovery failed:', recoveryErr);
         setAudioBackendError('Audio system unresponsive. Please restart the application.');
         toast.showError('Audio system error. Please restart the app.');
+        useStore.getState().setPlaying(false);
       } finally {
         isRecoveringRef.current = false;
       }
     }
   }, [audioBackendError, toast]);
 
+  // ── pause ─────────────────────────────────────────────────────────
   const pause = useCallback(async () => {
     if (audioBackendError) return;
-    
     try {
-      log.info('Calling pause_audio command');
       await TauriAPI.pause();
-      log.info('Pause command completed, setting isPlaying to false');
-      setIsPlaying(false);
     } catch (err) {
       console.error('Failed to pause:', err);
       throw err;
     }
   }, [audioBackendError]);
 
+  // ── stop ──────────────────────────────────────────────────────────
   const stop = useCallback(async () => {
-    if (audioBackendError) return; // Silently fail
-    
+    if (audioBackendError) return;
     try {
       await TauriAPI.stop();
-      setIsPlaying(false);
-      setProgress(0);
+      useStore.getState().setProgress(0);
     } catch (err) {
       console.error('Failed to stop:', err);
       throw err;
     }
   }, [audioBackendError]);
 
+  // ── changeVolume ──────────────────────────────────────────────────
   const changeVolume = useCallback(async (newVolume: number) => {
     if (audioBackendError) {
-      errorHandler.logOnly('Cannot change volume - audio backend unavailable', 'Audio Volume');
+      errorHandler.logOnly('Cannot change volume – audio backend unavailable', 'Audio Volume');
       return;
     }
-    
     try {
-      const clampedVolume = Math.max(0, Math.min(1, newVolume));
-      await TauriAPI.setVolume(clampedVolume);
-      setVolumeState(clampedVolume);
+      const clamped = Math.max(0, Math.min(1, newVolume));
+      await TauriAPI.setVolume(clamped);
+      // Volume state lives in the store (set by callers, e.g. usePlayer)
     } catch (err) {
       errorHandler.handle(err, 'Audio Volume');
       throw err;
     }
   }, [audioBackendError, errorHandler]);
 
+  // ── seek ──────────────────────────────────────────────────────────
   const seek = useCallback(async (position: number) => {
-    if (audioBackendError) return; // Silently fail
-    if (isRecoveringRef.current) return; // Don't seek during recovery
-    
-    // Set seeking flag to pause polling
+    if (audioBackendError || isRecoveringRef.current) return;
+
     isSeekingRef.current = true;
-    
     try {
-      // Check for long idle - if so, the Rust play() function will handle reinit
-      // but we should warn the user that seek might fail until they press play
-      const inactiveDuration = await TauriAPI.getInactiveDuration();
-      if (inactiveDuration > LONG_IDLE_THRESHOLD_SECONDS) {
-        console.warn('Seeking while audio is idle for a long time - may need to press play first');
-      }
-      
       await TauriAPI.seekTo(position);
-      // Update UI after successful seek to ensure we show the correct position
-      setProgress(position);
+      useStore.getState().setProgress(position);
     } catch (err) {
       console.error('Failed to seek:', err);
-      
-      // If seek fails due to stale audio, inform the user
       if (String(err).includes('No file loaded') || String(err).includes('error')) {
         toast.showWarning('Press play to resume playback');
       }
     } finally {
-      // Small delay before resuming polling to ensure backend has updated
-      setTimeout(() => {
-        isSeekingRef.current = false;
-      }, 50);
+      setTimeout(() => { isSeekingRef.current = false; }, 50);
     }
   }, [audioBackendError, toast]);
 
+  // ── Return AudioService – reads from store ────────────────────────
   return {
-    isPlaying,
+    isPlaying: storeIsPlaying,
     isLoading,
-    progress,
-    duration,
-    volume: volume,
+    progress: storeProgress,
+    duration: storeDuration,
+    volume: storeVolume,
     audioBackendError,
     loadTrack,
     play,

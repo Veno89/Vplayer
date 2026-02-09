@@ -8,6 +8,10 @@ use lofty::TaggedFileExt;
 use tauri::{Window, Emitter};
 use crate::database::Database;
 
+/// Standard SELECT column list for Track::from_row.
+/// Every query that uses Track::from_row MUST select exactly these columns in this order.
+pub const TRACK_SELECT_COLUMNS: &str = "id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, rating, play_count, last_played";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: String,
@@ -16,15 +20,26 @@ pub struct Track {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<i32>,
+    pub track_number: Option<i32>,
+    pub disc_number: Option<i32>,
     pub duration: f64,
     pub date_added: i64,
     #[serde(default)]
     pub rating: i32,
+    #[serde(default)]
+    pub play_count: i32,
+    #[serde(default)]
+    pub last_played: i64,
 }
 
 impl Track {
     /// Build a Track from a rusqlite Row.
-    /// Expected column order: id, path, name, title, artist, album, duration, date_added, rating
+    /// Expected column order matches TRACK_SELECT_COLUMNS:
+    ///   id(0), path(1), name(2), title(3), artist(4), album(5),
+    ///   genre(6), year(7), track_number(8), disc_number(9),
+    ///   duration(10), date_added(11), rating(12), play_count(13), last_played(14)
     pub fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get(0)?,
@@ -33,9 +48,15 @@ impl Track {
             title: row.get(3)?,
             artist: row.get(4)?,
             album: row.get(5)?,
-            duration: row.get(6)?,
-            date_added: row.get(7)?,
-            rating: row.get(8)?,
+            genre: row.get(6)?,
+            year: row.get(7)?,
+            track_number: row.get(8)?,
+            disc_number: row.get(9)?,
+            duration: row.get(10)?,
+            date_added: row.get(11)?,
+            rating: row.get(12).unwrap_or(0),
+            play_count: row.get(13).unwrap_or(0),
+            last_played: row.get(14).unwrap_or(0),
         })
     }
 }
@@ -225,6 +246,10 @@ impl Scanner {
         let title = tags.and_then(|t| t.title().map(|s| s.to_string()));
         let artist = tags.and_then(|t| t.artist().map(|s| s.to_string()));
         let album = tags.and_then(|t| t.album().map(|s| s.to_string()));
+        let genre = tags.and_then(|t| t.genre().map(|s| s.to_string()));
+        let year = tags.and_then(|t| t.year()).map(|y| y as i32);
+        let track_number = tags.and_then(|t| t.track()).map(|n| n as i32);
+        let disc_number = tags.and_then(|t| t.disk()).map(|n| n as i32);
         
         let duration = tagged_file.properties().duration().as_secs_f64();
         
@@ -248,9 +273,15 @@ impl Scanner {
             title,
             artist,
             album,
+            genre,
+            year,
+            track_number,
+            disc_number,
             duration,
             date_added: now,
             rating: 0,
+            play_count: 0,
+            last_played: 0,
         })
     }
     

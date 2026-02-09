@@ -6,7 +6,10 @@ import { invoke } from '@tauri-apps/api/core';
  * usePlaybackEffects test suite
  *
  * Tests the side-effect hook that synchronizes the audio engine with the
- * Zustand store (duration, progress, play/pause translation, A-B repeat, play count).
+ * Zustand store (play/pause translation, A-B repeat, position save, play count).
+ *
+ * After #1 + #4, duration/progress sync is handled by Rust events in useAudio.
+ * This hook no longer syncs audio.duration or audio.progress → store.
  *
  * Strategy: we mock `useStore` to return controllable values and spy on
  * store setters / TauriAPI calls.
@@ -97,45 +100,16 @@ describe('usePlaybackEffects', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Duration sync
+  // Duration & progress sync — REMOVED (#1 + #4)
+  // Duration and progress are now written to the store by Rust events
+  // in useAudio, not by usePlaybackEffects.
   // -------------------------------------------------------------------------
-  it('should sync audio.duration to store', () => {
-    audioMock.duration = 300;
-
-    renderHook(() =>
-      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
-    );
-
-    expect(storeMock.setDuration).toHaveBeenCalledWith(300);
-  });
-
-  it('should update store duration when audio.duration changes', () => {
-    audioMock.duration = 100;
-    const { rerender } = renderHook(() =>
-      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
-    );
-
-    audioMock.duration = 250;
-    rerender();
-
-    expect(storeMock.setDuration).toHaveBeenCalledWith(250);
-  });
 
   // -------------------------------------------------------------------------
-  // Progress sync
+  // Position save (reads from store progress, not audio.progress)
   // -------------------------------------------------------------------------
-  it('should sync audio.progress to store', () => {
-    audioMock.progress = 42;
-
-    renderHook(() =>
-      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
-    );
-
-    expect(storeMock.setProgress).toHaveBeenCalledWith(42);
-  });
-
   it('should save last position every 5 seconds', () => {
-    audioMock.progress = 10; // 10 % 5 === 0, so it should trigger
+    storeMock.progress = 10; // 10 % 5 === 0, so it should trigger
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
@@ -145,11 +119,11 @@ describe('usePlaybackEffects', () => {
   });
 
   // -------------------------------------------------------------------------
-  // A-B Repeat
+  // A-B Repeat (reads from store progress, not audio.progress)
   // -------------------------------------------------------------------------
   it('should seek to point A when progress passes point B', () => {
     storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
-    audioMock.progress = 31; // past point B
+    storeMock.progress = 31; // past point B
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
@@ -160,7 +134,7 @@ describe('usePlaybackEffects', () => {
 
   it('should not seek when A-B repeat is disabled', () => {
     storeMock.abRepeat = { enabled: false, pointA: 10, pointB: 30 };
-    audioMock.progress = 31;
+    storeMock.progress = 31;
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
@@ -171,7 +145,7 @@ describe('usePlaybackEffects', () => {
 
   it('should not seek when within A-B range', () => {
     storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
-    audioMock.progress = 20;
+    storeMock.progress = 20;
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),

@@ -3,6 +3,23 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.12] - 2026-02-09
+
+### Architecture Refactors (6 High-Effort Items)
+
+- **#7 — Decompose AudioPlayer God Object**: Split monolithic `AudioPlayer` (18 `Arc<Mutex<>>` fields) into 5 focused structs: `PlaybackState`, `PreloadManager`, `VolumeManager`, `DeviceState` + thin coordinator `mod.rs`. Each sub-struct owns its own Mutex, reducing per-operation lock contention from 2–5 to 1–2.
+- **#13 — Audit/Resolve unsafe Send/Sync**: Replaced blanket `unsafe impl Send/Sync for AudioPlayer` with targeted `SendOutputStream` newtype wrapper in `device.rs` — only the `OutputStream` (which is `!Send` due to cpal) needs the unsafe wrapper. Safety invariant documented: held behind Mutex, never moved between threads.
+- **#2 — Align Rust/TS Track Types**: Added `genre`, `year`, `track_number`, `disc_number`, `play_count`, `last_played` fields to Rust `Track` struct. DB migration v6 adds columns. All 7+ SELECT queries updated to use `TRACK_SELECT_COLUMNS` constant. Metadata extracted via lofty `Accessor` trait.
+- **#4 — Event-Driven Position Updates**: Replaced 100ms IPC polling (10 round-trips/sec) with Rust background thread emitting `playback-tick` and `track-ended` events. Frontend simply listens via `TauriAPI.onEvent()` — zero polling overhead.
+- **#1 — Unify Audio State to Zustand**: Rewrote `useAudio.ts` (~200 lines, down from ~350) as event-driven hook. Removed local `useState` for `isPlaying`, `progress`, `duration`, `volume` — Zustand store is now the single source of truth. Simplified `usePlaybackEffects.ts` by removing redundant duration/progress sync effects. Cleaned up `PlayerProvider.tsx` wiring.
+- **#14 — Resolve Stale Closure Patterns**: Fixed `handlePrevTrack` in `usePlayer.ts` — was recreated every 100ms tick due to `progress` in deps; now reads from store getter. Added clarifying `#14` comments to all intentional `useStore.getState()` escape hatches.
+
+### Test & Build
+- All 159 tests passing across 10 files (useAudio + usePlaybackEffects tests rewritten for event-driven architecture)
+- `tsc --noEmit`: 0 errors
+- `cargo check`: 0 errors, 0 warnings
+
+
 ## [0.9.10] - 2026-02-09
 
 ### Bug Fixes

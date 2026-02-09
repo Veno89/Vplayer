@@ -1,24 +1,35 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
-import { useAudio } from '../useAudio';
+import { listen } from '@tauri-apps/api/event';
 
 /**
- * useAudio test suite
+ * useAudio test suite — event-driven version (#1 + #4)
  *
  * Tests the core audio hook that bridges React to the Rust audio engine.
- * Covers: loadTrack, play, pause, seek, volume, error recovery, and polling.
+ * After refactoring, useAudio:
+ *  - Reads isPlaying, progress, duration, volume from the Zustand store
+ *  - Writes progress/duration via `playback-tick` event listener
+ *  - Triggers onEnded via `track-ended` event listener
+ *  - No longer polls; no local state for isPlaying/progress/duration/volume
  *
  * TauriAPI is mocked at the @tauri-apps/api/core level (via setupTests.js).
- * We override `invoke` per-test via mockImplementation.
- *
- * NOTE: We do NOT use fake timers because useAudio's internal sleep() and
- * withTimeout() depend on real setTimeout. Polling tests use short real waits.
+ * listen is mocked at @tauri-apps/api/event level.
  */
+
+// ── Mock store ─────────────────────────────────────────────────────────────
+const storeMock: Record<string, any> = {};
+
+vi.mock('../../store/useStore', () => ({
+  useStore: Object.assign(
+    (selector: (s: any) => any) => selector(storeMock),
+    { getState: () => storeMock },
+  ),
+}));
 
 // Mock AUDIO_RETRY_CONFIG to use tiny delays so retry tests don't time out
 vi.mock('../../utils/constants', async (importOriginal) => {
-  const actual = await importOriginal() as any;
+  const actual = (await importOriginal()) as any;
   return {
     ...actual,
     AUDIO_RETRY_CONFIG: {
@@ -29,6 +40,20 @@ vi.mock('../../utils/constants', async (importOriginal) => {
     },
   };
 });
+
+import { useAudio } from '../useAudio';
+
+// ── Captured event listeners ───────────────────────────────────────────────
+type ListenerMap = Record<string, ((event: any) => void)[]>;
+let listeners: ListenerMap = {};
+
+/** Helper: fire a fake Tauri event to all registered listeners for an event name */
+function fireEvent(eventName: string, payload: any) {
+  const cbs = listeners[eventName] || [];
+  for (const cb of cbs) {
+    cb({ event: eventName, id: 0, payload });
+  }
+}
 
 // Helper mock track
 const mockTrack = (overrides = {}) => ({
@@ -42,9 +67,9 @@ const mockTrack = (overrides = {}) => ({
 });
 
 /** Small real delay to let React effects / micro-tasks flush */
-const tick = (ms = 20) => new Promise(r => setTimeout(r, ms));
+const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
-/** Set up a sane default invoke mock that handles all commands useAudio needs */
+/** Set up a sane default invoke mock */
 function setDefaultMock(overrides: Record<string, any> = {}) {
   const defaults: Record<string, any> = {
     is_playing: false,
@@ -74,17 +99,44 @@ describe('useAudio', () => {
   let onTimeUpdate: (time: number) => void;
 
   beforeEach(() => {
-    // Explicit cleanup of previous render before setting up fresh mocks
     cleanup();
     vi.clearAllMocks();
-    onEnded = vi.fn<() => void>();
-    onTimeUpdate = vi.fn<(time: number) => void>();
+    listeners = {};
+
+    onEnded = vi.fn();
+    onTimeUpdate = vi.fn();
+
+    // Default store state
+    Object.assign(storeMock, {
+      playing: false,
+      progress: 0,
+      duration: 0,
+      volume: 0.7,
+      setPlaying: vi.fn(),
+      setProgress: vi.fn((p: number) => { storeMock.progress = p; }),
+      setDuration: vi.fn((d: number) => { storeMock.duration = d; }),
+    });
+
     setDefaultMock();
+
+    // Capture event listeners registered via TauriAPI.onEvent → listen()
+    vi.mocked(listen).mockImplementation((event: string, handler: any) => {
+      if (!listeners[event]) listeners[event] = [];
+      listeners[event].push(handler);
+      const unlisten = () => {
+        listeners[event] = (listeners[event] || []).filter((h) => h !== handler);
+      };
+      return Promise.resolve(unlisten);
+    });
   });
 
-  // -------------------------------------------------------------------------
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Initialization
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('initialization', () => {
     it('should check audio backend availability on mount', async () => {
       renderHook(() => useAudio({ onEnded, onTimeUpdate, initialVolume: 0.8 }));
@@ -107,7 +159,8 @@ describe('useAudio', () => {
       expect(result.current.audioBackendError).toContain('Audio system unavailable');
     });
 
-    it('should start with correct defaults', () => {
+    it('should start with correct defaults from store', () => {
+      storeMock.volume = 0.65;
       const { result } = renderHook(() =>
         useAudio({ onEnded, onTimeUpdate, initialVolume: 0.65 }),
       );
@@ -119,13 +172,21 @@ describe('useAudio', () => {
       expect(result.current.volume).toBe(0.65);
       expect(result.current.audioBackendError).toBeNull();
     });
+
+    it('should register event listeners on mount', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      expect(listen).toHaveBeenCalledWith('playback-tick', expect.any(Function));
+      expect(listen).toHaveBeenCalledWith('track-ended', expect.any(Function));
+    });
   });
 
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // loadTrack
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('loadTrack', () => {
-    it('should load a track and set duration', async () => {
+    it('should load a track and set duration in store', async () => {
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
 
       await act(async () => {
@@ -134,8 +195,8 @@ describe('useAudio', () => {
 
       expect(invoke).toHaveBeenCalledWith('load_track', { path: '/music/song.mp3' });
       expect(invoke).toHaveBeenCalledWith('get_duration', {});
-      expect(result.current.duration).toBe(200);
-      expect(result.current.progress).toBe(0);
+      expect(storeMock.setDuration).toHaveBeenCalledWith(200);
+      expect(storeMock.setProgress).toHaveBeenCalledWith(0);
       expect(result.current.isLoading).toBe(false);
     });
 
@@ -181,7 +242,7 @@ describe('useAudio', () => {
 
       expect(callCount).toBe(3);
       expect(result.current.isLoading).toBe(false);
-      expect(result.current.duration).toBe(200);
+      expect(storeMock.setDuration).toHaveBeenCalledWith(200);
     });
 
     it('should throw after max retries exhausted', async () => {
@@ -214,15 +275,15 @@ describe('useAudio', () => {
         await result.current.loadTrack(mockTrack({ duration: 180 }));
       });
 
-      expect(result.current.duration).toBe(180);
+      expect(storeMock.setDuration).toHaveBeenCalledWith(180);
     });
   });
 
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // play
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('play', () => {
-    it('should call play_audio and set isPlaying', async () => {
+    it('should call play_audio via IPC', async () => {
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
 
       await act(async () => {
@@ -231,7 +292,7 @@ describe('useAudio', () => {
 
       expect(invoke).toHaveBeenCalledWith('is_audio_device_available', {});
       expect(invoke).toHaveBeenCalledWith('play_audio', {});
-      expect(result.current.isPlaying).toBe(true);
+      // isPlaying is driven by the store, not set locally in play()
     });
 
     it('should not play when no audio device available', async () => {
@@ -243,7 +304,7 @@ describe('useAudio', () => {
         await result.current.play();
       });
 
-      expect(result.current.isPlaying).toBe(false);
+      expect(invoke).not.toHaveBeenCalledWith('play_audio', {});
     });
 
     it('should attempt recovery when play fails', async () => {
@@ -271,23 +332,20 @@ describe('useAudio', () => {
       });
 
       expect(invoke).toHaveBeenCalledWith('recover_audio', {});
-      expect(result.current.isPlaying).toBe(true);
+      // Second play_audio call after recovery
+      expect(playCallCount).toBe(2);
     });
   });
 
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // pause
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('pause', () => {
-    it('should call pause_audio and set isPlaying to false', async () => {
+    it('should call pause_audio via IPC', async () => {
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
-
-      await act(async () => { await result.current.play(); });
-      expect(result.current.isPlaying).toBe(true);
 
       await act(async () => { await result.current.pause(); });
       expect(invoke).toHaveBeenCalledWith('pause_audio', {});
-      expect(result.current.isPlaying).toBe(false);
     });
 
     it('should silently return when backend is in error state', async () => {
@@ -301,37 +359,36 @@ describe('useAudio', () => {
 
       // Backend error set — pause should not throw
       await act(async () => { await result.current.pause(); });
+      // pause_audio should NOT have been called because backend is in error state
+      expect(invoke).not.toHaveBeenCalledWith('pause_audio', {});
     });
   });
 
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // stop
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('stop', () => {
-    it('should call stop_audio and reset state', async () => {
+    it('should call stop_audio and reset progress in store', async () => {
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
 
-      await act(async () => { await result.current.play(); });
       await act(async () => { await result.current.stop(); });
 
       expect(invoke).toHaveBeenCalledWith('stop_audio', {});
-      expect(result.current.isPlaying).toBe(false);
-      expect(result.current.progress).toBe(0);
+      expect(storeMock.setProgress).toHaveBeenCalledWith(0);
     });
   });
 
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // changeVolume
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('changeVolume', () => {
-    it('should set volume and call set_volume', async () => {
+    it('should call set_volume with clamped value', async () => {
       const { result } = renderHook(() =>
         useAudio({ onEnded, onTimeUpdate, initialVolume: 0.5 }),
       );
 
       await act(async () => { await result.current.changeVolume(0.9); });
       expect(invoke).toHaveBeenCalledWith('set_volume', { volume: 0.9 });
-      expect(result.current.volume).toBe(0.9);
     });
 
     it('should clamp volume below 0 to 0', async () => {
@@ -339,7 +396,6 @@ describe('useAudio', () => {
 
       await act(async () => { await result.current.changeVolume(-0.5); });
       expect(invoke).toHaveBeenCalledWith('set_volume', { volume: 0 });
-      expect(result.current.volume).toBe(0);
     });
 
     it('should clamp volume above 1 to 1', async () => {
@@ -347,20 +403,19 @@ describe('useAudio', () => {
 
       await act(async () => { await result.current.changeVolume(1.5); });
       expect(invoke).toHaveBeenCalledWith('set_volume', { volume: 1 });
-      expect(result.current.volume).toBe(1);
     });
   });
 
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   // seek
-  // -------------------------------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────────────
   describe('seek', () => {
-    it('should call seek_to and update progress', async () => {
+    it('should call seek_to and update progress in store', async () => {
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
 
       await act(async () => { await result.current.seek(60); });
       expect(invoke).toHaveBeenCalledWith('seek_to', { position: 60 });
-      expect(result.current.progress).toBe(60);
+      expect(storeMock.setProgress).toHaveBeenCalledWith(60);
     });
 
     it('should silently return when backend is in error state', async () => {
@@ -377,64 +432,71 @@ describe('useAudio', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Polling (progress tracking) — uses real timers with short waits
-  // -------------------------------------------------------------------------
-  describe('polling', () => {
-    it('should poll position when duration > 0 and call onTimeUpdate', async () => {
-      let positionCalls = 0;
-      vi.mocked(invoke).mockImplementation((cmd: string) => {
-        if (cmd === 'get_position') { positionCalls++; return Promise.resolve(42.5); }
-        if (cmd === 'is_finished') return Promise.resolve(false);
-        const defaults: Record<string, any> = {
-          is_playing: false,
-          get_duration: 200,
-          is_audio_device_available: true,
-          has_audio_device_changed: false,
-          get_inactive_duration: 0,
-        };
-        return Promise.resolve(defaults[cmd] ?? undefined);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Event-driven updates (replaces old polling tests)
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('event listeners', () => {
+    it('should update store progress/duration on playback-tick event', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      // Fire a fake playback-tick event
+      act(() => {
+        fireEvent('playback-tick', {
+          position: 42.5,
+          duration: 200,
+          isPlaying: true,
+          isFinished: false,
+        });
       });
 
-      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
-
-      // Load a track (sets duration > 0 → paused poll at 1000ms)
-      await act(async () => { await result.current.loadTrack(mockTrack()); });
-
-      // Wait for at least one poll cycle (paused = 1000ms)
-      await act(async () => { await tick(1200); });
-
-      expect(positionCalls).toBeGreaterThan(0);
-      expect(result.current.progress).toBe(42.5);
-      expect(onTimeUpdate).toHaveBeenCalledWith(42.5);
+      expect(storeMock.setProgress).toHaveBeenCalledWith(42.5);
+      expect(storeMock.setDuration).toHaveBeenCalledWith(200);
     });
 
-    it('should call onEnded when track finishes while playing', async () => {
-      vi.mocked(invoke).mockImplementation((cmd: string) => {
-        if (cmd === 'get_position') return Promise.resolve(199.95);
-        if (cmd === 'is_finished') return Promise.resolve(true);
-        const defaults: Record<string, any> = {
-          is_playing: true,
-          get_duration: 200,
-          is_audio_device_available: true,
-          has_audio_device_changed: false,
-          get_inactive_duration: 0,
-          load_track: undefined,
-          play_audio: undefined,
-        };
-        return Promise.resolve(defaults[cmd] ?? undefined);
+    it('should call onTimeUpdate callback on playback-tick', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      act(() => {
+        fireEvent('playback-tick', {
+          position: 15.3,
+          duration: 200,
+          isPlaying: true,
+          isFinished: false,
+        });
       });
 
-      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      expect(onTimeUpdate).toHaveBeenCalledWith(15.3);
+    });
 
-      await act(async () => { await result.current.loadTrack(mockTrack()); });
-      await act(async () => { await result.current.play(); });
+    it('should clamp position to duration', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
 
-      // Playing = 100ms poll interval
-      await act(async () => { await tick(300); });
+      act(() => {
+        fireEvent('playback-tick', {
+          position: 205,
+          duration: 200,
+          isPlaying: true,
+          isFinished: false,
+        });
+      });
+
+      expect(storeMock.setProgress).toHaveBeenCalledWith(200);
+    });
+
+    it('should call onEnded and reset state on track-ended event', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      act(() => {
+        fireEvent('track-ended', null);
+      });
 
       expect(onEnded).toHaveBeenCalled();
-      expect(result.current.isPlaying).toBe(false);
+      expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
+      expect(storeMock.setProgress).toHaveBeenCalledWith(0);
     });
   });
 });

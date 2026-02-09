@@ -75,9 +75,12 @@ export function usePlayer({
     }, []);
 
     /**
-     * Calculate the next track index based on playback mode
-     * Prioritizes queue over shuffle/normal playback
-     * Uses fresh store state via storeGetter to avoid stale closures
+     * Calculate the next track index based on playback mode.
+     * Prioritizes queue over shuffle/normal playback.
+     *
+     * Uses `storeGetter()` to read fresh state — intentional Zustand
+     * escape hatch pattern (#14). Without this, the callback would close
+     * over stale `shuffle`, `repeatMode`, etc. from the render cycle.
      */
     const getNextTrackIndex = useCallback((
         current: number,
@@ -198,10 +201,12 @@ export function usePlayer({
     }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, getNextTrackIndex]);
 
     /**
-     * Skip to the next track
-     * Respects shuffle and repeat modes
-     * Cancels any active crossfade
-     * Uses refs to always read fresh state
+     * Skip to the next track.
+     * Respects shuffle and repeat modes.
+     * Cancels any active crossfade.
+     *
+     * Reads all playback state from `storeGetter()` — intentional Zustand
+     * escape hatch so the callback identity stays stable (#14).
      */
     const handleNextTrack = useCallback(() => {
         const store = storeGetter ? storeGetter() : null;
@@ -230,10 +235,13 @@ export function usePlayer({
     }, [setCurrentTrack, crossfade, audio, getNextTrackIndex]);
 
     /**
-     * Go to previous track or restart current track
-     * If progress > threshold (3s), restarts current track
-     * Otherwise goes to previous track
-     * Uses refs to always read fresh state
+     * Go to previous track or restart current track.
+     * If progress > threshold (3s), restarts current track.
+     * Otherwise goes to previous track.
+     *
+     * All playback state is read via `storeGetter()` — intentional Zustand
+     * escape hatch so the callback identity stays stable and doesn't
+     * recreate every 100 ms tick (#14).
      */
     const handlePrevTrack = useCallback(() => {
         const store = storeGetter ? storeGetter() : null;
@@ -248,7 +256,11 @@ export function usePlayer({
             crossfadeInProgressRef.current = false;
         }
 
-        if (progress > SEEK_THRESHOLD_SECONDS) {
+        // Read progress from store to avoid depending on the `progress` prop
+        // (which changes every tick and would force this callback to recreate).
+        const currentProgress = store?.progress ?? progress;
+
+        if (currentProgress > SEEK_THRESHOLD_SECONDS) {
             audio.seek(0).catch(err => {
                 console.error('Failed to seek:', err);
                 toast.showError('Failed to seek to beginning');
@@ -256,7 +268,7 @@ export function usePlayer({
             return;
         }
 
-        // Read fresh values from store
+        // Read fresh values from store — intentional Zustand escape hatch
         const currentShuffle = store?.shuffle ?? shuffle;
         const currentRepeatMode = store?.repeatMode ?? repeatMode;
         const currentTrackIdx = store?.currentTrack ?? currentTrack ?? 0;
@@ -277,7 +289,7 @@ export function usePlayer({
         }
         nextTrackPreloadedRef.current = false;
         crossfadeStartedRef.current = false;
-    }, [progress, audio, setCurrentTrack, toast, crossfade]);
+    }, [audio, setCurrentTrack, toast, crossfade]);
 
     /**
      * Seek to a position in the current track

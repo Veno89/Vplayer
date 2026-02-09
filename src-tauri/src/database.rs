@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CACHE_TTL_SECS: u64 = 300; // 5 minutes
 
 /// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 #[derive(Clone)]
 struct CachedQuery {
@@ -64,7 +64,11 @@ impl Database {
                 album_art BLOB,
                 track_gain REAL,
                 track_peak REAL,
-                loudness REAL
+                loudness REAL,
+                genre TEXT,
+                year INTEGER,
+                track_number INTEGER,
+                disc_number INTEGER
             )",
             [],
         )?;
@@ -183,6 +187,15 @@ impl Database {
             info!("Migration v5 complete: track_gain, track_peak, loudness columns");
         }
         
+        // Migration v6: Add genre, year, track_number, disc_number columns
+        if current_version < 6 {
+            Self::migrate_add_column(conn, "tracks", "genre", "TEXT", 6)?;
+            Self::migrate_add_column(conn, "tracks", "year", "INTEGER", 6)?;
+            Self::migrate_add_column(conn, "tracks", "track_number", "INTEGER", 6)?;
+            Self::migrate_add_column(conn, "tracks", "disc_number", "INTEGER", 6)?;
+            info!("Migration v6 complete: genre, year, track_number, disc_number columns");
+        }
+        
         // Update stored schema version
         conn.execute("DELETE FROM schema_version", [])?;
         conn.execute(
@@ -225,6 +238,7 @@ impl Database {
     /// Create performance indexes (idempotent via IF NOT EXISTS).
     fn create_indexes(conn: &Connection) {
         let indexes = [
+            ("idx_tracks_genre", "tracks(genre)"),
             ("idx_tracks_artist", "tracks(artist)"),
             ("idx_tracks_album", "tracks(album)"),
             ("idx_tracks_rating", "tracks(rating)"),
@@ -275,8 +289,8 @@ impl Database {
         self.invalidate_cache();
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, duration, date_added, play_count, last_played, rating)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
+            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
             params![
                 track.id,
                 track.path,
@@ -284,6 +298,10 @@ impl Database {
                 track.title,
                 track.artist,
                 track.album,
+                track.genre,
+                track.year,
+                track.track_number,
+                track.disc_number,
                 track.duration,
                 track.date_added,
             ],
@@ -302,7 +320,7 @@ impl Database {
         info!("Fetching all tracks from database");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, title, artist, album, duration, date_added, rating FROM tracks"
+            &format!("SELECT {} FROM tracks", crate::scanner::TRACK_SELECT_COLUMNS)
         )?;
         
         let tracks = stmt.query_map([], Track::from_row)?
@@ -314,7 +332,7 @@ impl Database {
 
     pub fn get_filtered_tracks(&self, filter: TrackFilter) -> Result<Vec<Track>> {
         // Build SQL query dynamically
-        let mut sql = "SELECT id, path, name, title, artist, album, duration, date_added, rating FROM tracks WHERE 1=1".to_string();
+        let mut sql = format!("SELECT {} FROM tracks WHERE 1=1", crate::scanner::TRACK_SELECT_COLUMNS);
         let mut params_values: Vec<Box<dyn ToSql>> = Vec::new();
 
         if let Some(query) = &filter.search_query {
@@ -337,17 +355,9 @@ impl Database {
             params_values.push(Box::new(album.clone()));
         }
 
-        if let Some(_genre) = &filter.genre {
-            // Note: genre is not in main table yet unless migrated? 
-            // Update: We saw update_track_tags supports genre but table migration in line 60-70 didn't explicitly add genre column?
-            // checking lines 28-40 again.
-            // tracks table: id, path, name, title, artist, album, duration, date_added, play_count, last_played, rating, file_modified, album_art, track_gain...
-            // No genre column in CREATE TABLE or ALTERs visible in snippet 1-200.
-            // Wait, update_track_tags (scanner.rs or commands.rs) saves genre to file, and update_track_metadata only updates title, artist, album.
-            // So genre filtering might not be supported in DB yet!
-            // I will SKIP genre filtering in DB for now to avoid SQL error, 
-            // OR I should check update_track_metadata implementation in database.rs to see if it supports genre.
-            // Assuming NO genre column for now based on snippet.
+        if let Some(genre) = &filter.genre {
+            sql.push_str(" AND genre = ?");
+            params_values.push(Box::new(genre.clone()));
         }
 
         // Additional filters
@@ -456,11 +466,8 @@ impl Database {
     pub fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, title, artist, album, duration, date_added, rating 
-             FROM tracks 
-             WHERE last_played > 0 
-             ORDER BY last_played DESC 
-             LIMIT ?1"
+            &format!("{} FROM tracks WHERE last_played > 0 ORDER BY last_played DESC LIMIT ?1",
+                format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS))
         )?;
         
         let tracks = stmt.query_map(params![limit], Track::from_row)?
@@ -472,11 +479,8 @@ impl Database {
     pub fn get_most_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, title, artist, album, duration, date_added, rating 
-             FROM tracks 
-             WHERE play_count > 0 
-             ORDER BY play_count DESC 
-             LIMIT ?1"
+            &format!("{} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
+                format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS))
         )?;
         
         let tracks = stmt.query_map(params![limit], Track::from_row)?
@@ -691,7 +695,7 @@ impl Database {
     pub fn get_playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.duration, t.date_added, t.rating
+            "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played
              FROM tracks t
              INNER JOIN playlist_tracks pt ON t.id = pt.track_id
              WHERE pt.playlist_id = ?1
@@ -791,7 +795,7 @@ impl Database {
     pub fn get_track_by_path(&self, path: &str) -> Result<Option<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, title, artist, album, duration, date_added, rating FROM tracks WHERE path = ?1"
+            &format!("SELECT {} FROM tracks WHERE path = ?1", crate::scanner::TRACK_SELECT_COLUMNS)
         )?;
         
         let mut rows = stmt.query(params![path])?;
@@ -836,10 +840,8 @@ impl Database {
         let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
 
         let mut track_stmt = conn.prepare(
-            "SELECT id, path, name, title, artist, album, duration, date_added, rating
-             FROM tracks
-             WHERE title = ?1 AND artist = ?2 AND album = ?3
-             ORDER BY duration"
+            &format!("SELECT {} FROM tracks WHERE title = ?1 AND artist = ?2 AND album = ?3 ORDER BY duration",
+                crate::scanner::TRACK_SELECT_COLUMNS)
         )?;
 
         for (title, artist, album) in &dup_keys {
@@ -912,8 +914,8 @@ impl Database {
     pub fn add_track_with_mtime(&self, track: &Track, file_modified: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, duration, date_added, play_count, last_played, rating, file_modified)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?9)",
+            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?13)",
             params![
                 track.id,
                 track.path,
@@ -921,6 +923,10 @@ impl Database {
                 track.title,
                 track.artist,
                 track.album,
+                track.genre,
+                track.year,
+                track.track_number,
+                track.disc_number,
                 track.duration,
                 track.date_added,
                 file_modified,

@@ -93,8 +93,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const currentTrack = useStore(s => s.currentTrack);
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const setPlaying = useStore(s => s.setPlaying);
-  const setProgress = useStore(s => s.setProgress);
-  const setDuration = useStore(s => s.setDuration);
   const volume = useStore(s => s.volume);
   const setVolume = useStore(s => s.setVolume);
   const shuffle = useStore(s => s.shuffle);
@@ -137,9 +135,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         useStore.getState().setPlaying(false);
       }
     },
-    onTimeUpdate: (time) => {
-      setProgress(time);
-    },
   });
 
   // ── Crossfade ─────────────────────────────────────────────────────
@@ -166,7 +161,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     tracks: playbackTracks,
     currentTrack,
     playing,
-    setDuration,
     setLoadingTrackIndex,
     progress,
     toast,

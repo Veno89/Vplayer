@@ -9,8 +9,66 @@ use rodio::cpal::SampleFormat;
 use rodio::mixer::Mixer;
 use log::{info, warn};
 use std::sync::Arc;
+use std::time::Instant;
 use serde::Serialize;
 use crate::error::{AppError, AppResult};
+
+// ---------------------------------------------------------------------------
+// SendOutputStream — targeted Send wrapper for OutputStream
+// ---------------------------------------------------------------------------
+
+/// Newtype wrapper to safely mark OutputStream as Send.
+///
+/// # Safety
+/// AudioPlayer holds OutputStream behind a Mutex for exclusive access.
+/// It lives in Tauri managed state and is never moved between threads.
+/// The OutputStream only keeps the audio device connection alive;
+/// no cross-thread method calls are made on it.
+#[allow(dead_code)]
+pub(crate) struct SendOutputStream(pub OutputStream);
+
+// SAFETY: see doc-comment above.
+unsafe impl Send for SendOutputStream {}
+
+// ---------------------------------------------------------------------------
+// DeviceState — groups all audio-output resources
+// ---------------------------------------------------------------------------
+
+/// Holds the audio output resources (stream, mixer, device info).
+///
+/// The OutputStream keeps the audio device alive — dropping it stops all audio.
+pub struct DeviceState {
+    pub stream: Option<SendOutputStream>,
+    pub mixer: Option<Arc<Mixer>>,
+    pub connected_device_name: Option<String>,
+    pub last_active: Instant,
+}
+
+impl DeviceState {
+    pub fn new(stream: OutputStream, mixer: Arc<Mixer>, device_name: Option<String>) -> Self {
+        Self {
+            stream: Some(SendOutputStream(stream)),
+            mixer: Some(mixer),
+            connected_device_name: device_name,
+            last_active: Instant::now(),
+        }
+    }
+
+    pub fn update_active(&mut self) {
+        self.last_active = Instant::now();
+    }
+
+    pub fn replace(&mut self, stream: OutputStream, mixer: Arc<Mixer>, device_name: Option<String>) {
+        self.stream = Some(SendOutputStream(stream));
+        self.mixer = Some(mixer);
+        self.connected_device_name = device_name;
+        self.last_active = Instant::now();
+    }
+
+    pub fn has_device_changed(&self) -> bool {
+        has_device_changed(&self.connected_device_name)
+    }
+}
 
 /// Audio device information
 #[derive(Debug, Clone, Serialize)]

@@ -23,10 +23,22 @@ use database::Database;
 use watcher::FolderWatcher;
 use visualizer::Visualizer;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{Manager, Emitter};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::menu::{Menu, MenuItem};
 use log::info;
+use serde::Serialize;
+
+/// Payload emitted every ~100 ms while a track is loaded.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PlaybackTick {
+    position: f64,
+    duration: f64,
+    is_playing: bool,
+    is_finished: bool,
+}
 
 // Re-export commands for use in invoke_handler
 use commands::{
@@ -85,9 +97,11 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             info!("Initializing VPlayer application");
-            // Initialize audio player
-            let player = AudioPlayer::new()
-                .map_err(|e| format!("Failed to initialize audio player: {}", e))?;
+            let player = Arc::new(AudioPlayer::new()
+                .map_err(|e| format!("Failed to initialize audio player: {}", e))?);
+            
+            // Keep a clone for the position-broadcast thread
+            let player_for_broadcast = player.clone();
             
             // Initialize database
             let app_data_dir = app.path().app_data_dir()
@@ -108,10 +122,42 @@ fn main() {
             let visualizer = Visualizer::new(44100, 64);
             
             app.manage(AppState {
-                player: Arc::new(player),
+                player: player.clone(),
                 db: Arc::new(db),
                 watcher: Arc::new(Mutex::new(watcher)),
                 visualizer: Arc::new(Mutex::new(visualizer)),
+            });
+            
+            // ── Position-broadcast thread (#4) ──────────────────────────
+            // Emits `playback-tick` every ~100 ms while playing, and
+            // `track-ended` when the sink empties after playback.
+            let broadcast_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut was_playing = false;
+                loop {
+                    std::thread::sleep(Duration::from_millis(100));
+                    
+                    let is_playing = player_for_broadcast.is_playing();
+                    let is_finished = player_for_broadcast.is_finished();
+                    
+                    // Emit tick while playing (position updates)
+                    if is_playing {
+                        let tick = PlaybackTick {
+                            position: player_for_broadcast.get_position(),
+                            duration: player_for_broadcast.get_duration(),
+                            is_playing: true,
+                            is_finished: false,
+                        };
+                        let _ = broadcast_handle.emit("playback-tick", tick);
+                    }
+                    
+                    // Detect track-end transition: was playing → now finished
+                    if was_playing && !is_playing && is_finished {
+                        let _ = broadcast_handle.emit("track-ended", ());
+                    }
+                    
+                    was_playing = is_playing;
+                }
             });
             
             // Register global shortcuts

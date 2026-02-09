@@ -10,7 +10,6 @@ export interface TrackLoadingParams {
   tracks: Track[];
   currentTrack: number | null;
   playing: boolean;
-  setDuration: (d: number) => void;
   setLoadingTrackIndex: (i: number | null) => void;
   progress: number;
   toast: ToastService;
@@ -30,7 +29,6 @@ export function useTrackLoading({
   tracks,
   currentTrack,
   playing,
-  setDuration,
   setLoadingTrackIndex,
   progress,
   toast,
@@ -63,8 +61,10 @@ export function useTrackLoading({
   // Load track when currentTrack changes
   useEffect(() => {
     const loadTrack = async () => {
-      // CRITICAL FIX: Get fresh tracks from store to avoid React render race conditions
-      // When clicking a playlist track, store updates immediately but props might be stale
+      // CRITICAL FIX: Get fresh tracks from store to avoid React render race conditions.
+      // When clicking a playlist track, store updates immediately but props might be stale.
+      // Using useStore.getState() here is an intentional Zustand escape hatch (#14) —
+      // async callbacks must read current state, not stale closure values.
       const state = useStore.getState();
       const activeTracks = state.activePlaybackTracks;
 
@@ -114,7 +114,7 @@ export function useTrackLoading({
           await audio.loadTrack(track);
           setLoadedTrackId(track.id);
           setLoadingTrackIndex(null);
-          setDuration(track.duration || 0);
+          // Duration is set by useAudio.loadTrack via Zustand store
 
           // Apply ReplayGain if enabled
           await replayGain.applyReplayGain(track);

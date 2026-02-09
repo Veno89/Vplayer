@@ -10,27 +10,27 @@ interface PlaybackEffectsParams {
 }
 
 /**
- * Encapsulates all side-effects that sync the audio engine with the Zustand
- * store.  Extracted from PlayerProvider to follow Single Responsibility.
+ * Encapsulates side-effects that sync the audio engine with the Zustand store.
+ * Extracted from PlayerProvider to follow Single Responsibility.
  *
- * Responsibilities:
+ * After #1 + #4, position/duration sync is handled by Rust events in useAudio.
+ * This hook now only handles:
  *  - Set initial volume on mount
- *  - Sync audio.duration → store
- *  - Sync audio.progress → store + save position + A-B repeat looping
  *  - Translate store `playing` intent → audio.play() / audio.pause()
+ *  - A-B repeat looping
+ *  - Save position periodically
  *  - Increment play count when a track starts playing
  */
 export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsParams): void {
   const prevPlayingRef = useRef<boolean | null>(null);
 
-  // Read reactive values from store
+  // Store selectors
   const playing = useStore(s => s.playing);
   const setPlaying = useStore(s => s.setPlaying);
-  const setProgress = useStore(s => s.setProgress);
-  const setDuration = useStore(s => s.setDuration);
   const currentTrack = useStore(s => s.currentTrack);
   const abRepeat = useStore(s => s.abRepeat);
   const volume = useStore(s => s.volume);
+  const progress = useStore(s => s.progress);
 
   // ── Set initial volume on mount ───────────────────────────────────
   useEffect(() => {
@@ -39,29 +39,22 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
     );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync duration: audio → store ──────────────────────────────────
+  // ── A-B repeat looping + periodic position save ───────────────────
   useEffect(() => {
-    setDuration(audio.duration);
-  }, [audio.duration, setDuration]);
-
-  // ── Sync progress: audio → store + save position + A-B repeat ─────
-  useEffect(() => {
-    setProgress(audio.progress);
-
-    // Save position every ~5 s
-    if (audio.progress > 0 && Math.floor(audio.progress) % 5 === 0) {
-      useStore.getState().setLastPosition(audio.progress);
+    // Save position every ~5 s (intentional useStore.getState() — Zustand escape hatch)
+    if (progress > 0 && Math.floor(progress) % 5 === 0) {
+      useStore.getState().setLastPosition(progress);
     }
 
     // A-B repeat loop
     if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
-      if (audio.progress >= abRepeat.pointB) {
+      if (progress >= abRepeat.pointB) {
         audio.seek(abRepeat.pointA).catch(err => {
           console.error('Failed to seek for A-B repeat:', err);
         });
       }
     }
-  }, [audio.progress, setProgress, abRepeat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [progress, abRepeat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Translate store `playing` → audio.play() / audio.pause() ──────
   useEffect(() => {

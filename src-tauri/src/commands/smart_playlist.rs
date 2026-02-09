@@ -54,19 +54,7 @@ pub fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> 
     let mut stmt = conn.prepare(&query)
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
     
-    let tracks = stmt.query_map([], |row| {
-        Ok(Track {
-            id: row.get(0)?,
-            path: row.get(1)?,
-            name: row.get(2)?,
-            title: row.get(3)?,
-            artist: row.get(4)?,
-            album: row.get(5)?,
-            duration: row.get(6)?,
-            date_added: row.get(7)?,
-            rating: row.get(8).unwrap_or(0),
-        })
-    })
+    let tracks = stmt.query_map([], Track::from_row)
     .map_err(|e| format!("Failed to execute query: {}", e))?
     .collect::<rusqlite::Result<Vec<_>>>()
     .map_err(|e| format!("Failed to collect results: {}", e))?;

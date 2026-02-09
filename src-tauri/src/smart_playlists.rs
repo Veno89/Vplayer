@@ -83,7 +83,7 @@ impl SmartPlaylist {
             conditions.join(join_operator)
         };
         
-        let mut query = format!("SELECT * FROM tracks WHERE {}", where_clause);
+        let mut query = format!("SELECT {} FROM tracks WHERE {}", crate::scanner::TRACK_SELECT_COLUMNS, where_clause);
         
         if let Some(sort_field) = &self.sort_by {
             let direction = if self.sort_desc { "DESC" } else { "ASC" };
