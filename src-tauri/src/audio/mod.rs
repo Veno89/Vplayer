@@ -426,6 +426,13 @@ impl AudioPlayer {
     
     pub fn get_position(&self) -> f64 {
         let sink = self.sink.lock().unwrap();
+        let total = *self.total_duration.lock().unwrap();
+        
+        // If sink is empty (track finished), return the total duration rather than
+        // letting the wall-clock counter drift past the end of the track.
+        if sink.empty() && self.start_time.lock().unwrap().is_some() {
+            return total.as_secs_f64();
+        }
         
         if let Some(start) = *self.start_time.lock().unwrap() {
             let elapsed = start.elapsed();
@@ -443,7 +450,14 @@ impl AudioPlayer {
             };
             
             let playing_time = elapsed.saturating_sub(paused + additional_pause);
-            (offset + playing_time).as_secs_f64()
+            let position = offset + playing_time;
+            
+            // Clamp to total duration to prevent wall-clock drift past track end
+            if total > Duration::ZERO {
+                position.min(total).as_secs_f64()
+            } else {
+                position.as_secs_f64()
+            }
         } else {
             0.0
         }

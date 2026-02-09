@@ -5,6 +5,9 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [0.9.10] - 2026-02-09
 
+### Bug Fixes
+- **Playback Position Drift Past Track End**: Fixed critical bug where the position counter would keep climbing past the track's actual duration (e.g., showing 10:00/4:00), preventing automatic advance to the next track. Root cause: Rust `get_position()` used wall-clock arithmetic (`Instant::now()`) which never stopped counting after the sink emptied. Fixed by clamping position to `total_duration` and returning duration when the sink is empty. Additionally, the JS `isFinished()` check was gated behind a narrow position window (`position >= duration - 0.1`) that could be missed when the poll timer was throttled (e.g., background window on Windows). Now always checks `isFinished()` when playing. Also clamps displayed progress to prevent UI drift.
+
 ### Full TypeScript Migration (Architecture Analysis §3.3, #19)
 - **JSX → TSX**: Renamed all 53 `.jsx` files to `.tsx` (components, windows, options tabs, tests, entry points)
 - **Barrel export**: Renamed `src/components/playlist/index.js` → `index.ts`

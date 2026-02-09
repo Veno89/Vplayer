@@ -121,18 +121,25 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
             2000, // 2 second timeout for polling
             'Position polling timed out'
           );
-          setProgress(position);
+          
+          // Clamp position to duration to prevent UI showing time past end of track
+          const clampedPosition = duration > 0 ? Math.min(position, duration) : position;
+          setProgress(clampedPosition);
           
           // Reset error count on successful poll
           pollErrorCountRef.current = 0;
           
           // Use ref to always call the latest onTimeUpdate callback
           if (onTimeUpdateRef.current) {
-            onTimeUpdateRef.current(position);
+            onTimeUpdateRef.current(clampedPosition);
           }
           
-          // Check if track finished (only when playing)
-          if (isPlaying && position >= duration - 0.1) {
+          // Check if track finished — always check when playing, not gated
+          // behind a narrow position window. This prevents the position from
+          // drifting past the track duration when the poll timer is throttled
+          // (e.g., background window on Windows) or when the reported duration
+          // doesn't exactly match the decoded length.
+          if (isPlaying) {
             const finished = await withTimeout(
               TauriAPI.isFinished(),
               2000,
@@ -143,19 +150,20 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
               setProgress(0);
               // Use ref to always call the latest onEnded callback
               if (onEndedRef.current) onEndedRef.current();
+              return; // Don't run health check after ending
             }
           }
           
           // Periodic health check: verify audio is actually playing when we think it is
           // This catches the case where audio stops unexpectedly mid-track
-          if (isPlaying && position < duration - 1) {
+          if (isPlaying && clampedPosition < duration - 1) {
             try {
               const actuallyPlaying = await TauriAPI.isPlaying();
               if (!actuallyPlaying) {
-                console.warn('[useAudio] Audio stopped unexpectedly at position:', position, '/', duration);
+                console.warn('[useAudio] Audio stopped unexpectedly at position:', clampedPosition, '/', duration);
                 // Audio stopped but we think it's playing - try to recover
                 const isFinished = await TauriAPI.isFinished();
-                if (isFinished && position < duration - 1) {
+                if (isFinished && clampedPosition < duration - 1) {
                   // Audio finished prematurely - this is the bug!
                   console.error('[useAudio] Audio finished prematurely, attempting recovery...');
                   // Reload and seek to current position
