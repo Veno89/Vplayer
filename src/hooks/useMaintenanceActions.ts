@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { TauriAPI } from '../services/TauriAPI';
+import { TauriAPI, PerformanceStats as TauriPerformanceStats } from '../services/TauriAPI';
 
 interface PerformanceStats {
   trackCount: number;
@@ -49,7 +49,7 @@ export function useMaintenanceActions(): MaintenanceAPI {
       if (includePerf) {
         try {
           const perf = await TauriAPI.getPerformanceStats();
-          setPerfStats(perf);
+          setPerfStats(perf as unknown as PerformanceStats);
         } catch {
           setPerfStats(null);
         }

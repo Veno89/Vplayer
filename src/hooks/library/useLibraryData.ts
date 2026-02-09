@@ -108,9 +108,9 @@ export function useLibraryData(filterParams: Record<string, unknown> | null = nu
             // The actual DB add happens after scan in the original logic, but here we likely want
             // to add it to state first or return it to the caller (useLibraryScanner)
 
-            const folderName = selected.split(/[\\/]/).pop();
-            const newFolder = {
-                id: `folder_${Date.now()}`,
+            const folderName = selected.split(/[\\/]/).pop() ?? '';
+            const newFolder: LibraryFolder = {
+                id: `folder_${crypto.randomUUID()}`,
                 name: folderName,
                 path: selected,
                 dateAdded: Date.now(),

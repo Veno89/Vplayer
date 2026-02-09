@@ -263,7 +263,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
           console.error(`Failed to load track after ${AUDIO_RETRY_CONFIG.MAX_RETRIES} retries:`, err);
           setIsLoading(false);
           retryCountRef.current = 0;
-          throw new Error(`Failed to load track: ${err.message || err}`);
+          throw new Error(`Failed to load track: ${(err as Error).message || err}`);
         }
         
         // Calculate exponential backoff delay
@@ -414,7 +414,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       console.error('Failed to seek:', err);
       
       // If seek fails due to stale audio, inform the user
-      if (err.toString().includes('No file loaded') || err.toString().includes('error')) {
+      if (String(err).includes('No file loaded') || String(err).includes('error')) {
         toast.showWarning('Press play to resume playback');
       }
     } finally {

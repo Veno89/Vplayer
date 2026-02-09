@@ -76,15 +76,15 @@ class MusicBrainzAPIService {
   lastRequestTime: number;
   requestQueue: Array<() => void>;
   isProcessingQueue: boolean;
-  artistCache: Record<string, MBArtistResult[]>;
+  artistCache: Record<string, MBArtistResult[] | MBArtistResult>;
   discographyCache: Record<string, MBReleaseGroup[]>;
 
   constructor() {
     this.lastRequestTime = this._getLastRequestTime();
     this.requestQueue = [];
     this.isProcessingQueue = false;
-    this.artistCache = this._loadCache(STORAGE_KEYS.ARTIST_CACHE);
-    this.discographyCache = this._loadCache(STORAGE_KEYS.DISCOGRAPHY_CACHE);
+    this.artistCache = this._loadCache<MBArtistResult[] | MBArtistResult>(STORAGE_KEYS.ARTIST_CACHE);
+    this.discographyCache = this._loadCache<MBReleaseGroup[]>(STORAGE_KEYS.DISCOGRAPHY_CACHE);
   }
 
   /**
@@ -201,7 +201,7 @@ class MusicBrainzAPIService {
     const cacheKey = `search:${normalizedName}`;
     if (!bypassCache && this.artistCache[cacheKey]) {
       console.log('[MusicBrainzAPI] Artist search cache hit:', artistName);
-      return this.artistCache[cacheKey];
+      return this.artistCache[cacheKey] as MBArtistResult[];
     }
 
     if (bypassCache) {
@@ -216,7 +216,7 @@ class MusicBrainzAPIService {
     try {
       const data = await this._rateLimitedFetch(url);
       
-      const results = (data.artists || []).map(artist => ({
+      const results: MBArtistResult[] = (data.artists || []).map((artist: any) => ({
         id: artist.id,
         name: artist.name,
         sortName: artist['sort-name'],
@@ -248,7 +248,7 @@ class MusicBrainzAPIService {
     // Check cache
     const cacheKey = `artist:${mbid}`;
     if (this.artistCache[cacheKey]) {
-      return this.artistCache[cacheKey];
+      return this.artistCache[cacheKey] as MBArtistResult;
     }
 
     const url = `${MB_BASE_URL}/artist/${mbid}?fmt=json`;
@@ -256,7 +256,7 @@ class MusicBrainzAPIService {
     try {
       const data = await this._rateLimitedFetch(url);
       
-      const result = {
+      const result: MBArtistResult = {
         id: data.id,
         name: data.name,
         sortName: data['sort-name'],

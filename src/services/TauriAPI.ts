@@ -400,10 +400,10 @@ class TauriAPIService {
                 title: 'Select Music Folder',
                 ...options,
             });
-            this._log('selectFolder', options, result);
+            this._log('selectFolder', options as unknown as Record<string, unknown>, result);
             return result as string | null;
         } catch (error) {
-            this._log('selectFolder', options, null, error);
+            this._log('selectFolder', options as unknown as Record<string, unknown>, null, error);
             throw this._formatError('selectFolder', error);
         }
     }

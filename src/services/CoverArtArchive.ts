@@ -111,7 +111,7 @@ class CoverArtArchiveService {
 
     // Check for pending request (deduplication)
     if (this.pendingRequests.has(releaseGroupId)) {
-      return this.pendingRequests.get(releaseGroupId);
+      return this.pendingRequests.get(releaseGroupId)!;
     }
 
     // Create promise for this request

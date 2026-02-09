@@ -21,6 +21,7 @@ import {
   musicBrainzPersistState,
   getInitialWindows
 } from './slices';
+import { pruneExpiredDiscographyData } from './slices/musicBrainzSlice';
 
 export const useStore = create<AppStore>()(
   persist(
@@ -42,16 +43,24 @@ export const useStore = create<AppStore>()(
       }),
       // Merge persisted state with fresh defaults to add new windows
       merge: (persistedState, currentState) => {
-        const merged = { ...currentState, ...(persistedState as Partial<AppStore>) };
+        const persisted = persistedState as Partial<AppStore>;
+        const merged = { ...currentState, ...persisted };
         
         // Ensure new windows from layouts are added to existing persisted windows
-        if ((persistedState as Partial<AppStore>)?.windows) {
+        if (persisted?.windows) {
           const defaultWindows = getInitialWindows();
-          merged.windows = { ...defaultWindows, ...(persistedState as Partial<AppStore>).windows };
+          merged.windows = { ...defaultWindows, ...persisted.windows };
         }
+
+        // Prune expired discography cache entries on hydration
+        const pruned = pruneExpiredDiscographyData(merged);
+        Object.assign(merged, pruned);
         
         return merged as AppStore;
       }
     }
   )
 );
+
+// One-time migration: remove legacy MusicBrainz localStorage key (now in Zustand persist)
+try { localStorage.removeItem('vplayer_discography_data'); } catch { /* ignore */ }

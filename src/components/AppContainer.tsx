@@ -63,7 +63,7 @@ export const AppContainer = ({ children }: { children: ReactNode }) => {
         '--scrollbar-thumb': colors.scrollbarThumb,
         '--theme-accent': colors.color,
         '--theme-selection': colors.selection || 'rgba(6, 182, 212, 0.2)',
-      }}
+      } as React.CSSProperties}
     >
       {backgroundImage && (
         <div 

@@ -12,6 +12,7 @@ import { CoverArtArchive } from '../services/CoverArtArchive';
 import { DiscographyMatcher } from '../services/DiscographyMatcher';
 import type { Track } from '../types';
 import type { DiscographyConfig, ResolvedArtist, ArtistDiscography as StoreDiscography } from '../store/types';
+import type { MBArtistResult } from '../services/MusicBrainzAPI';
 
 interface DiscographyProgress {
   current: number;
@@ -77,7 +78,7 @@ export function useDiscography(tracks: Track[] = []) {
   const needsDiscographyRefresh = useStore((state) => state.needsDiscographyRefresh);
 
   // Local state for search
-  const [searchResults, setSearchResults] = useState<ResolvedArtist[]>([]);
+  const [searchResults, setSearchResults] = useState<MBArtistResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   // Abort controller for cancellation
@@ -191,7 +192,7 @@ export function useDiscography(tracks: Track[] = []) {
       return results;
     } catch (err) {
       console.error('[useDiscography] Artist search failed:', err);
-      setDiscographyError(`Search failed: ${err.message}`);
+      setDiscographyError(`Search failed: ${(err as Error).message}`);
       return [];
     } finally {
       setIsSearching(false);
@@ -256,7 +257,7 @@ export function useDiscography(tracks: Track[] = []) {
       return matchedAlbums;
     } catch (err) {
       console.error('[useDiscography] Failed to fetch discography:', err);
-      setDiscographyError(`Failed to fetch discography: ${err.message}`);
+      setDiscographyError(`Failed to fetch discography: ${(err as Error).message}`);
       return [];
     } finally {
       setDiscographyLoading(false);
@@ -368,12 +369,12 @@ export function useDiscography(tracks: Track[] = []) {
           if (bestMatch && (bestVerification.verified ||
             (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
             log.info(`[useDiscography] Resolved "${artist.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums matched: ${bestVerification.matchedAlbums})`);
-            setResolvedArtist(artist.name, bestMatch);
+            setResolvedArtist(artist.name, bestMatch as unknown as Omit<ResolvedArtist, 'resolvedAt'>);
             resolved++;
           } else if (bestMatch && results[0].score >= 98) {
             // Very high name match score - accept even without album verification (single albums, etc.)
             log.info(`[useDiscography] Resolved "${artist.name}" to "${bestMatch.name}" (high name score: ${results[0].score})`);
-            setResolvedArtist(artist.name, bestMatch);
+            setResolvedArtist(artist.name, bestMatch as unknown as Omit<ResolvedArtist, 'resolvedAt'>);
             resolved++;
           } else {
             log.info(`[useDiscography] Could not verify artist: ${artist.name}`);
@@ -582,7 +583,7 @@ log.info(`[useDiscography] Re-resolve: Verifying "${candidate.name}" (score: ${c
         log.info(`[useDiscography] Re-resolved "${artistData.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums: ${bestVerification.matchedAlbums})`);
 
         // Use artistData.name (the actual local library artist name) for storage
-        setResolvedArtist(artistData.name, bestMatch);
+        setResolvedArtist(artistData.name, bestMatch as unknown as Omit<ResolvedArtist, 'resolvedAt'>);
 
         // Fetch full discography with the local artist name
         await fetchArtistDiscography(artistData.name, bestMatch.id);
@@ -594,7 +595,7 @@ log.info(`[useDiscography] Re-resolve: Verifying "${candidate.name}" (score: ${c
       }
     } catch (err) {
       console.error('[useDiscography] Re-resolve failed:', err);
-      setDiscographyError(`Failed to re-resolve: ${err.message}`);
+      setDiscographyError(`Failed to re-resolve: ${(err as Error).message}`);
       return false;
     } finally {
       setDiscographyLoading(false);
@@ -690,12 +691,12 @@ log.info(`[useDiscography] Re-resolve: Verifying "${candidate.name}" (score: ${c
           if (bestMatch && (bestVerification.verified ||
             (results[0].score >= 95 && bestVerification.matchedAlbums > 0))) {
             log.info(`[useDiscography] Re-resolved "${artist.name}" to "${bestMatch.name}" (verified: ${bestVerification.verified}, albums: ${bestVerification.matchedAlbums})`);
-            setResolvedArtist(artist.name, bestMatch);
+            setResolvedArtist(artist.name, bestMatch as unknown as Omit<ResolvedArtist, 'resolvedAt'>);
             resolved++;
           } else if (bestMatch && results[0].score >= 98) {
             // Very high name match - accept even without album verification
             log.info(`[useDiscography] Re-resolved "${artist.name}" to "${bestMatch.name}" (high score: ${results[0].score})`);
-            setResolvedArtist(artist.name, bestMatch);
+            setResolvedArtist(artist.name, bestMatch as unknown as Omit<ResolvedArtist, 'resolvedAt'>);
             resolved++;
           } else {
             log.info(`[useDiscography] Could not verify artist: ${artist.name}`);

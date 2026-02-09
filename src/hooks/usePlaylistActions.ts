@@ -104,10 +104,10 @@ export function usePlaylistActions({
         newTracks.splice(draggedIndex, 1);
         newTracks.splice(dropIndex, 0, draggedTrack);
 
-        const trackPositions = newTracks.map((track, idx) => [track.id, idx]);
+        const trackPositions = newTracks.map((track, idx) => [track.id, idx] as [string, number]);
 
         try {
-            await playlists.reorderPlaylistTracks(playlists.currentPlaylist, trackPositions);
+            await playlists.reorderPlaylistTracks(playlists.currentPlaylist!, trackPositions);
         } catch (err) {
             console.error('Failed to reorder tracks:', err);
         }
@@ -157,7 +157,7 @@ export function usePlaylistActions({
             }
 
             log.info('Adding tracks to playlist:', tracks.length);
-            await playlists.addTracksToPlaylist(playlists.currentPlaylist, tracks.map(t => t.id));
+            await playlists.addTracksToPlaylist(playlists.currentPlaylist!, tracks.map((t: { id: string }) => t.id));
         } catch (err) {
             console.error('Drop failed:', err);
             alert('Failed to add tracks to playlist');
@@ -180,9 +180,9 @@ export function usePlaylistActions({
         }
 
         // Adjust current track if needed
-        if (currentTrack === index) {
+        if (currentTrack !== null && currentTrack === index) {
             setCurrentTrack(Math.min(index, displayTracks.length - 2));
-        } else if (currentTrack > index) {
+        } else if (currentTrack !== null && currentTrack > index) {
             setCurrentTrack(currentTrack - 1);
         }
 
@@ -198,8 +198,8 @@ export function usePlaylistActions({
             setNewPlaylistName('');
             setShowNewPlaylistDialog(false);
             // Auto-select the new playlist
-            if (newPlaylist && newPlaylist.id) {
-                await playlists.setCurrentPlaylist(newPlaylist.id);
+            if (newPlaylist) {
+                await playlists.setCurrentPlaylist(newPlaylist);
             }
         } catch (err) {
             alert('Failed to create playlist');

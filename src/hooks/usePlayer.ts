@@ -88,7 +88,7 @@ export function usePlayer({
         // Always read fresh state from the store to avoid stale closures
         const store = storeGetter ? storeGetter() : null;
         // Use ref for tracks to get the freshest array
-        const currentTracks = store?.tracks ?? tracks;
+        const currentTracks = store?.activePlaybackTracks?.length ? store.activePlaybackTracks : tracks;
         const effectiveTotalTracks = currentTracks.length || totalTracks;
 
         log.info('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks);
@@ -98,7 +98,7 @@ export function usePlayer({
             const nextQueueTrack = store.peekNextInQueue();
             if (nextQueueTrack) {
                 // Find the track in the tracks array
-                const queueTrackIndex = currentTracks.findIndex(t => t.id === nextQueueTrack.id);
+                const queueTrackIndex = currentTracks.findIndex((t: Track) => t.id === nextQueueTrack.id);
                 if (queueTrackIndex !== -1) {
                     store.nextInQueue();
                     log.info('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
@@ -131,7 +131,7 @@ export function usePlayer({
             log.info('[getNextTrackIndex] No next track');
             return null;
         }
-    }, [storeGetter]);
+    }, [storeGetter, tracks]);
 
     // Crossfade monitoring effect
     useEffect(() => {
@@ -205,7 +205,7 @@ export function usePlayer({
      */
     const handleNextTrack = useCallback(() => {
         const store = storeGetter ? storeGetter() : null;
-        const currentTracks = store?.tracks ?? tracks;
+        const currentTracks = store?.activePlaybackTracks?.length ? store.activePlaybackTracks : tracks;
         if (!currentTracks.length) return;
 
         // Cancel any in-progress crossfade
@@ -237,7 +237,7 @@ export function usePlayer({
      */
     const handlePrevTrack = useCallback(() => {
         const store = storeGetter ? storeGetter() : null;
-        const currentTracks = store?.tracks ?? tracks;
+        const currentTracks = store?.activePlaybackTracks?.length ? store.activePlaybackTracks : tracks;
         if (!currentTracks.length) return;
 
         // Cancel any in-progress crossfade

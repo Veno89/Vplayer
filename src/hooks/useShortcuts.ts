@@ -128,7 +128,7 @@ export function useShortcuts({
     const active = document.activeElement;
     return active?.tagName === 'INPUT' || 
            active?.tagName === 'TEXTAREA' || 
-           active?.isContentEditable;
+           (active as HTMLElement)?.isContentEditable;
   }, []);
 
   // Action handlers map
@@ -199,8 +199,7 @@ export function useShortcuts({
           if (stop) {
             stop();
           } else if (audio) {
-            audio.pause();
-            audio.currentTime = 0;
+            audio.pause?.();
           }
           break;
         case 'VOLUME_UP':

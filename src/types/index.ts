@@ -43,8 +43,10 @@ export interface TrackFilter {
 // =============================================================================
 
 import type { RepeatMode } from '../store/types';
+import type { AppStore as _AppStore } from '../store/types';
 
-export type { RepeatMode } from '../store/types';
+/** Store state alias used across the codebase */
+type StoreState = _AppStore;
 
 export interface PlayerState {
     currentTrack: number | null;
@@ -136,8 +138,8 @@ export interface CrossfadeOptions {
 // =============================================================================
 
 // Re-export the full store type from the store module
-export type { AppStore as StoreState } from '../store/types';
-export type { AppStore } from '../store/types';
+export type { _AppStore as StoreState };
+export type { _AppStore as AppStore };
 
 // Re-export commonly used store sub-types
 export type {

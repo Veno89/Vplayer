@@ -3,6 +3,27 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.10] - 2026-02-09
+
+### Full TypeScript Migration (Architecture Analysis §3.3, #19)
+- **JSX → TSX**: Renamed all 53 `.jsx` files to `.tsx` (components, windows, options tabs, tests, entry points)
+- **Barrel export**: Renamed `src/components/playlist/index.js` → `index.ts`
+- **Prop interfaces**: Added typed prop interfaces for every component and window
+- **Typed event handlers, refs, state generics**: Full type annotations across all React code
+- **935 TypeScript errors resolved** down to zero — `tsc --noEmit` clean
+- **Fixed infinite render loop** in `OptionsWindowEnhanced`: `useStore(s => s.getLayouts())` created new array every render → split into selector + call
+
+### Architecture Improvements
+- **MusicBrainz Persistence Consolidation (#11)**: Removed manual `localStorage` save/load in `musicBrainzSlice.ts`; `resolvedArtists` and `artistDiscographies` now included in Zustand persist state. Added `pruneExpiredDiscographyData()` called during store hydration to auto-expire stale cache entries. One-time migration removes legacy `vplayer_discography_data` localStorage key.
+- **UUID for ID Generation (#17)**: Playlist IDs in Rust now use `uuid::Uuid::new_v4()` instead of `SystemTime` epoch millis. Folder IDs in JS now use `crypto.randomUUID()` instead of `Date.now()`. Added `uuid` crate v1 to `Cargo.toml`.
+- **find_duplicates SQL Optimization (#20)**: Replaced full-table load + in-memory grouping with 2-pass SQL: `GROUP BY` + `HAVING COUNT(*) > 1` to find candidate keys, then targeted fetch per group.
+
+### Test & Build
+- All 159 tests passing across 10 files
+- `tsc --noEmit`: 0 errors
+- `cargo check`: clean
+
+
 ## [0.9.9] - 2026-02-08
 
 ### Bug Fixes

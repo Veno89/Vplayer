@@ -3,29 +3,14 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { WINDOW_MIN_SIZES } from '../utils/constants';
 import { useDraggable, useResizable } from '../hooks/useWindowInteraction';
 import type { LucideIcon } from 'lucide-react';
+import type { ColorScheme, WindowsState } from '../store/types';
 
 interface WindowData {
-  visible: boolean;
-  minimized: boolean;
   x: number;
   y: number;
   width: number;
   height: number;
-  zIndex: number;
   [key: string]: any;
-}
-
-interface WindowColors {
-  accent: string;
-  primary: string;
-  windowBg: string;
-  windowBorder: string;
-  headerBg: string;
-  text: string;
-  textMuted: string;
-  textSubtle?: string;
-  border: string;
-  [key: string]: string | undefined;
 }
 
 interface WindowProps {
@@ -36,9 +21,9 @@ interface WindowProps {
   className?: string;
   windowData: WindowData;
   bringToFront: (id: string) => void;
-  setWindows: (updater: (prev: Record<string, WindowData>) => Record<string, WindowData>) => void;
+  setWindows: (windowsOrUpdater: WindowsState | ((prev: WindowsState) => WindowsState)) => void;
   toggleWindow: (id: string) => void;
-  currentColors?: WindowColors | null;
+  currentColors?: ColorScheme | null;
   windowOpacity?: number;
 }
 
@@ -46,8 +31,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
   if (!windowData.visible) return null;
 
   // Check if this is the library window and if it's currently dragging
-  // If so, we want to send it to the back temporarily
-  const isLibraryDragging = id === 'library' && children?.props?.['data-library-dragging'];
+  const isLibraryDragging = id === 'library' && React.isValidElement(children) && (children.props as Record<string, unknown>)?.['data-library-dragging'];
 
   // Safety check for currentColors with comprehensive fallback
   const colors = currentColors || {
@@ -58,15 +42,20 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
     headerBg: 'rgba(30, 41, 59, 0.8)',
     text: '#f8fafc',
     textMuted: '#94a3b8',
+    textSubtle: '#64748b',
     border: '#334155',
   };
 
   // Get minimum sizes for this window type (with fallbacks)
-  const minSizes = WINDOW_MIN_SIZES[id] || { width: 250, height: 150 };
+  const minSizes = (WINDOW_MIN_SIZES as Record<string, { width: number; height: number }>)[id] || { width: 250, height: 150 };
 
   // ── Extracted drag & resize hooks ─────────────────────────────────
-  const handleTitleBarMouseDown = useDraggable({ id, windowData, setWindows, bringToFront });
-  const handleResizeMouseDown = useResizable({ id, windowData, setWindows, bringToFront, minSizes });
+  // Bridge store's setWindows (accepts WindowsState | updater) to hooks' expected type (updater only)
+  const hookSetWindows = (updater: (prev: Record<string, WindowData>) => Record<string, WindowData>) => {
+    setWindows((prev) => updater(prev as Record<string, WindowData>) as WindowsState);
+  };
+  const handleTitleBarMouseDown = useDraggable({ id, windowData, setWindows: hookSetWindows, bringToFront });
+  const handleResizeMouseDown = useResizable({ id, windowData, setWindows: hookSetWindows, bringToFront, minSizes });
 
   if (windowData.minimized) {
     return (
@@ -117,7 +106,8 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
       className="fixed border rounded-lg shadow-2xl backdrop-blur-xl"
       onMouseDown={(e) => {
         // Don't stopPropagation if clicking on a draggable element (let drag work)
-        const isDraggable = e.target.draggable || e.target.closest('[draggable="true"]');
+        const target = e.target as HTMLElement;
+        const isDraggable = target.draggable || target.closest('[draggable="true"]');
         if (isDraggable) {
           // Don't bringToFront here - causes re-render that cancels drag!
           return;

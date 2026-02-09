@@ -418,8 +418,8 @@ class DiscographyMatchingService {
         }
       }
 
-      let status;
-      let matchedLocal = null;
+      let status: AlbumMatchStatus;
+      let matchedLocal: LocalAlbum | null = null;
 
       if (bestMatch && bestMatch.matches && bestConfidence >= 90) {
         status = 'present';

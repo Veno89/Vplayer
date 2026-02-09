@@ -80,7 +80,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
     // Listen for scan events
     useEffect(() => {
-        const unlistenPromises = [];
+        const unlistenPromises: Promise<() => void>[] = [];
 
         // Listen for folder changes (file watcher)
         unlistenPromises.push(
@@ -100,7 +100,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Listen for total files count
         unlistenPromises.push(
-            TauriAPI.onEvent(EVENTS.SCAN_TOTAL, (event) => {
+            TauriAPI.onEvent<number>(EVENTS.SCAN_TOTAL, (event) => {
                 setScanTotal(event.payload);
                 setScanCurrent(0);
                 setScanProgress(0);
@@ -109,7 +109,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Listen for progress updates
         unlistenPromises.push(
-            TauriAPI.onEvent(EVENTS.SCAN_PROGRESS, (event) => {
+            TauriAPI.onEvent<{ current: number; total: number; current_file: string }>(EVENTS.SCAN_PROGRESS, (event) => {
                 const { current, total, current_file } = event.payload;
                 setScanCurrent(current);
                 setScanTotal(total);
@@ -123,7 +123,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Listen for scan completion
         unlistenPromises.push(
-            TauriAPI.onEvent(EVENTS.SCAN_COMPLETE, (event) => {
+            TauriAPI.onEvent<number>(EVENTS.SCAN_COMPLETE, (event) => {
                 log.info(`Scan complete: ${event.payload} tracks found`);
                 setScanProgress(100);
                 setScanCurrentFile('');
@@ -140,7 +140,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Listen for scan cancellation
         unlistenPromises.push(
-            TauriAPI.onEvent(EVENTS.SCAN_CANCELLED, (event) => {
+            TauriAPI.onEvent<number>(EVENTS.SCAN_CANCELLED, (event) => {
                 log.info(`Scan cancelled: ${event.payload} tracks processed`);
                 setScanCurrentFile('Cancelled');
 
@@ -157,7 +157,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Listen for scan errors
         unlistenPromises.push(
-            TauriAPI.onEvent(EVENTS.SCAN_ERROR, (event) => {
+            TauriAPI.onEvent<string>(EVENTS.SCAN_ERROR, (event) => {
                 console.warn('Scan error:', event.payload);
             })
         );

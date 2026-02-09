@@ -11,7 +11,7 @@ export function useCurrentColors(): ColorScheme {
   const colorScheme = useStore((state) => state.colorScheme);
   const customThemes = useStore((state) => state.customThemes);
   return useMemo(
-    () => customThemes?.[colorScheme] || COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.default,
+    () => customThemes?.[colorScheme] || (COLOR_SCHEMES as Record<string, ColorScheme>)[colorScheme] || COLOR_SCHEMES.default,
     [colorScheme, customThemes],
   );
 }

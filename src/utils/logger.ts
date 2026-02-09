@@ -9,7 +9,7 @@
  *   log.warn('Something unexpected happened');
  */
 
-const isDev = import.meta.env.DEV;
+const isDev = (import.meta as any).env?.DEV;
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = (..._args: unknown[]): void => {};

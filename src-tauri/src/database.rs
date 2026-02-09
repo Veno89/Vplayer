@@ -579,10 +579,7 @@ impl Database {
     
     // Playlist operations
     pub fn create_playlist(&self, name: &str) -> Result<String> {
-        let id = format!("playlist_{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis());
+        let id = format!("playlist_{}", uuid::Uuid::new_v4());
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -810,55 +807,70 @@ impl Database {
         info!("Searching for duplicate tracks");
         let conn = self.conn.lock().unwrap();
         
-        // Find tracks with matching (title, artist, album, duration within 2 seconds)
-        // Group by these fields and return groups with count > 1
-        let mut stmt = conn.prepare(
-            "SELECT id, path, name, title, artist, album, duration, date_added, rating
+        // Step 1: SQL finds (title, artist, album) combos that appear more than once.
+        // This avoids loading the entire tracks table into memory.
+        let mut dup_keys_stmt = conn.prepare(
+            "SELECT title, artist, album
              FROM tracks
-             WHERE (title IS NOT NULL AND artist IS NOT NULL)
-             ORDER BY title, artist, album, duration"
+             WHERE title IS NOT NULL AND artist IS NOT NULL
+             GROUP BY title, artist, album
+             HAVING COUNT(*) > 1"
         )?;
         
-        let all_tracks = stmt.query_map([], Track::from_row)?
+        let dup_keys: Vec<(String, String, String)> = dup_keys_stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
             .collect::<Result<Vec<_>>>()?;
-        
-        // Group tracks by similarity
-        let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
-        let mut current_group: Vec<Track> = Vec::new();
-        
-        for (i, track) in all_tracks.iter().enumerate() {
-            if i == 0 {
-                current_group.push(track.clone());
-                continue;
-            }
-            
-            let prev_track = &all_tracks[i - 1];
-            
-            // Check if tracks are similar (same title, artist, album, and duration within 2 seconds)
-            let title_match = track.title == prev_track.title;
-            let artist_match = track.artist == prev_track.artist;
-            let album_match = track.album == prev_track.album;
-            let duration_match = (track.duration - prev_track.duration).abs() < 2.0;
-            
-            if title_match && artist_match && album_match && duration_match {
-                // Add to current group
-                if current_group.is_empty() || current_group.last().unwrap().id != prev_track.id {
-                    current_group.push(prev_track.clone());
-                }
-                current_group.push(track.clone());
-            } else {
-                // Start new group
-                if current_group.len() > 1 {
-                    duplicate_groups.push(current_group.clone());
-                }
-                current_group.clear();
-                current_group.push(track.clone());
-            }
+
+        if dup_keys.is_empty() {
+            info!("Found 0 groups of duplicates");
+            return Ok(Vec::new());
         }
-        
-        // Don't forget the last group
-        if current_group.len() > 1 {
-            duplicate_groups.push(current_group);
+
+        // Step 2: Fetch only the tracks that belong to duplicate groups
+        let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
+
+        let mut track_stmt = conn.prepare(
+            "SELECT id, path, name, title, artist, album, duration, date_added, rating
+             FROM tracks
+             WHERE title = ?1 AND artist = ?2 AND album = ?3
+             ORDER BY duration"
+        )?;
+
+        for (title, artist, album) in &dup_keys {
+            let tracks: Vec<Track> = track_stmt
+                .query_map(params![title, artist, album], Track::from_row)?
+                .collect::<Result<Vec<_>>>()?;
+
+            // Further refine by duration similarity (within 2 seconds)
+            // Tracks are sorted by duration, so we can group sequentially
+            let mut current_group: Vec<Track> = Vec::new();
+
+            for track in &tracks {
+                if current_group.is_empty() {
+                    current_group.push(track.clone());
+                } else {
+                    let last = current_group.last().unwrap();
+                    if (track.duration - last.duration).abs() < 2.0 {
+                        current_group.push(track.clone());
+                    } else {
+                        if current_group.len() > 1 {
+                            duplicate_groups.push(std::mem::take(&mut current_group));
+                        } else {
+                            current_group.clear();
+                        }
+                        current_group.push(track.clone());
+                    }
+                }
+            }
+            if current_group.len() > 1 {
+                duplicate_groups.push(current_group);
+            }
         }
         
         info!("Found {} groups of duplicates", duplicate_groups.len());

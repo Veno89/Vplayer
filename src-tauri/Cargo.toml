@@ -1,6 +1,6 @@
 [package]
 name = "vplayer"
-version = "0.9.9"
+version = "0.9.10"
 description = "A modern music player"
 authors = ["you"]
 license = ""
@@ -32,5 +32,6 @@ image = "0.25"
 base64 = "0.22"
 ebur128 = "0.1"
 rustfft = "6.2"
+uuid = { version = "1", features = ["v4"] }
 tauri-plugin-updater = "2.9.0"
 tauri-plugin-process = "2.3.1"

@@ -121,7 +121,7 @@ export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
 
   getCurrentColors: (): ColorScheme => {
     const state = get();
-    return state.customThemes[state.colorScheme] || COLOR_SCHEMES[state.colorScheme] || COLOR_SCHEMES.default;
+    return state.customThemes[state.colorScheme] || (COLOR_SCHEMES as Record<string, ColorScheme>)[state.colorScheme] || COLOR_SCHEMES.default;
   },
 
   getColorSchemes: () => {
@@ -165,7 +165,7 @@ export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
 
       Object.keys(template.windows).forEach((windowId) => {
         const templateWindow = template.windows[windowId];
-        const minSize = WINDOW_MIN_SIZES[windowId] || { width: 250, height: 150 };
+        const minSize = (WINDOW_MIN_SIZES as Record<string, { width: number; height: number }>)[windowId] || { width: 250, height: 150 };
         if (newWindows[windowId]) {
           newWindows[windowId] = {
             ...newWindows[windowId],
@@ -213,12 +213,12 @@ export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
   resetWindowPositions: () => {
     const template = LAYOUT_TEMPLATES.classic;
     set((state) => {
-      const newWindows = {};
+      const newWindows: WindowsState = {};
       let zIndex = 10;
 
       Object.keys(template.windows).forEach((windowId) => {
         const templateWindow = template.windows[windowId];
-        const minSize = WINDOW_MIN_SIZES[windowId] || { width: 250, height: 150 };
+        const minSize = (WINDOW_MIN_SIZES as Record<string, { width: number; height: number }>)[windowId] || { width: 250, height: 150 };
         newWindows[windowId] = {
           ...templateWindow,
           width: Math.max(templateWindow.width, minSize.width),

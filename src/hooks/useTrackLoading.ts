@@ -147,7 +147,7 @@ export function useTrackLoading({
           setLoadedTrackId(null);
 
           // Check if this is a decode error (corrupted file)
-          const isDecodeError = err.message && err.message.includes('Decode error');
+          const isDecodeError = (err as Error).message && (err as Error).message.includes('Decode error');
 
           // Get user preferences from store
           const storeState = useStore.getState();

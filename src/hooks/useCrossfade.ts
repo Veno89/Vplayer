@@ -45,8 +45,8 @@ export function useCrossfade(): CrossfadeAPI {
   const setStoredEnabled = useStore(state => state.setCrossfadeEnabled);
   const setStoredDuration = useStore(state => state.setCrossfadeDuration);
 
-  const fadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeIntervalRef = useRef<number | null>(null);
+  const fadeTimeoutRef = useRef<number | null>(null);
   const isFadingRef = useRef<boolean>(false);
   const originalVolumeRef = useRef<number>(1.0);
   const fadeStartTimeRef = useRef<number | null>(null);
@@ -121,8 +121,8 @@ export function useCrossfade(): CrossfadeAPI {
     const FADE_INTERVAL_MS = 50; // Update volume every 50ms for smooth fade
 
     // Volume fade animation
-    fadeIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - fadeStartTimeRef.current;
+    const fadeCallback = () => {
+      const elapsed = Date.now() - (fadeStartTimeRef.current ?? Date.now());
       const fadeMultiplier = getFadeOutMultiplier(elapsed);
       
       // Apply faded volume
@@ -135,12 +135,13 @@ export function useCrossfade(): CrossfadeAPI {
         log.info('[Crossfade] Midpoint reached, switching tracks');
         if (onMidpoint) onMidpoint();
       }
-    }, FADE_INTERVAL_MS);
+    };
+    fadeIntervalRef.current = window.setInterval(fadeCallback, FADE_INTERVAL_MS);
 
     // Complete the fade after duration
-    fadeTimeoutRef.current = setTimeout(() => {
+    fadeTimeoutRef.current = window.setTimeout(() => {
       log.info('[Crossfade] Fade complete');
-      clearInterval(fadeIntervalRef.current);
+      if (fadeIntervalRef.current !== null) clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
       isFadingRef.current = false;
       

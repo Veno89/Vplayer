@@ -49,11 +49,14 @@ export function usePlaylists(): PlaylistsAPI {
     try {
       const data = await TauriAPI.getAllPlaylists();
       // Convert to objects with id, name, createdAt
-      const playlistObjects: PlaylistItem[] = data.map(([id, name, createdAt]: [string, string, number]) => ({
-        id,
-        name,
-        createdAt
-      }));
+      const playlistObjects: PlaylistItem[] = (data as any[]).map((item: any) => {
+        // Handle both tuple format [id, name, createdAt] and object format {id, name, created_at}
+        if (Array.isArray(item)) {
+          const [id, name, createdAt] = item;
+          return { id, name, createdAt };
+        }
+        return { id: item.id, name: item.name, createdAt: item.created_at ?? item.createdAt ?? 0 };
+      });
       setPlaylists(playlistObjects);
       
       // Restore last playlist on first load
@@ -91,11 +94,11 @@ export function usePlaylists(): PlaylistsAPI {
     }
   }, []);
 
-  const createPlaylist = useCallback(async (name: string) => {
+  const createPlaylist = useCallback(async (name: string): Promise<string> => {
     try {
-      const id = await TauriAPI.createPlaylist(name);
+      const result = await TauriAPI.createPlaylist(name);
       await loadPlaylists();
-      return id;
+      return typeof result === 'string' ? result : (result as any).id;
     } catch (err) {
       console.error('Failed to create playlist:', err);
       throw err;
@@ -144,15 +147,15 @@ export function usePlaylists(): PlaylistsAPI {
       setAddingProgress({ current: 0, total: trackIds.length, isAdding: true });
       
       // Use batch operation for efficiency (single transaction)
-      const count = await TauriAPI.addTracksToPlaylist(playlistId, trackIds);
+      await TauriAPI.addTracksToPlaylist(playlistId, trackIds);
       
-      setAddingProgress({ current: count, total: trackIds.length, isAdding: true });
+      setAddingProgress({ current: trackIds.length, total: trackIds.length, isAdding: true });
       
       if (currentPlaylist === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
       
-      log.info('Successfully added', count, 'tracks to playlist');
+      log.info('Successfully added', trackIds.length, 'tracks to playlist');
     } catch (err) {
       console.error('Failed to add tracks to playlist:', err);
       throw err;

@@ -53,13 +53,13 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
 
   // Listen for Tauri file drop events
   useEffect(() => {
-    let unlisten;
+    let unlisten: (() => void) | undefined;
 
     const setupDropListener = async () => {
       try {
         const currentWindow = getCurrentWindow();
         unlisten = await currentWindow.onDragDropEvent(async (event) => {
-          if (event.payload.type === 'hover') {
+          if (event.payload.type === 'enter' || event.payload.type === 'over') {
             setIsDraggingExternal(true);
           } else if (event.payload.type === 'drop') {
             setIsDraggingExternal(false);
@@ -72,7 +72,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
               log.info('Files dropped via Tauri:', paths);
 
               // Collect all new tracks from scanning
-              const newTrackIds = [];
+              const newTrackIds: string[] = [];
               let foldersAdded = 0;
               let filesAdded = 0;
 
@@ -129,7 +129,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
                 toast?.showInfo(`Dropped ${filesAdded} file(s). Use "Add Folder" for best results.`);
               }
             }
-          } else if (event.payload.type === 'cancel') {
+          } else if (event.payload.type === 'leave') {
             setIsDraggingExternal(false);
           }
         });
@@ -188,7 +188,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     // Only reset if leaving the window entirely
-    if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+    if (!e.relatedTarget || (e.relatedTarget as HTMLElement).nodeName === 'HTML') {
       setIsDraggingExternal(false);
     }
   }, []);
@@ -210,8 +210,8 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
     const handleGlobalDragOver = (e: DragEvent) => {
       log.info('[useDragDrop] Global dragover fired');
       e.preventDefault();
-      const types = Array.from(e.dataTransfer.types);
-      if (types.includes('application/json')) {
+      const types = Array.from(e.dataTransfer?.types ?? []);
+      if (types.includes('application/json') && e.dataTransfer) {
         e.dataTransfer.dropEffect = 'copy';
       }
     };

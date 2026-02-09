@@ -358,11 +358,9 @@ For a peaking EQ filter, the standard cookbook formula uses `10^(dBgain/40)` (co
 
 ## 6. Low-Priority Issues
 
-### 6.1 `anyhow` Crate Listed But Unused
+### 6.1 ~~`anyhow` Crate Listed But Unused~~ — N/A
 
-**File:** `Cargo.toml`
-
-`anyhow = "1.0"` is in dependencies, but the project uses a custom `AppError` type throughout. `anyhow` is not imported anywhere visible. Either use `anyhow` (simplifies error handling) or remove the dependency.
+**Status:** Invalid finding. `anyhow` IS used in `playlist_io.rs` for M3U/PLS import error handling. No action needed.
 
 ---
 
@@ -437,7 +435,7 @@ Loads every track into memory to do grouping. For large libraries (10k+ tracks),
 | 13 | **MEDIUM** | Audit/resolve `unsafe impl Send/Sync` (§5.5) | Medium | Correctness guarantee |
 | 14 | **MEDIUM** | Resolve stale closure patterns after state unification (§5.6) | Low | Cleaner React patterns, fewer eslint-disables |
 | 15 | **MEDIUM** | Resolve TODO in effects.rs (§5.7) | Trivial | Confidence in shipped audio code |
-| 16 | **LOW** | Remove unused `anyhow` dependency (§6.1) | Trivial | Clean Cargo.toml |
+| 16 | ~~LOW~~ | ~~Remove unused `anyhow` dependency (§6.1)~~ — **N/A**: `anyhow` IS used in `playlist_io.rs` | — | — |
 | 17 | **LOW** | Switch to UUID/nanoid for ID generation (§6.2) | Low | Eliminates collision risk |
 | 18 | **LOW** | Extract layout templates to separate file (§6.3) | Trivial | Cleaner uiSlice |
 | 19 | **LOW** | Convert key `.jsx` windows to `.tsx` (§6.5) | Medium-High | Type safety for UI layer |

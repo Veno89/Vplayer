@@ -121,7 +121,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     onEnded: () => {
       // Read fresh state from store to avoid stale closures
       const state = useStore.getState();
-      const pbTracks = state.activePlaybackTracks?.length > 0 ? state.activePlaybackTracks : state.tracks;
+      const pbTracks = state.activePlaybackTracks?.length > 0 ? state.activePlaybackTracks : tracks;
       const currentRepeatMode = state.repeatMode;
       const currentTrackIdx = state.currentTrack;
 
@@ -131,7 +131,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           console.error('Failed to replay:', err);
           toast.showError('Failed to replay track');
         });
-      } else if (currentRepeatMode === 'all' || currentTrackIdx < (pbTracks?.length ?? 0) - 1) {
+      } else if (currentRepeatMode === 'all' || (currentTrackIdx ?? 0) < (pbTracks?.length ?? 0) - 1) {
         playerHookRef.current?.handleNextTrack();
       } else {
         useStore.getState().setPlaying(false);

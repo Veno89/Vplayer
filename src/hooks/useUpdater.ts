@@ -55,8 +55,8 @@ const useUpdaterStore = create<UpdaterAPI>((set, get) => ({
           updateInfo: {
             version: update.version,
             currentVersion: update.currentVersion,
-            body: update.body,
-            date: update.date,
+            body: update.body ?? null,
+            date: update.date ?? null,
           },
         });
         return true;
@@ -88,10 +88,12 @@ const useUpdaterStore = create<UpdaterAPI>((set, get) => ({
           case 'Started':
             set({ downloadProgress: 0 });
             break;
-          case 'Progress':
-            const progress = event.data.chunkLength / event.data.contentLength * 100;
+          case 'Progress': {
+            const total = (event.data as any).contentLength ?? 1;
+            const progress = event.data.chunkLength / total * 100;
             set({ downloadProgress: Math.round(progress) });
             break;
+          }
           case 'Finished':
             set({ downloadProgress: 100 });
             break;

@@ -2,6 +2,7 @@
  * MusicBrainz / Discography Slice
  * 
  * Manages state for MusicBrainz integration and discography matching.
+ * All data is persisted via Zustand's persist middleware — no manual localStorage.
  */
 import type {
   AppStore,
@@ -16,45 +17,54 @@ import type {
 type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
 type GetFn = () => AppStore;
 
-// Storage key for persisted discography data
-const DISCOGRAPHY_STORAGE_KEY = 'vplayer_discography_data';
+/** Max age for cached discography data (7 days in ms) */
+const DISCOGRAPHY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Load persisted discography data
+ * Filter out expired entries from persisted discography data.
+ * Called during store hydration (merge) to prune stale cache entries.
  */
-const loadPersistedData = (): { resolvedArtists: Record<string, ResolvedArtist>; artistDiscographies: Record<string, ArtistDiscography> } => {
-  try {
-    const stored = localStorage.getItem(DISCOGRAPHY_STORAGE_KEY);
-    if (stored) {
-      const data = JSON.parse(stored);
-      // Check expiration (7 days)
-      if (Date.now() - (data.timestamp || 0) < 7 * 24 * 60 * 60 * 1000) {
-        return {
-          resolvedArtists: data.resolvedArtists || {},
-          artistDiscographies: data.artistDiscographies || {},
-        };
+export function pruneExpiredDiscographyData(state: Partial<MusicBrainzSliceState>): Partial<MusicBrainzSliceState> {
+  const now = Date.now();
+  const result: Partial<MusicBrainzSliceState> = { ...state };
+
+  // Prune expired resolved artists
+  if (state.resolvedArtists) {
+    const pruned: Record<string, ResolvedArtist> = {};
+    for (const [key, artist] of Object.entries(state.resolvedArtists)) {
+      if (now - (artist.resolvedAt || 0) < DISCOGRAPHY_MAX_AGE_MS) {
+        pruned[key] = artist;
       }
     }
-  } catch (err) {
-    console.warn('[MusicBrainzSlice] Failed to load persisted data:', err);
+    result.resolvedArtists = pruned;
   }
-  return { resolvedArtists: {}, artistDiscographies: {} };
-};
+
+  // Prune expired artist discographies
+  if (state.artistDiscographies) {
+    const pruned: Record<string, ArtistDiscography> = {};
+    for (const [key, disc] of Object.entries(state.artistDiscographies)) {
+      if (now - (disc.fetchedAt || 0) < DISCOGRAPHY_MAX_AGE_MS) {
+        pruned[key] = disc;
+      }
+    }
+    result.artistDiscographies = pruned;
+  }
+
+  return result;
+}
 
 /**
  * MusicBrainz slice creator
  */
 export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice => {
-  const persistedData = loadPersistedData();
-
   return {
     // === MusicBrainz State ===
     
     // Map of artist name (lowercase) -> MusicBrainz artist data
-    resolvedArtists: persistedData.resolvedArtists,
+    resolvedArtists: {},
     
     // Map of artist MBID -> discography data with matches
-    artistDiscographies: persistedData.artistDiscographies,
+    artistDiscographies: {},
     
     // Currently selected artist for viewing
     selectedArtistMbid: null,
@@ -87,10 +97,8 @@ export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice
           [normalizedName]: {
             ...mbArtistData,
             resolvedAt: Date.now(),
-          },
+          } as ResolvedArtist,
         };
-        // Persist
-        saveDiscographyData(newResolved, state.artistDiscographies);
         return { resolvedArtists: newResolved };
       }),
 
@@ -101,7 +109,6 @@ export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice
       set((state) => {
         const normalizedName = artistName.toLowerCase().trim();
         const { [normalizedName]: removed, ...rest } = state.resolvedArtists;
-        saveDiscographyData(rest, state.artistDiscographies);
         return { resolvedArtists: rest };
       }),
 
@@ -115,9 +122,8 @@ export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice
           [artistMbid]: {
             ...discographyData,
             fetchedAt: Date.now(),
-          },
+          } as ArtistDiscography,
         };
-        saveDiscographyData(state.resolvedArtists, newDiscographies);
         return { artistDiscographies: newDiscographies };
       }),
 
@@ -149,7 +155,6 @@ export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice
           },
         };
 
-        saveDiscographyData(state.resolvedArtists, newDiscographies);
         return { artistDiscographies: newDiscographies };
       }),
 
@@ -185,7 +190,6 @@ export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice
      * Clear all discography data
      */
     clearDiscographyData: () => {
-      localStorage.removeItem(DISCOGRAPHY_STORAGE_KEY);
       set({
         resolvedArtists: {},
         artistDiscographies: {},
@@ -226,24 +230,11 @@ export const createMusicBrainzSlice = (set: SetFn, get: GetFn): MusicBrainzSlice
 };
 
 /**
- * Save discography data to localStorage
- */
-function saveDiscographyData(resolvedArtists: Record<string, ResolvedArtist>, artistDiscographies: Record<string, ArtistDiscography>) {
-  try {
-    const data = {
-      timestamp: Date.now(),
-      resolvedArtists,
-      artistDiscographies,
-    };
-    localStorage.setItem(DISCOGRAPHY_STORAGE_KEY, JSON.stringify(data));
-  } catch (err) {
-    console.warn('[MusicBrainzSlice] Failed to save data:', err);
-  }
-}
-
-/**
- * MusicBrainz state to persist
+ * MusicBrainz state to persist via Zustand persist middleware.
+ * Includes all cached data — expiration is handled by pruneExpiredDiscographyData() during hydration.
  */
 export const musicBrainzPersistState = (state: MusicBrainzSliceState) => ({
   discographyConfig: state.discographyConfig,
+  resolvedArtists: state.resolvedArtists,
+  artistDiscographies: state.artistDiscographies,
 });
