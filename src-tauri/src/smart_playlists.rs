@@ -1,5 +1,38 @@
 use rusqlite::{Connection, Result, params};
+use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
+
+/// Allowed column names for smart playlist queries.
+/// This whitelist prevents SQL injection through the `field` parameter.
+const ALLOWED_FIELDS: &[&str] = &[
+    "title", "artist", "album", "genre", "year", "track_number", "disc_number",
+    "duration", "rating", "play_count", "last_played", "date_added", "name", "path",
+    "track_gain", "track_peak", "loudness", "file_modified",
+];
+
+/// Allowed column names for ORDER BY clauses.
+const ALLOWED_SORT_FIELDS: &[&str] = &[
+    "title", "artist", "album", "genre", "year", "track_number", "disc_number",
+    "duration", "rating", "play_count", "last_played", "date_added", "name", "path",
+];
+
+/// Validate that a field name is an allowed column. Returns an error if not.
+fn validate_field(field: &str) -> Result<()> {
+    if ALLOWED_FIELDS.contains(&field) {
+        Ok(())
+    } else {
+        Err(rusqlite::Error::InvalidQuery)
+    }
+}
+
+/// Validate that a sort field is an allowed column.
+fn validate_sort_field(field: &str) -> Result<()> {
+    if ALLOWED_SORT_FIELDS.contains(&field) {
+        Ok(())
+    } else {
+        Err(rusqlite::Error::InvalidQuery)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartPlaylist {
@@ -23,25 +56,62 @@ pub struct Rule {
 }
 
 impl SmartPlaylist {
-    pub fn to_sql(&self) -> Result<String> {
+    /// Build a parameterized SQL query from the playlist rules.
+    /// Returns (sql_string, params_vec) to be used with rusqlite execute.
+    pub fn to_sql(&self) -> Result<(String, Vec<Value>)> {
         let mut conditions = Vec::new();
+        let mut sql_params: Vec<Value> = Vec::new();
         
         for rule in &self.rules {
+            validate_field(&rule.field)?;
+            
             let condition = match rule.operator.as_str() {
-                "equals" => format!("{} = '{}'", rule.field, rule.value),
-                "not_equals" => format!("{} != '{}'", rule.field, rule.value),
-                "contains" => format!("{} LIKE '%{}%'", rule.field, rule.value),
-                "not_contains" => format!("{} NOT LIKE '%{}%'", rule.field, rule.value),
-                "starts_with" => format!("{} LIKE '{}%'", rule.field, rule.value),
-                "ends_with" => format!("{} LIKE '%{}'", rule.field, rule.value),
-                "greater_than" => format!("{} > {}", rule.field, rule.value),
-                "less_than" => format!("{} < {}", rule.field, rule.value),
-                "greater_equal" => format!("{} >= {}", rule.field, rule.value),
-                "less_equal" => format!("{} <= {}", rule.field, rule.value),
+                "equals" => {
+                    sql_params.push(Value::Text(rule.value.clone()));
+                    format!("{} = ?", rule.field)
+                }
+                "not_equals" => {
+                    sql_params.push(Value::Text(rule.value.clone()));
+                    format!("{} != ?", rule.field)
+                }
+                "contains" => {
+                    sql_params.push(Value::Text(format!("%{}%", rule.value)));
+                    format!("{} LIKE ?", rule.field)
+                }
+                "not_contains" => {
+                    sql_params.push(Value::Text(format!("%{}%", rule.value)));
+                    format!("{} NOT LIKE ?", rule.field)
+                }
+                "starts_with" => {
+                    sql_params.push(Value::Text(format!("{}%", rule.value)));
+                    format!("{} LIKE ?", rule.field)
+                }
+                "ends_with" => {
+                    sql_params.push(Value::Text(format!("%{}", rule.value)));
+                    format!("{} LIKE ?", rule.field)
+                }
+                "greater_than" => {
+                    sql_params.push(Value::Text(rule.value.clone()));
+                    format!("{} > ?", rule.field)
+                }
+                "less_than" => {
+                    sql_params.push(Value::Text(rule.value.clone()));
+                    format!("{} < ?", rule.field)
+                }
+                "greater_equal" => {
+                    sql_params.push(Value::Text(rule.value.clone()));
+                    format!("{} >= ?", rule.field)
+                }
+                "less_equal" => {
+                    sql_params.push(Value::Text(rule.value.clone()));
+                    format!("{} <= ?", rule.field)
+                }
                 "between" => {
                     let parts: Vec<&str> = rule.value.split(',').collect();
                     if parts.len() == 2 {
-                        format!("{} BETWEEN {} AND {}", rule.field, parts[0].trim(), parts[1].trim())
+                        sql_params.push(Value::Text(parts[0].trim().to_string()));
+                        sql_params.push(Value::Text(parts[1].trim().to_string()));
+                        format!("{} BETWEEN ? AND ?", rule.field)
                     } else {
                         return Err(rusqlite::Error::InvalidQuery);
                     }
@@ -64,7 +134,8 @@ impl SmartPlaylist {
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
                             .as_secs() as i64 - seconds;
-                        format!("{} > {}", rule.field, threshold)
+                        sql_params.push(Value::Integer(threshold));
+                        format!("{} > ?", rule.field)
                     } else {
                         return Err(rusqlite::Error::InvalidQuery);
                     }
@@ -86,6 +157,7 @@ impl SmartPlaylist {
         let mut query = format!("SELECT {} FROM tracks WHERE {}", crate::scanner::TRACK_SELECT_COLUMNS, where_clause);
         
         if let Some(sort_field) = &self.sort_by {
+            validate_sort_field(sort_field)?;
             let direction = if self.sort_desc { "DESC" } else { "ASC" };
             query.push_str(&format!(" ORDER BY {} {}", sort_field, direction));
         }
@@ -94,7 +166,7 @@ impl SmartPlaylist {
             query.push_str(&format!(" LIMIT {}", limit));
         }
         
-        Ok(query)
+        Ok((query, sql_params))
     }
 }
 
@@ -229,11 +301,36 @@ mod tests {
             created_at: 0,
         };
         
-        let sql = playlist.to_sql().unwrap();
-        assert!(sql.contains("genre = 'Rock'"));
-        assert!(sql.contains("rating >= 4"));
+        let (sql, params) = playlist.to_sql().unwrap();
+        assert!(sql.contains("genre = ?"));
+        assert!(sql.contains("rating >= ?"));
         assert!(sql.contains("AND"));
         assert!(sql.contains("ORDER BY rating DESC"));
         assert!(sql.contains("LIMIT 50"));
+        assert_eq!(params.len(), 2);
+    }
+    
+    #[test]
+    fn test_smart_playlist_rejects_invalid_field() {
+        let playlist = SmartPlaylist {
+            id: "test".to_string(),
+            name: "Injection Attempt".to_string(),
+            description: "".to_string(),
+            rules: vec![
+                Rule {
+                    field: "1; DROP TABLE tracks; --".to_string(),
+                    operator: "equals".to_string(),
+                    value: "anything".to_string(),
+                },
+            ],
+            match_all: true,
+            limit: None,
+            sort_by: None,
+            sort_desc: false,
+            live_update: true,
+            created_at: 0,
+        };
+        
+        assert!(playlist.to_sql().is_err());
     }
 }

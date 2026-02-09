@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useStore } from '../store/useStore';
 import { useAudio } from '../hooks/useAudio';
 import { usePlayer as usePlayerHook } from '../hooks/usePlayer';
@@ -183,7 +183,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   //   5) Crossfade service
   //   6) Toast service
 
-  const value = {
+  const togglePlayCb = useCallback(() => setPlaying((p: boolean) => !p), [setPlaying]);
+
+  const value = useMemo<PlayerContextValue>(() => ({
     // Audio engine state (not in Zustand)
     audioIsLoading: audio.isLoading,
     audioBackendError: audio.audioBackendError,
@@ -196,7 +198,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     handleVolumeUp: playerHook.handleVolumeUp,
     handleVolumeDown: playerHook.handleVolumeDown,
     handleToggleMute: playerHook.handleToggleMute,
-    togglePlay: useCallback(() => setPlaying(p => !p), [setPlaying]),
+    togglePlay: togglePlayCb,
 
     // Low-level audio access (needed by shortcuts, MiniPlayer, etc.)
     audio,
@@ -212,7 +214,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     // Toast (shared instance)
     toast,
-  };
+  }), [
+    audio, playerHook, crossfade, playbackTracks, library, toast, togglePlayCb,
+  ]);
 
   return (
     <PlayerContext.Provider value={value}>

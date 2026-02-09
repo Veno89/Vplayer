@@ -6,7 +6,9 @@ use log::{info, warn};
 
 #[tauri::command]
 pub fn create_playlist(name: String, state: tauri::State<AppState>) -> Result<String, String> {
-    state.db.create_playlist(&name).map_err(|e| e.to_string())
+    let validated_name = crate::validation::validate_playlist_name(&name)
+        .map_err(|e| e.to_string())?;
+    state.db.create_playlist(&validated_name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -21,7 +23,9 @@ pub fn delete_playlist(playlist_id: String, state: tauri::State<AppState>) -> Re
 
 #[tauri::command]
 pub fn rename_playlist(playlist_id: String, new_name: String, state: tauri::State<AppState>) -> Result<(), String> {
-    state.db.rename_playlist(&playlist_id, &new_name).map_err(|e| e.to_string())
+    let validated_name = crate::validation::validate_playlist_name(&new_name)
+        .map_err(|e| e.to_string())?;
+    state.db.rename_playlist(&playlist_id, &validated_name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

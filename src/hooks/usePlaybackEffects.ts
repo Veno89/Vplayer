@@ -23,6 +23,8 @@ interface PlaybackEffectsParams {
  */
 export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsParams): void {
   const prevPlayingRef = useRef<boolean | null>(null);
+  const lastIncrementedTrackIdRef = useRef<string | null>(null);
+  const lastPositionSaveTimeRef = useRef<number>(0);
 
   // Store selectors
   const playing = useStore(s => s.playing);
@@ -41,8 +43,10 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
 
   // ── A-B repeat looping + periodic position save ───────────────────
   useEffect(() => {
-    // Save position every ~5 s (intentional useStore.getState() — Zustand escape hatch)
-    if (progress > 0 && Math.floor(progress) % 5 === 0) {
+    // Save position at most once per second (debounced)
+    const now = Date.now();
+    if (progress > 0 && now - lastPositionSaveTimeRef.current >= 1000) {
+      lastPositionSaveTimeRef.current = now;
       useStore.getState().setLastPosition(progress);
     }
 
@@ -84,7 +88,12 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   // ── Increment play count ──────────────────────────────────────────
   useEffect(() => {
     if (playing && currentTrack !== null && tracks?.[currentTrack]) {
-      TauriAPI.incrementPlayCount(tracks[currentTrack].id)
+      const trackId = tracks[currentTrack].id;
+      // Skip if we already incremented for this track (prevents double-increment
+      // when the tracks array identity changes, e.g., during a library refresh)
+      if (lastIncrementedTrackIdRef.current === trackId) return;
+      lastIncrementedTrackIdRef.current = trackId;
+      TauriAPI.incrementPlayCount(trackId)
         .catch(err => console.warn('Failed to increment play count:', err));
     }
   }, [playing, currentTrack, tracks]);

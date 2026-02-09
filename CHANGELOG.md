@@ -3,6 +3,39 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.13] - 2026-02-09
+
+### Security (Phase 0)
+- **Parameterized smart playlist SQL** — `to_sql()` now returns `(String, Vec<Value>)` with field whitelist, eliminating SQL injection
+- **Restricted `write_text_file`** — validates target path is within app data directory via `canonicalize()`
+- **Narrowed `assetProtocol.scope`** — reduced from `$HOME/**` to specific music/app directories
+- **Wired input validation** — `validate_playlist_name()` and `validate_rating()` now called in command handlers
+
+### Bug Fixes (Phase 1)
+- **Fixed `nextInQueue` stale state** — captured new index before `set()` to return correct next track
+- **Fixed seek shortcuts** — read `progress`/`duration` from Zustand store instead of non-existent `audio.currentTime`
+- **Fixed play count double-increment** — tracks last-incremented ID via ref, skips on array identity change
+- **Debounced position save** — at most once per second instead of ~10x/sec
+- **Fixed scan listener stale closures** — uses `refreshFoldersRef` pattern for event listeners
+- **MusicBrainz 503 retry limit** — max 3 retries with exponential backoff instead of infinite recursion
+- **CoverArtArchive caching fix** — network errors no longer cached for 30 days; only confirmed results cached
+- **Consolidated startup restore** — removed duplicate logic from `useTrackLoading`, kept `useStartupRestore`
+- **Removed dead `storeState` variable** in `useTrackLoading.ts`
+
+### Performance (Phase 2)
+- **Memoized PlayerProvider context** — `value` wrapped in `useMemo` to prevent unnecessary consumer re-renders
+- **Removed TrackList forced remount** — eliminated `JSON.stringify(columnWidths)` key that destroyed scroll position on column resize
+
+### Dependencies
+- **React 18 → 19** — upgraded `react`/`react-dom` to 19.1.0, `@testing-library/react` to 16.3.0
+- **Removed `@testing-library/react-hooks`** — deprecated, `renderHook` built into `@testing-library/react`
+- **Upgraded `lucide-react`** to 0.563.0 for React 19 compatibility
+- **Fixed MusicBrainz User-Agent** — updated from hardcoded `0.7.0` to `0.9.13`
+
+### Tests
+- All 159 tests passing with React 19
+
+
 ## [0.9.12] - 2026-02-09
 
 ### Architecture Refactors (6 High-Effort Items)

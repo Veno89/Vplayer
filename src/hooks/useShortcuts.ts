@@ -132,7 +132,11 @@ export function useShortcuts({
   }, []);
 
   // Action handlers map
-  const actionHandlers = useCallback((): Record<string, (() => void) | undefined> => ({
+  const actionHandlers = useCallback((): Record<string, (() => void) | undefined> => {
+    // Read current progress/duration from store for seek operations
+    const currentProgress = useStore.getState().progress;
+    const currentDuration = useStore.getState().duration;
+    return {
     'play-pause': togglePlay,
     'next-track': nextTrack,
     'prev-track': prevTrack,
@@ -142,10 +146,10 @@ export function useShortcuts({
     'stop': stop,
     'shuffle': toggleShuffle,
     'repeat': toggleRepeat,
-    'seek-forward': () => audio?.seek?.(Math.min((audio.currentTime || 0) + 10, audio.duration || 0)),
-    'seek-backward': () => audio?.seek?.(Math.max((audio.currentTime || 0) - 10, 0)),
-    'seek-forward-small': () => audio?.seek?.(Math.min((audio.currentTime || 0) + 5, audio.duration || 0)),
-    'seek-backward-small': () => audio?.seek?.(Math.max((audio.currentTime || 0) - 5, 0)),
+    'seek-forward': () => audio?.seek?.(Math.min(currentProgress + 10, currentDuration || 0)),
+    'seek-backward': () => audio?.seek?.(Math.max(currentProgress - 10, 0)),
+    'seek-forward-small': () => audio?.seek?.(Math.min(currentProgress + 5, currentDuration || 0)),
+    'seek-backward-small': () => audio?.seek?.(Math.max(currentProgress - 5, 0)),
     'search': focusSearch,
     'open-settings': () => toggleWindow?.('options'),
     'open-queue': () => toggleWindow?.('queue'),
@@ -153,7 +157,8 @@ export function useShortcuts({
     'open-player': () => toggleWindow?.('player'),
     'open-equalizer': () => toggleWindow?.('equalizer'),
     'open-shortcuts': () => toggleWindow?.('shortcuts'),
-  }), [togglePlay, nextTrack, prevTrack, volumeUp, volumeDown, mute, stop, toggleShuffle, toggleRepeat, audio, focusSearch, toggleWindow]);
+  };
+  }, [togglePlay, nextTrack, prevTrack, volumeUp, volumeDown, mute, stop, toggleShuffle, toggleRepeat, audio, focusSearch, toggleWindow]);
 
   // DOM keyboard events (in-app shortcuts)
   useEffect(() => {

@@ -135,16 +135,17 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
         const state = get();
         if (state.queueIndex < state.queue.length - 1) {
             const currentTrack = state.queue[state.queueIndex];
+            const newIndex = state.queueIndex + 1;
             // Add current track to history before moving to next
             if (currentTrack) {
-                set((state) => ({
-                    queueHistory: [...state.queueHistory, currentTrack],
-                    queueIndex: state.queueIndex + 1
+                set((s) => ({
+                    queueHistory: [...s.queueHistory, currentTrack],
+                    queueIndex: newIndex
                 }));
             } else {
-                set((state) => ({ queueIndex: state.queueIndex + 1 }));
+                set({ queueIndex: newIndex });
             }
-            return get().queue[state.queueIndex];
+            return state.queue[newIndex];
         }
         return null;
     },

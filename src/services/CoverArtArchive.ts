@@ -121,11 +121,15 @@ class CoverArtArchiveService {
     try {
       const result = await requestPromise;
       
-      // Cache result
+      // Cache both found and confirmed-not-found results
       this.cache[releaseGroupId] = result;
       this._saveCache();
 
       return result;
+    } catch (err) {
+      // Network errors — don't cache, so the next call will retry
+      console.warn('[CoverArtArchive] Network error, will not cache:', releaseGroupId);
+      return { releaseGroupId, found: false };
     } finally {
       this.pendingRequests.delete(releaseGroupId);
     }
@@ -160,12 +164,9 @@ class CoverArtArchiveService {
         found: false,
       };
     } catch (err) {
-      // Network error or timeout - treat as not found but don't cache
+      // Network error or timeout — throw so getCoverArt knows not to cache
       console.warn('[CoverArtArchive] Failed to fetch cover art:', releaseGroupId, err);
-      return {
-        releaseGroupId,
-        found: false,
-      };
+      throw err;
     }
   }
 

@@ -46,15 +46,16 @@ pub fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> 
     let playlist = smart_playlists::load_smart_playlist(&conn, &id)
         .map_err(|e| format!("Failed to load smart playlist: {}", e))?;
     
-    // Generate SQL query
-    let query = playlist.to_sql()
+    // Generate parameterized SQL query
+    let (query, params) = playlist.to_sql()
         .map_err(|e| format!("Failed to generate query: {}", e))?;
     
-    // Execute query
+    // Execute query with parameters
     let mut stmt = conn.prepare(&query)
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
     
-    let tracks = stmt.query_map([], Track::from_row)
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
+    let tracks = stmt.query_map(param_refs.as_slice(), Track::from_row)
     .map_err(|e| format!("Failed to execute query: {}", e))?
     .collect::<rusqlite::Result<Vec<_>>>()
     .map_err(|e| format!("Failed to collect results: {}", e))?;

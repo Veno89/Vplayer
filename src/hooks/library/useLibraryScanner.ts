@@ -49,6 +49,8 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
     // Auto-scan state ref to avoid dependency issues
     const autoScanDoneRef = useRef(false);
+    // Ref to always hold the latest refreshFolders callback (avoids stale closures in event listeners)
+    const refreshFoldersRef = useRef<() => Promise<number>>(async () => 0);
 
     // Start folder watches and auto-scan when folders are loaded
     useEffect(() => {
@@ -86,9 +88,9 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         unlistenPromises.push(
             listen('folder-changed', async (event) => {
                 log.info('File system change detected:', event.payload);
-                // Trigger incremental scan for all folders
+                // Use ref to call the latest refreshFolders (avoids stale closure)
                 try {
-                    const newTracksCount = await refreshFolders();
+                    const newTracksCount = await refreshFoldersRef.current();
                     if (newTracksCount > 0) {
                         log.info(`Auto-detected ${newTracksCount} new/modified track(s)`);
                     }
@@ -171,6 +173,11 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             });
         };
     }, []);
+
+    // Keep the ref in sync with the latest refreshFolders callback
+    useEffect(() => {
+        refreshFoldersRef.current = refreshFolders;
+    });
 
     const refreshFolders = useCallback(async (): Promise<number> => {
         try {

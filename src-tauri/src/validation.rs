@@ -33,7 +33,6 @@ pub fn validate_path(path: &str) -> AppResult<PathBuf> {
 /// - Checks for empty name
 /// - Enforces maximum length
 /// - Removes invalid characters
-#[allow(dead_code)]
 pub fn validate_playlist_name(name: &str) -> AppResult<String> {
     if name.is_empty() {
         return Err(AppError::Validation("Playlist name cannot be empty".to_string()));
@@ -59,7 +58,6 @@ pub fn validate_playlist_name(name: &str) -> AppResult<String> {
 /// Validate track rating
 ///
 /// Ensures rating is between 0 and 5 stars
-#[allow(dead_code)]
 pub fn validate_rating(rating: i32) -> AppResult<i32> {
     if !(0..=5).contains(&rating) {
         return Err(AppError::Validation(format!("Rating must be between 0 and 5, got {}", rating)));

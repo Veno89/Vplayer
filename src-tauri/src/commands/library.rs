@@ -118,8 +118,10 @@ pub fn clear_failed_tracks(state: tauri::State<'_, AppState>) -> Result<(), Stri
 
 #[tauri::command]
 pub fn set_track_rating(track_id: String, rating: i32, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    info!("Setting track rating: {} -> {}", track_id, rating);
-    state.db.set_track_rating(&track_id, rating).map_err(|e| e.to_string())
+    let validated_rating = crate::validation::validate_rating(rating)
+        .map_err(|e| e.to_string())?;
+    info!("Setting track rating: {} -> {}", track_id, validated_rating);
+    state.db.set_track_rating(&track_id, validated_rating).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -346,8 +348,38 @@ pub fn reset_play_count(track_id: String, state: tauri::State<AppState>) -> Resu
 }
 
 #[tauri::command]
-pub fn write_text_file(file_path: String, content: String) -> Result<(), String> {
+pub fn write_text_file(file_path: String, content: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
+    use std::path::Path;
+    
     info!("Writing text file: {}", file_path);
+    
+    // Security: only allow writes inside the app data directory
+    let app_data_dir = app_handle.path().app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
+    
+    let canonical_target = Path::new(&file_path).canonicalize()
+        .or_else(|_| {
+            // File might not exist yet — canonicalize the parent
+            if let Some(parent) = Path::new(&file_path).parent() {
+                parent.canonicalize().map(|p| p.join(Path::new(&file_path).file_name().unwrap_or_default()))
+            } else {
+                Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"))
+            }
+        })
+        .map_err(|e| format!("Invalid file path: {}", e))?;
+    
+    let canonical_allowed = app_data_dir.canonicalize()
+        .unwrap_or(app_data_dir);
+    
+    if !canonical_target.starts_with(&canonical_allowed) {
+        return Err(format!("Security: writes are only allowed inside the app data directory ({})", canonical_allowed.display()));
+    }
+    
+    // Prevent directory traversal
+    if file_path.contains("..") {
+        return Err("Security: directory traversal is not allowed".to_string());
+    }
+    
     fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {}", e))
 }

@@ -8,7 +8,7 @@
  */
 
 const MB_BASE_URL = 'https://musicbrainz.org/ws/2';
-const USER_AGENT = 'VPlayer/0.7.0 (https://github.com/veno/vplayer)';
+const USER_AGENT = 'VPlayer/0.9.13 (https://github.com/veno/vplayer)';
 const RATE_LIMIT_MS = 1100; // Slightly over 1 second to be safe
 
 // Storage keys for persistent caching
@@ -153,7 +153,8 @@ class MusicBrainzAPIService {
    * Rate-limited fetch wrapper
    * @private
    */
-  async _rateLimitedFetch(url: string): Promise<any> {
+  async _rateLimitedFetch(url: string, retries: number = 0): Promise<any> {
+    const MAX_RETRIES = 3;
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
     
@@ -173,10 +174,14 @@ class MusicBrainzAPIService {
 
     if (!response.ok) {
       if (response.status === 503) {
-        // Rate limited - wait and retry
-        console.warn('[MusicBrainzAPI] Rate limited, waiting 2 seconds...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        return this._rateLimitedFetch(url);
+        if (retries >= MAX_RETRIES) {
+          throw new Error(`MusicBrainz API error: 503 Service Unavailable after ${MAX_RETRIES} retries`);
+        }
+        // Rate limited - wait and retry with exponential backoff
+        const waitTime = 2000 * Math.pow(2, retries);
+        console.warn(`[MusicBrainzAPI] Rate limited, waiting ${waitTime / 1000}s (retry ${retries + 1}/${MAX_RETRIES})...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return this._rateLimitedFetch(url, retries + 1);
       }
       throw new Error(`MusicBrainz API error: ${response.status} ${response.statusText}`);
     }

@@ -44,19 +44,9 @@ export function useTrackLoading({
   // ReplayGain hook for volume normalization
   const replayGain = useReplayGain();
 
-  // Restore last played track on mount
-  useEffect(() => {
-    if (hasRestoredTrack || !tracks?.length) return;
-
-    const lastTrackId = useStore.getState().lastTrackId;
-    if (lastTrackId) {
-      const trackIndex = tracks.findIndex(t => t.id === lastTrackId);
-      if (trackIndex !== -1) {
-        // This will be handled by setCurrentTrack in parent
-      }
-    }
-    setHasRestoredTrack(true);
-  }, [tracks, hasRestoredTrack]);
+  // Note: Startup restore logic is handled by useStartupRestore hook.
+  // hasRestoredTrack / setHasRestoredTrack are still exposed here so that
+  // the restore hook can coordinate with track loading state.
 
   // Load track when currentTrack changes
   useEffect(() => {
@@ -150,7 +140,6 @@ export function useTrackLoading({
           const isDecodeError = (err as Error).message && (err as Error).message.includes('Decode error');
 
           // Get user preferences from store
-          const storeState = useStore.getState();
           const preferences = {
             autoRemoveCorruptedFiles: DEFAULT_PREFERENCES.autoRemoveCorruptedFiles,
             confirmCorruptedFileRemoval: DEFAULT_PREFERENCES.confirmCorruptedFileRemoval,
@@ -206,12 +195,7 @@ export function useTrackLoading({
   // Only re-run when currentTrack index or loadedTrackId changes
   // All other values (tracks, audio, etc.) are accessed from the closure
 
-  // Separate effect to save progress periodically to store
-  useEffect(() => {
-    if (loadedTrackId && progress > 0) {
-      useStore.getState().setLastPosition(progress);
-    }
-  }, [progress, loadedTrackId]);
+  // Position saving is handled by usePlaybackEffects (debounced).
 
   return {
     loadedTrackId,

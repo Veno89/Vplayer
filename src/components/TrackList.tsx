@@ -670,7 +670,6 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       )}
       <ListVirtual
         ref={listRef}
-        key={columnWidths ? JSON.stringify(columnWidths) : 'default'}
         height={isMultiSelectMode && actualSelectedIndices.size > 0
           ? (height || 300) - 44
           : (height || 300)}
