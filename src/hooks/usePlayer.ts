@@ -176,10 +176,14 @@ export function usePlayer({
         }
     }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, getNextTrackIndex]);
 
-    // Pre-load next track for gapless playback (when crossfade disabled)
+    // Pre-load next track for gapless playback (when crossfade disabled and gapless enabled)
     useEffect(() => {
         if (!tracks?.length || currentTrack === null || !duration) return;
         if (crossfade?.enabled) return;
+
+        // Check if gapless playback is enabled in settings
+        const gaplessEnabled = storeGetter ? storeGetter().gaplessPlayback : true;
+        if (!gaplessEnabled) return;
 
         const timeRemaining = duration - progress;
 

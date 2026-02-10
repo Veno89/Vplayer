@@ -274,7 +274,7 @@ export function SettingButton({ label, description, onClick, icon: Icon, variant
       onClick={onClick}
       onMouseDown={e => e.stopPropagation()}
       disabled={loading}
-      className={`w-full px-4 py-3 ${variants[variant]} text-sm rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]`}
+      className={`w-full px-4 py-2.5 ${variants[variant]} text-sm rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]`}
     >
       {loading ? (
         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

@@ -123,15 +123,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const currentRepeatMode = state.repeatMode;
       const currentTrackIdx = state.currentTrack;
 
-      if (currentRepeatMode === 'one') {
+      // ── Stop After Current Track ──────────────────────────────────
+      if (state.stopAfterCurrent) {
+        useStore.getState().setPlaying(false);
+        // Auto-reset the flag so it's a one-shot toggle
+        useStore.getState().setStopAfterCurrent(false);
+        return;
+      }
+
+      if (!pbTracks?.length) {
+        // No tracks available — stop playback
+        useStore.getState().setPlaying(false);
+      } else if (currentRepeatMode === 'one') {
         audio.seek(0);
         audio.play().catch(err => {
           console.error('Failed to replay:', err);
           toast.showError('Failed to replay track');
         });
-      } else if (currentRepeatMode === 'all' || (currentTrackIdx ?? 0) < (pbTracks?.length ?? 0) - 1) {
+      } else if (currentRepeatMode === 'all' || (currentTrackIdx ?? 0) < (pbTracks.length) - 1) {
         playerHookRef.current?.handleNextTrack();
       } else {
+        // End of playlist, no repeat — stop playback
         useStore.getState().setPlaying(false);
       }
     },

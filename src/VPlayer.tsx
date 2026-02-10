@@ -4,6 +4,9 @@ import { usePlayerContext } from './context/PlayerProvider';
 import { useAutoResize } from './hooks/useAutoResize';
 import { useShortcuts } from './hooks/useShortcuts';
 import { useUpdater } from './hooks/useUpdater';
+import { useTrayBehavior } from './hooks/useTrayBehavior';
+import { useSleepTimer } from './hooks/useSleepTimer';
+import { useTitleBar } from './hooks/useTitleBar';
 import { useCurrentColors } from './hooks/useStoreHooks';
 import { AppContainer } from './components/AppContainer';
 import { WindowManager } from './components/WindowManager';
@@ -11,7 +14,6 @@ import { MiniPlayerWindow } from './windows/MiniPlayerWindow';
 import { OnboardingGuard } from './windows/OnboardingWindow';
 import ThemeEditorWindow from './windows/ThemeEditorWindow';
 import { UpdateBanner } from './components/UpdateComponents';
-import { VOLUME_STEP } from './utils/constants';
 
 const VPlayerInner = () => {
   const {
@@ -29,9 +31,21 @@ const VPlayerInner = () => {
   const setRepeatMode = useStore(s => s.setRepeatMode);
   const toggleWindow = useStore(s => s.toggleWindow);
   const autoResizeWindow = useStore(s => s.autoResizeWindow);
+  const volumeStepSetting = useStore(s => s.volumeStep);
+  // Convert percentage (1-20) to 0-1 scale
+  const effectiveVolumeStep = (volumeStepSetting || 5) / 100;
 
   // ── Auto-updater ──────────────────────────────────────────────────
   const updater = useUpdater();
+
+  // ── System tray behaviour (close-to-tray, minimize-to-tray, etc.) ─
+  useTrayBehavior();
+
+  // ── Sleep timer (countdown → pause playback) ──────────────────────
+  useSleepTimer();
+
+  // ── Title bar (show track info in window title) ───────────────────
+  useTitleBar();
 
   // ── Auto-resize (self-contained: reads windows/enabled from store) ─
   const { recalculateSize } = useAutoResize();
@@ -46,8 +60,8 @@ const VPlayerInner = () => {
     togglePlay: () => setPlaying(p => !p),
     nextTrack: handleNextTrack,
     prevTrack: handlePrevTrack,
-    volumeUp: () => handleVolumeChange(Math.min(1, volume + VOLUME_STEP)),
-    volumeDown: () => handleVolumeChange(Math.max(0, volume - VOLUME_STEP)),
+    volumeUp: () => handleVolumeChange(Math.min(1, volume + effectiveVolumeStep)),
+    volumeDown: () => handleVolumeChange(Math.max(0, volume - effectiveVolumeStep)),
     mute: handleToggleMute,
     stop: () => { audio.pause(); audio.seek(0); setPlaying(false); },
     toggleShuffle: () => setShuffle(s => !s),

@@ -174,14 +174,20 @@ export function usePlaylistActions({
         const track = displayTracks[index];
         if (!track || !playlists.currentPlaylist) return;
 
-        // Remove from playlist
-        const confirmed = await nativeConfirm(
-            `Remove "${track.title}" from this playlist?`,
-            'Remove Track'
-        );
-        if (confirmed) {
-            playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+        // Check confirmBeforeDelete setting
+        const shouldConfirm = useStore.getState().confirmBeforeDelete;
+        if (shouldConfirm) {
+            const confirmed = await nativeConfirm(
+                `Remove "${track.title}" from this playlist?`,
+                'Remove Track'
+            );
+            if (!confirmed) {
+                closeContextMenu();
+                return;
+            }
         }
+
+        playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
 
         // Adjust current track if needed
         if (currentTrack !== null && currentTrack === index) {
@@ -231,8 +237,29 @@ export function usePlaylistActions({
         playlists.setCurrentPlaylist(playlistId);
     }, [playlists]);
 
-    // Track selection handler
+    // Track selection handler — respects doubleClickAction setting
     const handleTrackSelect = useCallback((index: number) => {
+        const action = useStore.getState().doubleClickAction;
+
+        if (action === 'enqueue') {
+            // Add the track to end of queue
+            const track = displayTracks[index];
+            if (track) {
+                useStore.getState().addToQueue(track, 'end');
+            }
+            return;
+        }
+
+        if (action === 'playNext') {
+            // Insert the track after the current position
+            const track = displayTracks[index];
+            if (track) {
+                useStore.getState().addToQueue(track, 'next');
+            }
+            return;
+        }
+
+        // Default: 'play' — set active tracks and play immediately
         if (onActiveTracksChange) {
             onActiveTracksChange(displayTracks);
         }

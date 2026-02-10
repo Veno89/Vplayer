@@ -1,7 +1,7 @@
 import React from 'react';
-import { Sliders, Monitor, Bell, Grid3X3, Layout, MousePointer, Keyboard } from 'lucide-react';
+import { Sliders, Monitor, Bell, Grid3X3, Layout, MousePointer, Keyboard, MousePointerClick, Type } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { SettingToggle, SettingSlider, SettingCard, SettingDivider, SettingButton } from './SettingsComponents';
+import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingDivider, SettingButton } from './SettingsComponents';
 import type { LayoutTemplate } from '../../store/types';
 
 interface BehaviorTabProps {
@@ -33,6 +33,12 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout, toggleWindow 
   const setSnapToGrid = useStore(state => state.setSnapToGrid);
   const gridSize = useStore(state => state.gridSize);
   const setGridSize = useStore(state => state.setGridSize);
+  const doubleClickAction = useStore(state => state.doubleClickAction);
+  const setDoubleClickAction = useStore(state => state.setDoubleClickAction);
+  const trackChangeNotification = useStore(state => state.trackChangeNotification);
+  const setTrackChangeNotification = useStore(state => state.setTrackChangeNotification);
+  const titleBarFormat = useStore(state => state.titleBarFormat);
+  const setTitleBarFormat = useStore(state => state.setTitleBarFormat);
 
   // Layout preview colors
   const windowColors: Record<string, { bg: string; label: string }> = {
@@ -77,6 +83,46 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout, toggleWindow 
           description="Display system notifications for track changes and events"
           checked={showNotifications}
           onChange={setShowNotifications}
+        />
+
+        <SettingToggle
+          label="Track Change Toast"
+          description="Show an in-app toast notification each time the track changes"
+          checked={trackChangeNotification}
+          onChange={setTrackChangeNotification}
+          icon={Bell}
+        />
+      </SettingCard>
+
+      {/* Double-Click & Interaction */}
+      <SettingCard title="Interaction" icon={MousePointerClick} accent="pink">
+        <SettingSelect
+          label="Double-Click Action"
+          description="What happens when you double-click a track in the library or playlist"
+          value={doubleClickAction}
+          onChange={v => setDoubleClickAction(v as 'play' | 'enqueue' | 'playNext')}
+          options={[
+            { value: 'play', label: 'Play — Replace queue and start' },
+            { value: 'enqueue', label: 'Enqueue — Add to end of queue' },
+            { value: 'playNext', label: 'Play Next — Insert after current' },
+          ]}
+        />
+      </SettingCard>
+
+      {/* Title Bar */}
+      <SettingCard title="Title Bar" icon={Type} accent="teal">
+        <SettingSelect
+          label="Title Bar Format"
+          description="What to show in the application title bar during playback"
+          value={titleBarFormat}
+          onChange={setTitleBarFormat}
+          options={[
+            { value: '{artist} — {title}', label: 'Artist — Title' },
+            { value: '{title} — {artist}', label: 'Title — Artist' },
+            { value: '{title}', label: 'Title only' },
+            { value: '{artist} — {title} [{album}]', label: 'Artist — Title [Album]' },
+            { value: 'VPlayer', label: 'VPlayer (static)' },
+          ]}
         />
       </SettingCard>
 

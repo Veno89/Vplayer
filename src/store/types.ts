@@ -320,11 +320,7 @@ export interface SettingsSliceState {
     // Library Settings
     autoScanOnStartup: boolean;
     watchFolderChanges: boolean;
-    excludedFormats: string[];
     duplicateSensitivity: 'low' | 'medium' | 'high';
-    showHiddenFiles: boolean;
-    metadataLanguage: string;
-    albumArtSize: 'small' | 'medium' | 'large';
     autoFetchAlbumArt: boolean;
 
     // Behavior Settings
@@ -339,12 +335,18 @@ export interface SettingsSliceState {
     snapToGrid: boolean;
     gridSize: number;
 
+    // Playback Behavior
+    stopAfterCurrent: boolean;
+    sleepTimerMinutes: number;
+    seekStepSize: number;
+    volumeStep: number;
+    rememberQueue: boolean;
+    doubleClickAction: 'play' | 'enqueue' | 'playNext';
+    trackChangeNotification: boolean;
+    titleBarFormat: string;
+
     // Performance Settings
     cacheSizeLimit: number;
-    maxConcurrentScans: number;
-    thumbnailQuality: 'low' | 'medium' | 'high';
-    hardwareAcceleration: boolean;
-    audioBufferSize: number;
 
     // EQ Settings
     eqBands: EqBand[];
@@ -381,11 +383,7 @@ export interface SettingsSliceActions {
     setRememberTrackPosition: (enabled: boolean) => void;
     setAutoScanOnStartup: (enabled: boolean) => void;
     setWatchFolderChanges: (enabled: boolean) => void;
-    setExcludedFormats: (formats: string[]) => void;
     setDuplicateSensitivity: (sensitivity: 'low' | 'medium' | 'high') => void;
-    setShowHiddenFiles: (enabled: boolean) => void;
-    setMetadataLanguage: (language: string) => void;
-    setAlbumArtSize: (size: 'small' | 'medium' | 'large') => void;
     setAutoFetchAlbumArt: (enabled: boolean) => void;
     setMinimizeToTray: (enabled: boolean) => void;
     setCloseToTray: (enabled: boolean) => void;
@@ -397,11 +395,15 @@ export interface SettingsSliceActions {
     setShowNotifications: (enabled: boolean) => void;
     setSnapToGrid: (enabled: boolean) => void;
     setGridSize: (size: number) => void;
+    setStopAfterCurrent: (stop: boolean) => void;
+    setSleepTimerMinutes: (minutes: number) => void;
+    setSeekStepSize: (seconds: number) => void;
+    setVolumeStep: (step: number) => void;
+    setRememberQueue: (remember: boolean) => void;
+    setDoubleClickAction: (action: 'play' | 'enqueue' | 'playNext') => void;
+    setTrackChangeNotification: (enabled: boolean) => void;
+    setTitleBarFormat: (format: string) => void;
     setCacheSizeLimit: (limit: number) => void;
-    setMaxConcurrentScans: (max: number) => void;
-    setThumbnailQuality: (quality: 'low' | 'medium' | 'high') => void;
-    setHardwareAcceleration: (enabled: boolean) => void;
-    setAudioBufferSize: (size: number) => void;
     setEqBands: (bands: EqBand[]) => void;
     setCrossfadeEnabled: (enabled: boolean) => void;
     setCrossfadeDuration: (duration: number) => void;

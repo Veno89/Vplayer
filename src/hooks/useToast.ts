@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useStore } from '../store/useStore';
 
 export interface Toast {
   id: number;
@@ -20,6 +21,17 @@ export interface ToastAPI {
 let _toastId = 0;
 
 /**
+ * Check the showNotifications setting from the main store.
+ */
+function areNotificationsEnabled(): boolean {
+  try {
+    return useStore.getState().showNotifications ?? true;
+  } catch {
+    return true; // default to showing if store isn't ready
+  }
+}
+
+/**
  * Global toast store — singleton.
  * Every call to useToast() returns the SAME store, so toasts from any
  * component or hook all appear in the single <ToastContainer>.
@@ -30,6 +42,11 @@ const useToastStore = create<ToastAPI>((set, get) => {
   };
 
   const addToast = (message: string, type: Toast['type'] = 'info', duration: number = 5000): number => {
+    // Always show errors regardless of notification setting
+    if (type !== 'error' && !areNotificationsEnabled()) {
+      return -1;
+    }
+
     const id = ++_toastId;
     const newToast: Toast = { id, message, type, duration };
     set((state) => ({ toasts: [...state.toasts, newToast] }));

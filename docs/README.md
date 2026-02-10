@@ -271,7 +271,7 @@ npx vitest run          # Single run (CI-style)
 cd src-tauri && cargo test  # Rust tests
 ```
 
-Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. As of v0.9.8: **159 tests across 10 files**.
+Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. As of v0.9.15: **159 tests across 10 files**.
 
 ### Building
 
@@ -385,4 +385,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.8 | **Updated**: February 2026
+**Version**: 0.9.15 | **Updated**: February 2026

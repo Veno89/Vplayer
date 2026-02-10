@@ -149,9 +149,38 @@ pub fn update_track_path(track_id: String, new_path: String, state: tauri::State
 }
 
 #[tauri::command]
-pub fn find_duplicates(state: tauri::State<'_, AppState>) -> Result<Vec<Vec<Track>>, String> {
-    info!("Finding duplicate tracks");
-    state.db.find_duplicates().map_err(|e| e.to_string())
+pub fn find_duplicates(state: tauri::State<'_, AppState>, sensitivity: Option<String>) -> Result<Vec<Vec<Track>>, String> {
+    let level = sensitivity.as_deref().unwrap_or("medium");
+    info!("Finding duplicate tracks (sensitivity={})", level);
+    let mut groups = state.db.find_duplicates().map_err(|e| e.to_string())?;
+
+    // Filter groups based on sensitivity
+    match level {
+        "low" => {
+            // Low: keep only groups where all tracks share the exact same file name
+            groups.retain(|grp| {
+                if grp.len() < 2 { return false; }
+                let first_name = std::path::Path::new(&grp[0].path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase());
+                grp.iter().all(|t| {
+                    std::path::Path::new(&t.path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_lowercase()) == first_name
+                })
+            });
+        }
+        "high" => {
+            // High: keep everything the DB returns (title+artist+album, ≤2s duration)
+            // — no extra filtering
+        }
+        _ => {
+            // Medium (default): keep groups where all durations are within 2 seconds
+            // This is already enforced by the DB query, so nothing to filter
+        }
+    }
+
+    Ok(groups)
 }
 
 #[tauri::command]

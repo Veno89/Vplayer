@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Trash2, RotateCw, Download, Upload, Bug, HardDrive, FileJson, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
+import { Database, Trash2, RotateCw, Download, Upload, Bug, HardDrive, FileJson, AlertTriangle, CheckCircle, Loader, Copy } from 'lucide-react';
 import { getVersion } from '@tauri-apps/api/app';
 import { useStore } from '../../store/useStore';
 import { useMaintenanceActions } from '../../hooks/useMaintenanceActions';
@@ -16,7 +16,8 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
   const {
     cacheSize, dbSize, loadingStats,
     vacuuming: optimizing, clearingCache: clearing,
-    loadStats, vacuumDatabase, clearCache,
+    duplicateGroups, findingDuplicates,
+    loadStats, vacuumDatabase, clearCache, findDuplicates,
   } = useMaintenanceActions();
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -76,23 +77,31 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
           autoScanOnStartup: state.autoScanOnStartup,
           watchFolderChanges: state.watchFolderChanges,
           duplicateSensitivity: state.duplicateSensitivity,
-          showHiddenFiles: state.showHiddenFiles,
-          metadataLanguage: state.metadataLanguage,
-          albumArtSize: state.albumArtSize,
           autoFetchAlbumArt: state.autoFetchAlbumArt,
           minimizeToTray: state.minimizeToTray,
           closeToTray: state.closeToTray,
           startMinimized: state.startMinimized,
           rememberWindowPositions: state.rememberWindowPositions,
+          rememberTrackPosition: state.rememberTrackPosition,
           confirmBeforeDelete: state.confirmBeforeDelete,
           showNotifications: state.showNotifications,
           snapToGrid: state.snapToGrid,
           gridSize: state.gridSize,
+          autoResizeWindow: state.autoResizeWindow,
+          playlistAutoScroll: state.playlistAutoScroll,
           cacheSizeLimit: state.cacheSizeLimit,
-          maxConcurrentScans: state.maxConcurrentScans,
-          thumbnailQuality: state.thumbnailQuality,
-          hardwareAcceleration: state.hardwareAcceleration,
-          audioBufferSize: state.audioBufferSize,
+          eqBands: state.eqBands,
+          crossfadeEnabled: state.crossfadeEnabled,
+          crossfadeDuration: state.crossfadeDuration,
+          backgroundImage: state.backgroundImage,
+          stopAfterCurrent: state.stopAfterCurrent,
+          sleepTimerMinutes: state.sleepTimerMinutes,
+          seekStepSize: state.seekStepSize,
+          volumeStep: state.volumeStep,
+          rememberQueue: state.rememberQueue,
+          doubleClickAction: state.doubleClickAction,
+          trackChangeNotification: state.trackChangeNotification,
+          titleBarFormat: state.titleBarFormat,
         }
       };
 
@@ -237,6 +246,43 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
             loading={optimizing}
           />
         </div>
+
+        <SettingDivider label="Duplicates" />
+
+        <SettingButton
+          label="Scan for Duplicate Tracks"
+          description={`Uses your Library → Duplicate Detection sensitivity setting`}
+          onClick={async () => {
+            const sensitivity = useStore.getState().duplicateSensitivity;
+            const groups = await findDuplicates(sensitivity);
+            if (groups.length === 0) {
+              await nativeAlert('No duplicate tracks found!');
+            } else {
+              const totalDups = groups.reduce((n, g) => n + g.length - 1, 0);
+              await nativeAlert(`Found ${groups.length} group(s) with ${totalDups} duplicate track(s). You can remove them from Library → Manage Folders.`);
+            }
+          }}
+          icon={Copy}
+          variant="default"
+          loading={findingDuplicates}
+        />
+
+        {duplicateGroups && duplicateGroups.length > 0 && (
+          <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+            {duplicateGroups.map((group, gi) => (
+              <div key={gi} className="p-2 rounded bg-slate-800/50 border border-slate-700/50">
+                <p className="text-xs text-amber-400 font-medium mb-1">
+                  Group {gi + 1}: {group[0]?.title || 'Unknown'} — {group[0]?.artist || 'Unknown'}
+                </p>
+                {group.map((t, ti) => (
+                  <p key={ti} className="text-xs text-slate-500 truncate pl-2">
+                    {t.path}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </SettingCard>
 
       {/* Import/Export */}

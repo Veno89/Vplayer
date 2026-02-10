@@ -75,6 +75,10 @@ describe('usePlaybackEffects', () => {
       abRepeat: null,
       volume: 0.8,
       setLastPosition: vi.fn(),
+      rememberTrackPosition: true,
+      fadeOnPause: false,
+      fadeDuration: 200,
+      defaultVolume: 80,
     });
 
     // Default invoke mock

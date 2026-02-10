@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { TauriAPI, PerformanceStats as TauriPerformanceStats } from '../services/TauriAPI';
+import { Track } from '../types';
 
 interface PerformanceStats {
   trackCount: number;
@@ -17,9 +18,12 @@ export interface MaintenanceAPI {
   loadingStats: boolean;
   vacuuming: boolean;
   clearingCache: boolean;
+  duplicateGroups: Track[][] | null;
+  findingDuplicates: boolean;
   loadStats: (options?: { includePerf?: boolean }) => Promise<void>;
   vacuumDatabase: () => Promise<void>;
   clearCache: () => Promise<void>;
+  findDuplicates: (sensitivity?: string) => Promise<Track[][]>;
 }
 
 /**
@@ -35,6 +39,8 @@ export function useMaintenanceActions(): MaintenanceAPI {
   const [loadingStats, setLoadingStats] = useState(true);
   const [vacuuming, setVacuuming] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<Track[][] | null>(null);
+  const [findingDuplicates, setFindingDuplicates] = useState(false);
 
   const loadStats = useCallback(async ({ includePerf = false } = {}) => {
     setLoadingStats(true);
@@ -87,6 +93,20 @@ export function useMaintenanceActions(): MaintenanceAPI {
     }
   }, [loadStats]);
 
+  const findDuplicates = useCallback(async (sensitivity?: string) => {
+    setFindingDuplicates(true);
+    try {
+      const groups = await TauriAPI.findDuplicates(sensitivity);
+      setDuplicateGroups(groups);
+      return groups;
+    } catch (err) {
+      console.error('Failed to find duplicates:', err);
+      throw err;
+    } finally {
+      setFindingDuplicates(false);
+    }
+  }, []);
+
   return {
     cacheSize,
     dbSize,
@@ -94,8 +114,11 @@ export function useMaintenanceActions(): MaintenanceAPI {
     loadingStats,
     vacuuming,
     clearingCache,
+    duplicateGroups,
+    findingDuplicates,
     loadStats,
     vacuumDatabase,
     clearCache,
+    findDuplicates,
   };
 }

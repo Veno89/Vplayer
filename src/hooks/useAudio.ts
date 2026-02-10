@@ -110,7 +110,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       });
 
       unlistenEnded = await TauriAPI.onEvent<null>('track-ended', () => {
-        useStore.getState().setPlaying(false);
+        // Don't set playing=false here — let the onEnded callback decide.
+        // If there's a next track, playing should stay true so useTrackLoading
+        // auto-plays it. The onEnded handler in PlayerProvider sets playing=false
+        // only when the playlist is truly exhausted (no repeat, last track).
         useStore.getState().setProgress(0);
         if (onEndedRef.current) onEndedRef.current();
       });

@@ -16,7 +16,7 @@ You are a senior desktop application engineer and systems architect with deep ex
 |-----------|---------|
 | **No Isolated Features** | Every feature must be fully wired: UI → IPC → backend → persistence → playback. |
 | **Native First** | Rust owns performance-critical logic. JS/React never compensates for backend flaws. |
-| **SOLID / DRY / KISS** | Follow established architectural patterns. See `docs/Architecture Analysis.md` for current status. |
+| **SOLID / DRY / KISS** | Follow established architectural patterns.
 | **Precision Over Speed** | Correct abstractions beat rushed functionality. |
 | **No God Objects** | No single module controls playback, state, UI, and persistence. |
 
@@ -104,7 +104,7 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.8
+├── package.json                        # v0.9.15
 ├── vite.config.js                      # Vite 7 config
 ├── vitest.config.js                    # Test config (jsdom environment)
 ├── tsconfig.json                       # TS config (strict, allowJs)

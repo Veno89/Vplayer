@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { notifyDragStart, notifyDragEnd } from './useAutoResize';
+import { useStore } from '../store/useStore';
 
 interface WindowState {
   x: number;
@@ -58,8 +59,18 @@ export function useDraggable({ id, windowData, setWindows, bringToFront }: Dragg
       };
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        pendingX = Math.max(0, startWindowX + (moveEvent.clientX - startX));
-        pendingY = Math.max(0, startWindowY + (moveEvent.clientY - startY));
+        let newX = Math.max(0, startWindowX + (moveEvent.clientX - startX));
+        let newY = Math.max(0, startWindowY + (moveEvent.clientY - startY));
+
+        // Apply grid snapping if enabled
+        const { snapToGrid, gridSize } = useStore.getState();
+        if (snapToGrid && gridSize > 1) {
+          newX = Math.round(newX / gridSize) * gridSize;
+          newY = Math.round(newY / gridSize) * gridSize;
+        }
+
+        pendingX = newX;
+        pendingY = newY;
         if (!raf) {
           raf = requestAnimationFrame(() => {
             flush();
@@ -130,8 +141,18 @@ export function useResizable({ id, windowData, setWindows, bringToFront, minSize
       };
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        pendingW = Math.max(minSizes.width, startWidth + (moveEvent.clientX - startX));
-        pendingH = Math.max(minSizes.height, startHeight + (moveEvent.clientY - startY));
+        let newW = Math.max(minSizes.width, startWidth + (moveEvent.clientX - startX));
+        let newH = Math.max(minSizes.height, startHeight + (moveEvent.clientY - startY));
+
+        // Apply grid snapping if enabled
+        const { snapToGrid, gridSize } = useStore.getState();
+        if (snapToGrid && gridSize > 1) {
+          newW = Math.round(newW / gridSize) * gridSize;
+          newH = Math.round(newH / gridSize) * gridSize;
+        }
+
+        pendingW = newW;
+        pendingH = newH;
         if (!raf) {
           raf = requestAnimationFrame(() => {
             flush();

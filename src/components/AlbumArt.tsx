@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
+import { useStore } from '../store/useStore';
 
 interface AlbumArtProps {
   trackId?: string;
@@ -12,10 +13,18 @@ export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }
   const [artData, setArtData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const autoFetch = useStore(s => s.autoFetchAlbumArt);
 
   useEffect(() => {
     if (!trackId || !trackPath) {
       setLoading(false);
+      return;
+    }
+
+    // When auto-fetch is disabled, skip the network/IPC call entirely
+    if (!autoFetch) {
+      setLoading(false);
+      setError(true);
       return;
     }
 
@@ -50,7 +59,7 @@ export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }
     return () => {
       mounted = false;
     };
-  }, [trackId, trackPath]);
+  }, [trackId, trackPath, autoFetch]);
 
   const sizeClasses = {
     small: 'w-12 h-12',

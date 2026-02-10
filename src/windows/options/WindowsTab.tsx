@@ -3,6 +3,7 @@ import { Layout, Eye, EyeOff, RotateCcw, Maximize2, Music, ListMusic, Library, S
 import type { LucideIcon } from 'lucide-react';
 import { SettingCard, SettingButton, SettingDivider } from './SettingsComponents';
 import { useStore } from '../../store/useStore';
+import { nativeConfirm } from '../../utils/nativeDialog';
 import type { WindowsState } from '../../store/types';
 
 // Window icon mapping
@@ -69,8 +70,8 @@ export function WindowsTab({ windows, toggleWindow }: WindowsTabProps) {
     });
   };
 
-  const handleResetPositions = () => {
-    if (confirm('Reset all windows to the Classic layout positions?')) {
+  const handleResetPositions = async () => {
+    if (await nativeConfirm('Reset all windows to the Classic layout positions?')) {
       resetWindowPositions();
     }
   };

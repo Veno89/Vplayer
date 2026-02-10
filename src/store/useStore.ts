@@ -34,20 +34,31 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: 'vplayer-storage',
-      partialize: (state) => ({
-        // Combine persisted state from all slices
-        ...playerPersistState(state),
-        ...uiPersistState(state),
-        ...settingsPersistState(state),
-        ...musicBrainzPersistState(state),
-      }),
+      partialize: (state) => {
+        const persisted = {
+          // Combine persisted state from all slices
+          ...playerPersistState(state),
+          ...uiPersistState(state),
+          ...settingsPersistState(state),
+          ...musicBrainzPersistState(state),
+        };
+        // If rememberQueue is disabled, strip queue data from persistence
+        if (!state.rememberQueue) {
+          (persisted as Record<string, unknown>).queue = [];
+          (persisted as Record<string, unknown>).queueHistory = [];
+        }
+        return persisted;
+      },
       // Merge persisted state with fresh defaults to add new windows
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppStore>;
         const merged = { ...currentState, ...persisted };
         
-        // Ensure new windows from layouts are added to existing persisted windows
-        if (persisted?.windows) {
+        // If rememberWindowPositions was disabled, discard persisted window positions
+        if (persisted?.rememberWindowPositions === false) {
+          merged.windows = getInitialWindows();
+        } else if (persisted?.windows) {
+          // Ensure new windows from layouts are added to existing persisted windows
           const defaultWindows = getInitialWindows();
           merged.windows = { ...defaultWindows, ...persisted.windows };
         }

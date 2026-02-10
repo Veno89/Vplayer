@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, HardDrive, Cpu, Image, Activity, Gauge } from 'lucide-react';
+import { HardDrive, Cpu, Activity } from 'lucide-react';
 import { TauriAPI } from '../../services/TauriAPI';
 import { useStore } from '../../store/useStore';
-import { SettingToggle, SettingSlider, SettingSelect, SettingCard, SettingInfo, SettingDivider } from './SettingsComponents';
+import { SettingSlider, SettingCard } from './SettingsComponents';
 
 interface MemoryUsageInfo {
   cache_used: number;
@@ -16,20 +16,18 @@ export function PerformanceTab() {
   // Get settings from store
   const cacheSizeLimit = useStore(state => state.cacheSizeLimit);
   const setCacheSizeLimit = useStore(state => state.setCacheSizeLimit);
-  const maxConcurrentScans = useStore(state => state.maxConcurrentScans);
-  const setMaxConcurrentScans = useStore(state => state.setMaxConcurrentScans);
-  const thumbnailQuality = useStore(state => state.thumbnailQuality);
-  const setThumbnailQuality = useStore(state => state.setThumbnailQuality);
-  
-  // New settings
-  const hardwareAcceleration = useStore(state => state.hardwareAcceleration);
-  const setHardwareAcceleration = useStore(state => state.setHardwareAcceleration);
-  const audioBufferSize = useStore(state => state.audioBufferSize);
-  const setAudioBufferSize = useStore(state => state.setAudioBufferSize);
 
   useEffect(() => {
     loadStats();
+    // Enforce cache limit on mount
+    TauriAPI.enforceCacheLimit(cacheSizeLimit).catch(() => {});
   }, []);
+
+  // Enforce cache limit whenever the slider changes
+  const handleCacheLimitChange = (value: number) => {
+    setCacheSizeLimit(value);
+    TauriAPI.enforceCacheLimit(value).catch(() => {});
+  };
 
   const loadStats = async () => {
     try {
@@ -111,7 +109,7 @@ export function PerformanceTab() {
           label="Cache Size Limit"
           description="Maximum disk space for caching album art and metadata"
           value={cacheSizeLimit}
-          onChange={setCacheSizeLimit}
+          onChange={handleCacheLimitChange}
           min={100}
           max={2000}
           step={100}
@@ -120,100 +118,6 @@ export function PerformanceTab() {
           maxLabel="2 GB"
           accentColor="amber"
         />
-
-        <SettingSelect
-          label="Thumbnail Quality"
-          description="Resolution and compression level for cached album art"
-          value={thumbnailQuality}
-          onChange={v => setThumbnailQuality(v as 'low' | 'medium' | 'high')}
-          icon={Image}
-          options={[
-            { value: 'low', label: 'Low - Fast loading, smaller cache' },
-            { value: 'medium', label: 'Medium - Balanced quality' },
-            { value: 'high', label: 'High - Best quality, larger cache' },
-          ]}
-        />
-      </SettingCard>
-
-      {/* Scanning Performance */}
-      <SettingCard title="Library Scanning" icon={Gauge} accent="violet">
-        <SettingSlider
-          label="Max Concurrent Scans"
-          description="Number of files to process simultaneously (higher = faster but more CPU)"
-          value={maxConcurrentScans}
-          onChange={setMaxConcurrentScans}
-          min={1}
-          max={8}
-          step={1}
-          formatValue={v => `${v} threads`}
-          minLabel="1"
-          maxLabel="8"
-          accentColor="violet"
-        />
-
-        {/* Visual indicator */}
-        <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400">CPU Impact</span>
-            <span className={`text-xs font-medium ${
-              maxConcurrentScans <= 2 ? 'text-emerald-400' :
-              maxConcurrentScans <= 4 ? 'text-amber-400' : 'text-red-400'
-            }`}>
-              {maxConcurrentScans <= 2 ? 'Low' : maxConcurrentScans <= 4 ? 'Medium' : 'High'}
-            </span>
-          </div>
-          <div className="flex gap-1">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className={`flex-1 h-2 rounded ${
-                  i < maxConcurrentScans
-                    ? i < 2 ? 'bg-emerald-500' : i < 4 ? 'bg-amber-500' : 'bg-red-500'
-                    : 'bg-slate-700'
-                }`}
-              />
-            ))}
-          </div>
-        </div>
-      </SettingCard>
-
-      {/* Audio Performance */}
-      <SettingCard title="Audio Engine" icon={Zap} accent="pink">
-        <SettingToggle
-          label="Hardware Acceleration"
-          description="Use GPU for audio visualization rendering when available"
-          checked={hardwareAcceleration}
-          onChange={setHardwareAcceleration}
-          icon={Cpu}
-        />
-
-        <SettingDivider />
-
-        <SettingSlider
-          label="Audio Buffer Size"
-          description="Larger buffers reduce glitches but add latency"
-          value={audioBufferSize}
-          onChange={setAudioBufferSize}
-          min={1024}
-          max={16384}
-          step={1024}
-          formatValue={v => `${v} samples`}
-          minLabel="1024"
-          maxLabel="16384"
-          accentColor="pink"
-        />
-
-        {/* Latency indicator */}
-        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-          <span className="text-xs text-slate-400">Estimated Latency</span>
-          <span className="text-pink-400 text-sm font-medium">
-            ~{Math.round(audioBufferSize / 44.1)} ms
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-600 text-center">
-          Lower values = less latency, higher values = fewer audio glitches
-        </p>
       </SettingCard>
     </div>
   );

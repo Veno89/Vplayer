@@ -3,6 +3,32 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.15] - 2026-02-10
+
+### New Features — Settings & Playback Enhancements
+- **Stop After Current Track** — one-shot toggle that halts playback when the current track ends (auto-resets)
+- **Sleep Timer** — countdown timer (0–120 min) with quick presets; pauses playback when time expires
+- **Double-Click Action** — configurable library/playlist double-click behavior: Play (default), Enqueue, or Play Next
+- **Seek Step Size** — adjustable keyboard seek step (1–30 seconds), replaces hardcoded 10s/5s
+- **Volume Step** — adjustable keyboard volume step (1–20%), replaces hardcoded constant
+- **Title Bar Format** — configurable window title during playback (5 presets: Artist — Title, Title only, etc.)
+- **Track Change Notification** — optional in-app toast on every track change
+- **Remember Queue** — toggle to persist/clear the play queue across app restarts
+
+### New Hooks
+- `useSleepTimer` — 1-second interval countdown → pauses playback and resets timer to 0
+- `useTitleBar` — updates `document.title` based on current track and user-chosen format string
+
+### Wiring & Integration
+- Seek step reads from `seekStepSize` setting in `useShortcuts` (both full and half-step)
+- Volume step reads from `volumeStep` setting in `VPlayer.tsx` (replaces `VOLUME_STEP` constant)
+- `stopAfterCurrent` gated in `PlayerProvider.onEnded` handler
+- `doubleClickAction` routes in `usePlaylistActions.handleTrackSelect` (play/enqueue/playNext)
+- `rememberQueue` conditionally strips queue from Zustand persistence in `useStore.partialize`
+- `trackChangeNotification` fires toast in `usePlaybackEffects` play count effect
+- All 8 new settings added to export/import in AdvancedTab
+- All 8 new settings persisted automatically via `SETTINGS_DEFAULTS` DRY pattern
+
 ## [0.9.14] - 2026-02-10
 
 ### Bug Fixes (Phase 1 — continued)

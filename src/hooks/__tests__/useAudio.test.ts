@@ -495,7 +495,8 @@ describe('useAudio', () => {
       });
 
       expect(onEnded).toHaveBeenCalled();
-      expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
+      // track-ended no longer sets playing=false — the onEnded callback decides
+      // whether to advance to the next track (playing stays true) or stop.
       expect(storeMock.setProgress).toHaveBeenCalledWith(0);
     });
   });

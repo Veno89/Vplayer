@@ -248,8 +248,8 @@ class TauriAPIService {
         return this._invoke('increment_play_count', { trackId });
     }
 
-    async findDuplicates(): Promise<Track[]> {
-        return this._invoke('find_duplicates');
+    async findDuplicates(sensitivity?: string): Promise<Track[][]> {
+        return this._invoke('find_duplicates', { sensitivity: sensitivity ?? null });
     }
 
     async removeDuplicateFolders(): Promise<void> {
@@ -509,6 +509,22 @@ class TauriAPIService {
 
     async clearAlbumArtCache(): Promise<void> {
         return this._invoke('clear_album_art_cache');
+    }
+
+    // ========== Tray Settings Commands ==========
+
+    async setTraySettings(closeToTray: boolean, minimizeToTray: boolean, startMinimized: boolean): Promise<void> {
+        return this._invoke('set_tray_settings', { closeToTray, minimizeToTray, startMinimized });
+    }
+
+    async getTraySettings(): Promise<{ closeToTray: boolean; minimizeToTray: boolean; startMinimized: boolean }> {
+        return this._invoke('get_tray_settings');
+    }
+
+    // ========== Cache Limit Commands ==========
+
+    async enforceCacheLimit(limitMb: number): Promise<number> {
+        return this._invoke('enforce_cache_limit', { limitMb });
     }
 
     // ========== Health Check ==========

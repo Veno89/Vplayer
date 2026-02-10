@@ -184,7 +184,8 @@ export function LibraryWindow() {
 
   // Handle folder removal with confirmation
   const handleRemove = async (folderId: string, folderPath: string, folderName: string) => {
-    if (!await nativeConfirm(`Remove "${folderName}" and all its tracks from library?`)) {
+    const shouldConfirm = useStore.getState().confirmBeforeDelete;
+    if (shouldConfirm && !await nativeConfirm(`Remove "${folderName}" and all its tracks from library?`)) {
       return;
     }
 

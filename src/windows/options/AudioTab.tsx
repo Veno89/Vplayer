@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, Speaker, RefreshCw, Loader, Check, Radio, Gauge } from 'lucide-react';
-import { SettingCard, SettingSlider, SettingToggle, SettingBadge, SettingDivider } from './SettingsComponents';
+import { Volume2, Speaker, RefreshCw, Loader, Check, Gauge } from 'lucide-react';
+import { SettingCard, SettingSlider, SettingBadge } from './SettingsComponents';
 import { TauriAPI } from '../../services/TauriAPI';
+import { useStore } from '../../store/useStore';
 import { nativeError } from '../../utils/nativeDialog';
-import type { CrossfadeAPI } from '../../hooks/useCrossfade';
 
 interface AudioDevice {
   name: string;
@@ -11,20 +11,19 @@ interface AudioDevice {
   type?: string;
 }
 
-interface AudioTabProps {
-  crossfade?: CrossfadeAPI;
-}
-
-export function AudioTab({ crossfade }: AudioTabProps) {
+export function AudioTab() {
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState('');
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [switchingDevice, setSwitchingDevice] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+
+  // Use store for playback speed so it persists
+  const playbackSpeed = useStore(state => state.playbackSpeed);
+  const setPlaybackSpeed = useStore(state => state.setPlaybackSpeed);
 
   useEffect(() => {
     loadAudioDevices();
-    loadPlaybackSpeed();
+    syncPlaybackSpeed();
   }, []);
 
   const loadAudioDevices = async () => {
@@ -44,14 +43,15 @@ export function AudioTab({ crossfade }: AudioTabProps) {
     }
   };
 
-  const loadPlaybackSpeed = async () => {
+  // On mount, sync store speed → Rust backend
+  const syncPlaybackSpeed = async () => {
     try {
       const effects = await TauriAPI.getAudioEffects();
-      if (effects && effects.tempo) {
-        setPlaybackSpeed(effects.tempo);
+      if (effects && effects.tempo !== playbackSpeed) {
+        await TauriAPI.setAudioEffects({ ...effects, tempo: playbackSpeed });
       }
     } catch (err) {
-      console.error('Failed to load playback speed:', err);
+      console.error('Failed to sync playback speed:', err);
     }
   };
 
@@ -125,69 +125,6 @@ export function AudioTab({ crossfade }: AudioTabProps) {
         </button>
       </SettingCard>
 
-      {/* Crossfade Settings */}
-      {crossfade && (
-        <SettingCard title="Crossfade" icon={Radio} accent="pink">
-          <p className="text-xs text-slate-500 mb-4">
-            Smoothly blend between tracks for continuous listening
-          </p>
-          
-          <SettingToggle
-            label="Enable Crossfade"
-            description="Overlap and fade between consecutive tracks"
-            checked={crossfade.enabled}
-            onChange={crossfade.toggleEnabled}
-          />
-
-          {crossfade.enabled && (
-            <>
-              <SettingDivider />
-              
-              <SettingSlider
-                label="Crossfade Duration"
-                description="How long the tracks overlap during transition"
-                value={crossfade.duration}
-                onChange={crossfade.setDuration}
-                min={1000}
-                max={10000}
-                step={500}
-                formatValue={v => `${(v / 1000).toFixed(1)}s`}
-                minLabel="1s"
-                maxLabel="10s"
-                accentColor="pink"
-              />
-              
-              {/* Visual crossfade preview */}
-              <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
-                <p className="text-xs text-slate-400 mb-3">Preview</p>
-                <div className="relative h-8 flex items-center">
-                  {/* Track A (fading out) */}
-                  <div 
-                    className="absolute left-0 h-6 bg-gradient-to-r from-pink-500 to-pink-500/0 rounded-l"
-                    style={{ width: `${50 + (crossfade.duration / 200)}%` }}
-                  >
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-white font-medium">Track A</span>
-                  </div>
-                  {/* Track B (fading in) */}
-                  <div 
-                    className="absolute right-0 h-6 bg-gradient-to-l from-violet-500 to-violet-500/0 rounded-r"
-                    style={{ width: `${50 + (crossfade.duration / 200)}%` }}
-                  >
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-white font-medium">Track B</span>
-                  </div>
-                  {/* Overlap indicator */}
-                  <div className="absolute left-1/2 -translate-x-1/2 h-full flex items-center">
-                    <div className="px-2 py-0.5 bg-slate-900 rounded text-[9px] text-slate-400 border border-slate-700">
-                      {(crossfade.duration / 1000).toFixed(1)}s overlap
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </SettingCard>
-      )}
-
       {/* Playback Speed */}
       <SettingCard title="Playback Speed" icon={Gauge} accent="orange">
         <p className="text-xs text-slate-500 mb-4">
@@ -233,28 +170,28 @@ export function AudioTab({ crossfade }: AudioTabProps) {
         )}
       </SettingCard>
 
-      {/* Audio Quality Info */}
-      <SettingCard title="Audio Quality" icon={Volume2} accent="emerald">
+      {/* Audio Engine Info */}
+      <SettingCard title="Audio Engine" icon={Volume2} accent="emerald">
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-            <p className="text-slate-500 text-xs mb-1">Sample Rate</p>
-            <p className="text-white text-sm font-medium">44.1 kHz</p>
+            <p className="text-slate-500 text-xs mb-1">Decoder</p>
+            <p className="text-white text-sm font-medium">Symphonia</p>
           </div>
           <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-            <p className="text-slate-500 text-xs mb-1">Bit Depth</p>
-            <p className="text-white text-sm font-medium">16-bit</p>
-          </div>
-          <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-            <p className="text-slate-500 text-xs mb-1">Channels</p>
-            <p className="text-white text-sm font-medium">Stereo</p>
-          </div>
-          <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-            <p className="text-slate-500 text-xs mb-1">Engine</p>
+            <p className="text-slate-500 text-xs mb-1">Output</p>
             <p className="text-white text-sm font-medium">Rodio</p>
+          </div>
+          <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+            <p className="text-slate-500 text-xs mb-1">Processing</p>
+            <p className="text-white text-sm font-medium">Native Rust</p>
+          </div>
+          <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+            <p className="text-slate-500 text-xs mb-1">Formats</p>
+            <p className="text-white text-sm font-medium">MP3 FLAC OGG WAV</p>
           </div>
         </div>
         <p className="text-xs text-slate-600 mt-3 text-center">
-          Audio is processed natively by the Rust backend for maximum performance
+          All audio processing is handled natively by the Rust backend
         </p>
       </SettingCard>
     </div>

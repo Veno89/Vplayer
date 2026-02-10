@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, SkipForward, Volume2, Clock, Mic2, Activity, Loader } from 'lucide-react';
+import { Play, SkipForward, Volume2, Clock, Mic2, Activity, Loader, StopCircle, Timer, Gauge } from 'lucide-react';
 import { TauriAPI } from '../../services/TauriAPI';
 import { useStore } from '../../store/useStore';
 import { nativeAlert, nativeError } from '../../utils/nativeDialog';
@@ -31,6 +31,18 @@ export function PlaybackTab({ crossfade }: PlaybackTabProps) {
   const setFadeDuration = useStore(state => state.setFadeDuration);
   const rememberTrackPosition = useStore(state => state.rememberTrackPosition);
   const setRememberTrackPosition = useStore(state => state.setRememberTrackPosition);
+  const defaultVolume = useStore(state => state.defaultVolume);
+  const setDefaultVolume = useStore(state => state.setDefaultVolume);
+  const stopAfterCurrent = useStore(state => state.stopAfterCurrent);
+  const setStopAfterCurrent = useStore(state => state.setStopAfterCurrent);
+  const sleepTimerMinutes = useStore(state => state.sleepTimerMinutes);
+  const setSleepTimerMinutes = useStore(state => state.setSleepTimerMinutes);
+  const seekStepSize = useStore(state => state.seekStepSize);
+  const setSeekStepSize = useStore(state => state.setSeekStepSize);
+  const volumeStep = useStore(state => state.volumeStep);
+  const setVolumeStep = useStore(state => state.setVolumeStep);
+  const rememberQueue = useStore(state => state.rememberQueue);
+  const setRememberQueue = useStore(state => state.setRememberQueue);
 
   return (
     <div className="space-y-6">
@@ -67,6 +79,106 @@ export function PlaybackTab({ crossfade }: PlaybackTabProps) {
           onChange={setRememberTrackPosition}
           icon={Mic2}
         />
+
+        <SettingToggle
+          label="Stop After Current Track"
+          description="Playback stops automatically after the current track finishes"
+          checked={stopAfterCurrent}
+          onChange={setStopAfterCurrent}
+          icon={StopCircle}
+        />
+
+        <SettingToggle
+          label="Remember Play Queue"
+          description="Persist the play queue across app restarts"
+          checked={rememberQueue}
+          onChange={setRememberQueue}
+          icon={Clock}
+        />
+
+        <SettingSlider
+          label="Default Volume"
+          description="Volume level used when no previous volume is saved"
+          value={defaultVolume}
+          onChange={setDefaultVolume}
+          min={0}
+          max={100}
+          step={5}
+          formatValue={v => `${v}%`}
+          minLabel="0%"
+          maxLabel="100%"
+          accentColor="cyan"
+        />
+      </SettingCard>
+
+      {/* Controls & Steps */}
+      <SettingCard title="Controls" icon={Gauge} accent="orange">
+        <SettingSlider
+          label="Seek Step Size"
+          description="How far forward/backward keyboard shortcuts skip"
+          value={seekStepSize}
+          onChange={setSeekStepSize}
+          min={1}
+          max={30}
+          step={1}
+          formatValue={v => `${v}s`}
+          minLabel="1s"
+          maxLabel="30s"
+          accentColor="orange"
+        />
+
+        <SettingSlider
+          label="Volume Step"
+          description="How much volume changes per keyboard press"
+          value={volumeStep}
+          onChange={setVolumeStep}
+          min={1}
+          max={20}
+          step={1}
+          formatValue={v => `${v}%`}
+          minLabel="1%"
+          maxLabel="20%"
+          accentColor="orange"
+        />
+      </SettingCard>
+
+      {/* Sleep Timer */}
+      <SettingCard title="Sleep Timer" icon={Timer} accent="indigo">
+        <p className="text-xs text-slate-500 mb-3">
+          Automatically stop playback after a set duration. Set to 0 to disable.
+        </p>
+
+        <SettingSlider
+          label="Timer Duration"
+          description={sleepTimerMinutes > 0 ? `Playback will stop after ${sleepTimerMinutes} minute${sleepTimerMinutes !== 1 ? 's' : ''}` : 'Disabled'}
+          value={sleepTimerMinutes}
+          onChange={setSleepTimerMinutes}
+          min={0}
+          max={120}
+          step={5}
+          formatValue={v => v === 0 ? 'Off' : `${v} min`}
+          minLabel="Off"
+          maxLabel="2h"
+          accentColor="indigo"
+        />
+
+        {/* Quick presets */}
+        <div className="flex gap-2 mt-2">
+          {[0, 15, 30, 45, 60, 90].map(mins => (
+            <button
+              key={mins}
+              onClick={() => setSleepTimerMinutes(mins)}
+              onMouseDown={e => e.stopPropagation()}
+              className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition-all ${
+                sleepTimerMinutes === mins
+                  ? 'bg-indigo-500 text-white font-medium'
+                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              {mins === 0 ? 'Off' : `${mins}m`}
+            </button>
+          ))}
+        </div>
       </SettingCard>
 
       {/* Fading & Transitions */}

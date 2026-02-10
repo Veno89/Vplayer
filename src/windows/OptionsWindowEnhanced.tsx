@@ -28,11 +28,11 @@ const TABS = [
   },
   {
     id: 'library', label: 'Library', icon: Music, color: 'amber',
-    keywords: ['folder', 'scan', 'watch', 'duplicate', 'album art', 'metadata', 'hidden', 'language']
+    keywords: ['folder', 'scan', 'watch', 'duplicate', 'album art']
   },
   {
     id: 'audio', label: 'Audio', icon: Volume2, color: 'violet',
-    keywords: ['device', 'output', 'speaker', 'crossfade', 'speed', 'tempo', 'sample rate']
+    keywords: ['device', 'output', 'speaker', 'speed', 'tempo', 'sample rate']
   },
   {
     id: 'behavior', label: 'Behavior', icon: Sliders, color: 'emerald',
@@ -40,7 +40,7 @@ const TABS = [
   },
   {
     id: 'performance', label: 'Performance', icon: Zap, color: 'pink',
-    keywords: ['cache', 'memory', 'buffer', 'cpu', 'hardware', 'acceleration', 'thumbnail', 'concurrent']
+    keywords: ['cache', 'memory', 'cpu']
   },
   {
     id: 'advanced', label: 'Advanced', icon: Database, color: 'red',
@@ -138,7 +138,7 @@ export function OptionsWindowEnhanced() {
         return <LibraryTab />;
 
       case 'audio':
-        return <AudioTab crossfade={crossfade} />;
+        return <AudioTab />;
 
       case 'behavior':
         return (
@@ -234,7 +234,7 @@ export function OptionsWindowEnhanced() {
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }: { currentColors: ColorScheme }) {
   const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = useUpdater();
-  const [currentVersion, setCurrentVersion] = React.useState('0.6.3');
+  const [currentVersion, setCurrentVersion] = React.useState('0.9.15');
   const [checking, setChecking] = React.useState(false);
   const [message, setMessage] = React.useState('');
 
@@ -381,7 +381,7 @@ function AboutTab({ currentColors }: { currentColors: ColorScheme }) {
           Crafted by <span className="text-cyan-400 font-semibold">Veno</span>
         </p>
         <p className="text-slate-600 text-xs">
-          © 2024-2025 • Built with passion and open source tech
+          © 2024-2026 • Built with passion and open source tech
         </p>
       </div>
     </div>

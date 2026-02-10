@@ -136,6 +136,8 @@ export function useShortcuts({
     // Read current progress/duration from store for seek operations
     const currentProgress = useStore.getState().progress;
     const currentDuration = useStore.getState().duration;
+    const seekStep = useStore.getState().seekStepSize || 10;
+    const smallSeekStep = Math.max(1, Math.floor(seekStep / 2));
     return {
     'play-pause': togglePlay,
     'next-track': nextTrack,
@@ -146,10 +148,10 @@ export function useShortcuts({
     'stop': stop,
     'shuffle': toggleShuffle,
     'repeat': toggleRepeat,
-    'seek-forward': () => audio?.seek?.(Math.min(currentProgress + 10, currentDuration || 0)),
-    'seek-backward': () => audio?.seek?.(Math.max(currentProgress - 10, 0)),
-    'seek-forward-small': () => audio?.seek?.(Math.min(currentProgress + 5, currentDuration || 0)),
-    'seek-backward-small': () => audio?.seek?.(Math.max(currentProgress - 5, 0)),
+    'seek-forward': () => audio?.seek?.(Math.min(currentProgress + seekStep, currentDuration || 0)),
+    'seek-backward': () => audio?.seek?.(Math.max(currentProgress - seekStep, 0)),
+    'seek-forward-small': () => audio?.seek?.(Math.min(currentProgress + smallSeekStep, currentDuration || 0)),
+    'seek-backward-small': () => audio?.seek?.(Math.max(currentProgress - smallSeekStep, 0)),
     'search': focusSearch,
     'open-settings': () => toggleWindow?.('options'),
     'open-queue': () => toggleWindow?.('queue'),

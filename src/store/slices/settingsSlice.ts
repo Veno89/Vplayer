@@ -28,11 +28,7 @@ export const SETTINGS_DEFAULTS: SettingsSliceState = {
   // Library Settings
   autoScanOnStartup: true,
   watchFolderChanges: true,
-  excludedFormats: [],
   duplicateSensitivity: 'medium',
-  showHiddenFiles: false,
-  metadataLanguage: 'en',
-  albumArtSize: 'large',
   autoFetchAlbumArt: true,
 
   // Behavior Settings
@@ -47,12 +43,18 @@ export const SETTINGS_DEFAULTS: SettingsSliceState = {
   snapToGrid: true,
   gridSize: 10,
 
+  // Playback Behavior
+  stopAfterCurrent: false,
+  sleepTimerMinutes: 0,
+  seekStepSize: 10,
+  volumeStep: 5,
+  rememberQueue: true,
+  doubleClickAction: 'play' as const,
+  trackChangeNotification: false,
+  titleBarFormat: '{artist} — {title}',
+
   // Performance Settings
   cacheSizeLimit: 500,
-  maxConcurrentScans: 4,
-  thumbnailQuality: 'high',
-  hardwareAcceleration: true,
-  audioBufferSize: 4096,
 
   // EQ Settings
   eqBands: [

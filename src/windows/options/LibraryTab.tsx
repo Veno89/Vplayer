@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Music, FolderOpen, Search, Image, RefreshCw, FileAudio, Eye, Globe, Plus, Trash2, Loader } from 'lucide-react';
+import { Music, FolderOpen, Search, Image, RefreshCw, FileAudio, Eye, Plus, Trash2, Loader } from 'lucide-react';
 import { TauriAPI } from '../../services/TauriAPI';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../store/useStore';
 import { nativeConfirm } from '../../utils/nativeDialog';
-import { SettingToggle, SettingSelect, SettingCard, SettingButton, SettingInfo, SettingDivider, SettingBadge } from './SettingsComponents';
+import { SettingToggle, SettingSelect, SettingCard, SettingInfo, SettingBadge } from './SettingsComponents';
 
 interface LibraryFolder {
   id: string;
@@ -27,14 +27,6 @@ export function LibraryTab() {
   const setWatchFolderChanges = useStore(state => state.setWatchFolderChanges);
   const duplicateSensitivity = useStore(state => state.duplicateSensitivity);
   const setDuplicateSensitivity = useStore(state => state.setDuplicateSensitivity);
-  
-  // New settings
-  const showHiddenFiles = useStore(state => state.showHiddenFiles);
-  const setShowHiddenFiles = useStore(state => state.setShowHiddenFiles);
-  const metadataLanguage = useStore(state => state.metadataLanguage);
-  const setMetadataLanguage = useStore(state => state.setMetadataLanguage);
-  const albumArtSize = useStore(state => state.albumArtSize);
-  const setAlbumArtSize = useStore(state => state.setAlbumArtSize);
   const autoFetchAlbumArt = useStore(state => state.autoFetchAlbumArt);
   const setAutoFetchAlbumArt = useStore(state => state.setAutoFetchAlbumArt);
 
@@ -184,19 +176,21 @@ export function LibraryTab() {
 
         {/* Library stats */}
         <div className="mt-4 pt-4 border-t border-slate-700/50">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <SettingInfo 
               label="Total Tracks" 
               value={trackCount.toLocaleString()} 
               icon={FileAudio} 
             />
-            <SettingButton
-              label={scanning ? "Scanning..." : "Rescan Library"}
+            <button
               onClick={handleRescan}
-              icon={RefreshCw}
-              variant="default"
-              loading={scanning}
-            />
+              onMouseDown={e => e.stopPropagation()}
+              disabled={scanning}
+              className="flex-shrink-0 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+              {scanning ? 'Scanning...' : 'Rescan'}
+            </button>
           </div>
         </div>
       </SettingCard>
@@ -219,13 +213,6 @@ export function LibraryTab() {
           icon={Eye}
         />
         
-        <SettingToggle
-          label="Include Hidden Files"
-          description="Scan files and folders that start with a dot (.)"
-          checked={showHiddenFiles}
-          onChange={setShowHiddenFiles}
-        />
-        
         <SettingSelect
           label="Duplicate Detection"
           description="How strictly to identify potential duplicate tracks"
@@ -239,41 +226,14 @@ export function LibraryTab() {
         />
       </SettingCard>
 
-      {/* Metadata & Album Art */}
-      <SettingCard title="Metadata & Album Art" icon={Image} accent="pink">
+      {/* Album Art */}
+      <SettingCard title="Album Art" icon={Image} accent="pink">
         <SettingToggle
           label="Auto-fetch Missing Album Art"
           description="Download album covers from online sources when not embedded in files"
           checked={autoFetchAlbumArt}
           onChange={setAutoFetchAlbumArt}
           icon={Image}
-        />
-        
-        <SettingSelect
-          label="Album Art Size"
-          description="Resolution for cached album artwork thumbnails"
-          value={albumArtSize}
-          onChange={v => setAlbumArtSize(v as 'small' | 'medium' | 'large')}
-          options={[
-            { value: 'small', label: 'Small (128px) - Faster, less storage' },
-            { value: 'medium', label: 'Medium (256px) - Balanced' },
-            { value: 'large', label: 'Large (512px) - Best quality' },
-          ]}
-        />
-        
-        <SettingSelect
-          label="Preferred Metadata Language"
-          description="Language preference for artist/album names when multiple are available"
-          value={metadataLanguage}
-          onChange={setMetadataLanguage}
-          icon={Globe}
-          options={[
-            { value: 'en', label: 'English' },
-            { value: 'ja', label: 'Japanese (日本語)' },
-            { value: 'ko', label: 'Korean (한국어)' },
-            { value: 'zh', label: 'Chinese (中文)' },
-            { value: 'original', label: 'Original (as tagged)' },
-          ]}
         />
       </SettingCard>
     </div>
