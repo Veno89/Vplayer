@@ -74,7 +74,9 @@ use commands::{
     analyze_replaygain, get_track_replaygain, set_replaygain, clear_replaygain,
     // Cache commands
     clear_album_art_cache, get_cache_size, get_database_size, get_performance_stats,
-    vacuum_database,
+    vacuum_database, enforce_cache_limit,
+    // Tray commands
+    set_tray_settings, get_tray_settings,
 };
 
 /// Application state shared across all Tauri commands
@@ -106,82 +108,8 @@ impl Default for TraySettings {
     }
 }
 
-// ── IPC commands for tray settings ──────────────────────────────────────────
-
-#[tauri::command]
-fn set_tray_settings(
-    state: tauri::State<'_, AppState>,
-    close_to_tray: bool,
-    minimize_to_tray: bool,
-    start_minimized: bool,
-) {
-    let mut s = state.tray_settings.lock().unwrap();
-    s.close_to_tray = close_to_tray;
-    s.minimize_to_tray = minimize_to_tray;
-    s.start_minimized = start_minimized;
-    info!(
-        "Tray settings updated: close_to_tray={}, minimize_to_tray={}, start_minimized={}",
-        close_to_tray, minimize_to_tray, start_minimized
-    );
-}
-
-#[tauri::command]
-fn get_tray_settings(state: tauri::State<'_, AppState>) -> TraySettings {
-    state.tray_settings.lock().unwrap().clone()
-}
-
-// ── IPC command: enforce cache size limit ───────────────────────────────────
-
-/// Evict oldest album-art cache files until total size is ≤ `limit_mb` MB.
-#[tauri::command]
-fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> Result<u64, String> {
-    let cache_dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?
-        .join("album_art");
-
-    if !cache_dir.exists() {
-        return Ok(0);
-    }
-
-    let limit_bytes = limit_mb * 1024 * 1024;
-
-    // Collect all files with metadata
-    let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = Vec::new();
-    let mut total_size: u64 = 0;
-
-    for entry in std::fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
-        if meta.is_file() {
-            let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-            total_size += meta.len();
-            files.push((entry.path(), meta.len(), modified));
-        }
-    }
-
-    if total_size <= limit_bytes {
-        return Ok(0);
-    }
-
-    // Sort oldest first
-    files.sort_by_key(|(_, _, time)| *time);
-
-    let mut removed: u64 = 0;
-    for (path, size, _) in &files {
-        if total_size <= limit_bytes {
-            break;
-        }
-        if std::fs::remove_file(path).is_ok() {
-            total_size -= size;
-            removed += 1;
-        }
-    }
-
-    info!("Cache limit enforced: removed {} files, new size ~{} bytes", removed, total_size);
-    Ok(removed)
-}
+// ── IPC commands for tray settings and cache enforcement ──────────────────
+// Moved to commands/tray.rs and commands/cache.rs
 
 
 fn main() {

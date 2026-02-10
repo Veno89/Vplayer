@@ -118,9 +118,9 @@ describe('TauriAPI', () => {
       expect(invoke).toHaveBeenCalledWith('increment_play_count', { trackId: 'track-123' });
     });
 
-    it('updateTrackRating should invoke update_track_rating', async () => {
+    it('updateTrackRating should invoke set_track_rating', async () => {
       await TauriAPI.updateTrackRating('track-1', 5);
-      expect(invoke).toHaveBeenCalledWith('update_track_rating', { trackId: 'track-1', rating: 5 });
+      expect(invoke).toHaveBeenCalledWith('set_track_rating', { trackId: 'track-1', rating: 5 });
     });
 
     it('removeTrack should invoke remove_track', async () => {
@@ -295,7 +295,6 @@ describe('TauriAPI', () => {
   describe('Effects Commands', () => {
     it('setAudioEffects should invoke set_audio_effects', async () => {
       const config = {
-        pitch_shift: 0,
         tempo: 1,
         reverb_mix: 0,
         reverb_room_size: 0.5,

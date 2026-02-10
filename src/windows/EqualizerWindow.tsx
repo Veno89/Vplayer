@@ -38,7 +38,6 @@ export function EqualizerWindow() {
       try {
         const eqGains = convertBandsToBackend(bands);
         await TauriAPI.setAudioEffects({
-          pitch_shift: 0.0,
           tempo: 1.0,
           reverb_mix: 0.0,
           reverb_room_size: 0.5,

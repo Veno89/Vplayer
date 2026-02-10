@@ -6,8 +6,7 @@ use std::f32::consts::PI;
  * 
  * Provides real-time audio effects processing including:
  * - 10-band Equalizer
- * - Pitch shifting
- * - Tempo/speed control
+ * - Tempo/speed control (applied at the Sink level via `Sink::set_speed`)
  * - Reverb
  * - Bass boost
  * - Echo/delay
@@ -16,8 +15,8 @@ use std::f32::consts::PI;
 /// Audio effects configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EffectsConfig {
-    pub pitch_shift: f32,      // Semitones (-12.0 to +12.0)
-    pub tempo: f32,            // Speed multiplier (0.5 to 2.0)
+    /// Speed multiplier (0.5 to 2.0). Applied at the `Sink` level, not in sample processing.
+    pub tempo: f32,
     pub reverb_mix: f32,       // Reverb wet/dry mix (0.0 to 1.0)
     pub reverb_room_size: f32, // Room size (0.0 to 1.0)
     pub bass_boost: f32,       // Bass boost dB (0.0 to 12.0)
@@ -30,7 +29,6 @@ pub struct EffectsConfig {
 impl Default for EffectsConfig {
     fn default() -> Self {
         Self {
-            pitch_shift: 0.0,
             tempo: 1.0,
             reverb_mix: 0.0,
             reverb_room_size: 0.5,
@@ -239,7 +237,7 @@ impl Reverb {
             let buffer = &mut self.comb_buffers[i];
             let idx = self.comb_indices[i];
             
-            let feedback = 0.84 + self.room_size * 0.1;
+            let feedback = 0.7 + self.room_size * 0.15; // caps at 0.85 max
             let filtered = buffer[idx] * feedback;
             buffer[idx] = input + filtered * Self::COMB_DAMPING;
             
@@ -290,10 +288,18 @@ impl Echo {
     
     pub fn set_delay(&mut self, sample_rate: u32, delay_seconds: f32) {
         let new_delay = (sample_rate as f32 * delay_seconds) as usize;
-        if new_delay != self.delay_samples {
-            self.buffer.resize(new_delay, 0.0);
+        if new_delay != self.delay_samples && new_delay > 0 {
+            // Crossfade into the new buffer to prevent audible clicks
+            let mut new_buffer = vec![0.0; new_delay];
+            let copy_len = self.buffer.len().min(new_delay);
+            // Copy overlapping samples from old buffer to preserve continuity
+            for i in 0..copy_len {
+                let old_idx = (self.write_pos + i) % self.buffer.len();
+                new_buffer[i] = self.buffer[old_idx];
+            }
+            self.buffer = new_buffer;
             self.delay_samples = new_delay;
-            self.write_pos = 0;
+            self.write_pos = copy_len % new_delay;
         }
     }
     
@@ -434,7 +440,6 @@ mod tests {
     #[test]
     fn test_effects_config_default() {
         let config = EffectsConfig::default();
-        assert_eq!(config.pitch_shift, 0.0);
         assert_eq!(config.tempo, 1.0);
         assert_eq!(config.reverb_mix, 0.0);
         assert_eq!(config.eq_bands, [0.0; 10]);

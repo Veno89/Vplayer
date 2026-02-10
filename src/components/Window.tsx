@@ -2,6 +2,7 @@ import React, { type ReactNode } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { WINDOW_MIN_SIZES } from '../utils/constants';
 import { useDraggable, useResizable } from '../hooks/useWindowInteraction';
+import { useStore } from '../store/useStore';
 import type { LucideIcon } from 'lucide-react';
 import type { ColorScheme, WindowsState } from '../store/types';
 
@@ -30,8 +31,10 @@ interface WindowProps {
 export const Window = React.memo(function Window({ id, title, icon: Icon, children, className = "", windowData, bringToFront, setWindows, toggleWindow, currentColors, windowOpacity = 0.95 }: WindowProps) {
   if (!windowData.visible) return null;
 
-  // Check if this is the library window and if it's currently dragging
-  const isLibraryDragging = id === 'library' && React.isValidElement(children) && (children.props as Record<string, unknown>)?.['data-library-dragging'];
+  // Check if this is the library window and tracks are being dragged
+  // (used to lower library z-index so drop targets in other windows work)
+  const isDraggingTracks = useStore(s => s.isDraggingTracks);
+  const isLibraryDragging = id === 'library' && isDraggingTracks;
 
   // Safety check for currentColors with comprehensive fallback
   const colors = currentColors || {

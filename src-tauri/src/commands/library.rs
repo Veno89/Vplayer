@@ -12,43 +12,61 @@ pub async fn scan_folder(
     state: tauri::State<'_, AppState>
 ) -> Result<Vec<Track>, String> {
     info!("Starting folder scan: {}", folder_path);
-    // Scan with progress events and database for failed tracks tracking
-    let tracks = Scanner::scan_directory(&folder_path, Some(&window), None, Some(&state.db))?;
-    
-    // Save folder info FIRST to ensure it exists even if track saving fails partiallly
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64;
-    
-    let folder_id = format!("folder_{}", now);
-    let folder_name = std::path::Path::new(&folder_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&folder_path)
-        .to_string();
-    
-    if let Err(e) = state.db.add_folder(&folder_id, &folder_path, &folder_name, now) {
-        log::error!("Failed to add folder to database: {}", e);
-        // We continue anyway, hoping tracks will be added, but they might be orphaned if logic depends on folder?
-        // Actually tracks have `path` but no `folder_id` column in DB (from schema check).
-        // Folder association is by path prefix. So it's fine.
+
+    // Check if this folder already exists in the database — if so, do an
+    // incremental scan instead of a full rescan to avoid redundant I/O.
+    let existing_folder: Option<String> = {
+        let conn = state.db.conn.lock().unwrap_or_else(|p| p.into_inner());
+        conn.query_row(
+            "SELECT id FROM folders WHERE path = ?1",
+            rusqlite::params![&folder_path],
+            |row| row.get(0),
+        ).ok()
+    };
+
+    if existing_folder.is_some() {
+        info!("Folder already registered — delegating to incremental scan");
+        return scan_folder_incremental(folder_path, window, state).await;
     }
 
-    info!("Scan complete, adding {} tracks to database", tracks.len());
-    // Save tracks to database in a transaction if possible, or just loop
-    // To safe guard against "0 tracks" if we abort, we just log errors instead of aborting the whole function?
-    // User requested "0 folders" fix.
-    
-    for track in &tracks {
-        if let Err(e) = state.db.add_track(track) {
-             log::warn!("Failed to add track {}: {}", track.path, e);
-             // Continue adding other tracks
+    // Run the blocking I/O (file scanning + DB writes) off the async runtime
+    let db = state.db.clone();
+    let folder_path_clone = folder_path.clone();
+    let window_clone = window.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let tracks = Scanner::scan_directory(&folder_path_clone, Some(&window_clone), None, Some(&db))?;
+
+        // Save folder info
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        let folder_id = format!("folder_{}", uuid::Uuid::new_v4());
+        let folder_name = std::path::Path::new(&folder_path_clone)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&folder_path_clone)
+            .to_string();
+
+        if let Err(e) = db.add_folder(&folder_id, &folder_path_clone, &folder_name, now) {
+            log::error!("Failed to add folder to database: {}", e);
         }
-    }
-    
-    Ok(tracks)
+
+        info!("Scan complete, adding {} tracks to database", tracks.len());
+
+        for track in &tracks {
+            if let Err(e) = db.add_track(track) {
+                 log::warn!("Failed to add track {}: {}", track.path, e);
+            }
+        }
+
+        Ok(tracks)
+    })
+    .await
+    .map_err(|e| format!("Scan task panicked: {}", e))?
 }
 
 #[tauri::command]
@@ -59,34 +77,39 @@ pub async fn scan_folder_incremental(
 ) -> Result<Vec<Track>, String> {
     info!("Starting incremental folder scan: {}", folder_path);
     
-    // Perform incremental scan (only new/modified files)
-    let tracks = Scanner::scan_directory_incremental(&folder_path, Some(&window), None, &state.db)?;
-    
-    info!("Incremental scan complete, updating {} tracks in database", tracks.len());
-    
-    // Update tracks in database with modification times
-    for track in &tracks {
-        // Get file modification time
-        let path = std::path::Path::new(&track.path);
-        if let Ok(metadata) = std::fs::metadata(path) {
-            if let Ok(modified) = metadata.modified() {
-                let mtime = modified.duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-                
-                state.db.add_track_with_mtime(track, mtime)
-                    .map_err(|e| e.to_string())?;
+    let db = state.db.clone();
+    let window_clone = window.clone();
+    let folder_path_clone = folder_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        // Perform incremental scan (only new/modified files)
+        let tracks = Scanner::scan_directory_incremental(&folder_path_clone, Some(&window_clone), None, &db)?;
+        
+        info!("Incremental scan complete, updating {} tracks in database", tracks.len());
+        
+        // Update tracks in database with modification times
+        for track in &tracks {
+            let path = std::path::Path::new(&track.path);
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if let Ok(modified) = metadata.modified() {
+                    let mtime = modified.duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    
+                    db.add_track_with_mtime(track, mtime)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    db.add_track(track).map_err(|e| e.to_string())?;
+                }
             } else {
-                // Fallback to regular add if mtime unavailable
-                state.db.add_track(track).map_err(|e| e.to_string())?;
+                db.add_track(track).map_err(|e| e.to_string())?;
             }
-        } else {
-            // Fallback to regular add if metadata unavailable
-            state.db.add_track(track).map_err(|e| e.to_string())?;
         }
-    }
-    
-    Ok(tracks)
+        
+        Ok(tracks)
+    })
+    .await
+    .map_err(|e| format!("Incremental scan task panicked: {}", e))?
 }
 
 #[tauri::command]
@@ -317,9 +340,20 @@ pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, 
     tag.save_to(&mut file)
         .map_err(|e| format!("Failed to save tags: {}", e))?;
     
-    // Update database
-    state.db.update_track_metadata(&track_id, &tags.title, &tags.artist, &tags.album)
-        .map_err(|e| format!("Failed to update database: {}", e))?;
+    // Update database with all edited metadata fields
+    let year_i32 = tags.year.as_ref().and_then(|y| y.parse::<i32>().ok());
+    let track_num_i32 = tags.track_number.as_ref().and_then(|t| t.parse::<i32>().ok());
+    let disc_num_i32 = tags.disc_number.as_ref().and_then(|d| d.parse::<i32>().ok());
+    state.db.update_track_metadata(
+        &track_id,
+        &tags.title,
+        &tags.artist,
+        &tags.album,
+        &tags.genre,
+        &year_i32,
+        &track_num_i32,
+        &disc_num_i32,
+    ).map_err(|e| format!("Failed to update database: {}", e))?;
     
     info!("Tags updated successfully");
     Ok(())

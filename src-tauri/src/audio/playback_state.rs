@@ -107,3 +107,109 @@ impl PlaybackState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_state_has_zeroed_position() {
+        let state = PlaybackState::new();
+        assert!(state.current_path.is_none());
+        assert!(state.start_time.is_none());
+        assert_eq!(state.get_position(false, false), 0.0);
+    }
+
+    #[test]
+    fn reset_for_load_sets_path_and_duration() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("test.mp3".into(), Duration::from_secs(180));
+
+        assert_eq!(state.current_path.as_deref(), Some("test.mp3"));
+        assert_eq!(state.total_duration, Duration::from_secs(180));
+        assert!(state.start_time.is_none());
+        assert_eq!(state.seek_offset, Duration::ZERO);
+    }
+
+    #[test]
+    fn mark_playing_sets_start_time_on_first_call() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("a.mp3".into(), Duration::from_secs(60));
+
+        let pause_dur = state.mark_playing();
+        assert!(pause_dur.is_none(), "first play should not return a pause duration");
+        assert!(state.start_time.is_some());
+    }
+
+    #[test]
+    fn mark_paused_then_resume_accumulates_pause_duration() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("a.mp3".into(), Duration::from_secs(60));
+        state.mark_playing();
+
+        state.mark_paused();
+        assert!(state.pause_start.is_some());
+
+        // Simulate a tiny pause then resume
+        std::thread::sleep(Duration::from_millis(10));
+        let pause_dur = state.mark_playing();
+        assert!(pause_dur.is_some());
+        assert!(state.paused_duration >= Duration::from_millis(10));
+    }
+
+    #[test]
+    fn clear_resets_all_fields() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("x.mp3".into(), Duration::from_secs(100));
+        state.mark_playing();
+        state.clear();
+
+        assert!(state.current_path.is_none());
+        assert!(state.start_time.is_none());
+        assert_eq!(state.seek_offset, Duration::ZERO);
+        assert_eq!(state.paused_duration, Duration::ZERO);
+    }
+
+    #[test]
+    fn mark_seeked_updates_offset() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("s.mp3".into(), Duration::from_secs(300));
+        state.mark_playing();
+
+        state.mark_seeked(120.0, false);
+        assert_eq!(state.seek_offset, Duration::from_secs_f64(120.0));
+        assert!(state.pause_start.is_none());
+    }
+
+    #[test]
+    fn mark_seeked_while_paused_records_pause_start() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("s.mp3".into(), Duration::from_secs(300));
+        state.mark_playing();
+
+        state.mark_seeked(60.0, true);
+        assert!(state.pause_start.is_some());
+    }
+
+    #[test]
+    fn get_position_returns_total_when_sink_empty() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("done.mp3".into(), Duration::from_secs(200));
+        state.mark_playing();
+
+        let pos = state.get_position(true, false);
+        assert_eq!(pos, 200.0);
+    }
+
+    #[test]
+    fn get_position_clamps_to_total_duration() {
+        let mut state = PlaybackState::new();
+        state.reset_for_load("t.mp3".into(), Duration::from_millis(50));
+        state.mark_playing();
+        // Small sleep to let wall-clock exceed the 50ms total_duration
+        std::thread::sleep(Duration::from_millis(80));
+
+        let pos = state.get_position(false, false);
+        assert!(pos <= 0.05 + 0.01, "position should be clamped near total_duration");
+    }
+}

@@ -219,7 +219,14 @@ pub fn load_smart_playlist(conn: &Connection, id: &str) -> Result<SmartPlaylist>
     
     let playlist = stmt.query_row([id], |row| {
         let rules_json: String = row.get(3)?;
-        let rules: Vec<Rule> = serde_json::from_str(&rules_json).unwrap_or_default();
+        let rules: Vec<Rule> = serde_json::from_str(&rules_json).map_err(|e| {
+            log::warn!("Corrupted rules JSON in smart playlist '{}': {}", id, e);
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
+        })?;
         
         Ok(SmartPlaylist {
             id: row.get(0)?,
@@ -246,10 +253,18 @@ pub fn load_all_smart_playlists(conn: &Connection) -> Result<Vec<SmartPlaylist>>
     
     let playlists = stmt.query_map([], |row| {
         let rules_json: String = row.get(3)?;
-        let rules: Vec<Rule> = serde_json::from_str(&rules_json).unwrap_or_default();
+        let playlist_id: String = row.get(0)?;
+        let rules: Vec<Rule> = serde_json::from_str(&rules_json).map_err(|e| {
+            log::warn!("Corrupted rules JSON in smart playlist '{}': {}", playlist_id, e);
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
+        })?;
         
         Ok(SmartPlaylist {
-            id: row.get(0)?,
+            id: playlist_id,
             name: row.get(1)?,
             description: row.get(2)?,
             rules,

@@ -3,6 +3,40 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.16] - 2026-02-10
+
+### Bug Fixes — Context Menu & Star Ratings
+- **Star rating clicks now persist**: Inline star clicks in the playlist called `refreshTracks()` but silently discarded the trackId and rating — ratings were never saved to the database. Now calls `TauriAPI.setTrackRating()` before refreshing.
+- **Rating dialog used non-existent backend command**: The "Set Rating..." context menu option invoked `update_track_rating` which doesn't exist in the Rust backend. Changed to use `set_track_rating` (the actual command). Deprecated the broken `updateTrackRating()` API method to delegate to the correct one.
+- **"Track Info & Editor" was a placeholder**: The context menu item just logged to console instead of opening the dialog. Now properly opens `TrackInfoDialog` with save callback that refreshes tracks.
+- **Removed dead duplicate context menu code**: A second `itemData.onShowMenu` handler created context menu state with `track`/`index` but no `items`, causing a dead portal render. Removed the unused `itemData` memo and the duplicate `contextMenu.track` portal block.
+
+### Backend Hardening (Architecture Analysis Implementation)
+- **Mutex poison recovery**: All 38 `self.conn.lock().unwrap()` calls in `database.rs` replaced with `conn()` helper using `unwrap_or_else(|p| p.into_inner())` — database survives panics in other threads instead of permanently locking up.
+- **Tag editing data loss**: `update_track_metadata` expanded from 3 fields (title, artist, album) to 7 fields (+genre, year, track_number, disc_number). Tags saved via the editor now actually persist all metadata.
+- **Reverb instability**: Feedback coefficient capped at 0.85 (was 0.94 at max room_size), preventing runaway self-oscillation.
+- **Preload resource leak**: Preloaded tracks now reuse the existing output mixer instead of creating a new `OutputStream` per preloaded track.
+- **Blocking async runtime**: `scan_folder` and `scan_folder_incremental` wrapped in `spawn_blocking` so file I/O no longer blocks the Tokio async runtime.
+- **Scan idempotency**: `scan_folder` now checks if folder exists in DB first and delegates to incremental scan if so, preventing duplicate full scans.
+- **Smart playlist corruption surfaced**: `load_smart_playlist` / `load_all_smart_playlists` now log warnings and return proper errors for corrupted JSON rules instead of silently returning `unwrap_or_default()`.
+- **Removed stale query cache**: Deleted the manual `HashMap`-based query cache from `Database` — SQLite WAL mode (enabled in v0.9.14) handles read concurrency natively.
+
+### Audio Fixes
+- **EQ preset scale fix**: Corrected EQ band conversion from `* 5` to `* (50/12)`, fixing a ~20% gain error when applying presets.
+- **Removed dead `pitch_shift`**: The `pitch_shift` field existed in `EffectsConfig` but was never wired to any audio processing. Removed from Rust struct, TypeScript interface, and all call sites. Tempo is now properly applied via `Sink::set_speed()`.
+- **Echo crossfade**: Changing echo delay now copies overlapping samples from old buffer for click-free transitions.
+
+### Code Organization
+- **New `commands/tray.rs`**: Extracted `set_tray_settings` and `get_tray_settings` from `main.rs` into dedicated module.
+- **New `commands/cache.rs`**: Extracted `enforce_cache_limit` from `main.rs`.
+- **AppError serialization**: Added `Serialize` impl for `AppError` so commands can return `Result<T, AppError>` directly.
+- **Cleaned re-exports**: Removed `LAYOUT_TEMPLATES` re-export from store slices (utility, not a slice).
+
+### Tests
+- **9 new Rust unit tests**: `PlaybackState` (5 tests) and `VolumeManager` (4 tests) covering position tracking, pause/resume accumulation, volume clamping, and ReplayGain multiplier behavior.
+- **41 Rust tests passing** (9 new + 32 existing), **159 frontend tests passing**, 0 TypeScript errors, 0 Rust warnings.
+
+
 ## [0.9.15] - 2026-02-10
 
 ### New Features — Settings & Playback Enhancements

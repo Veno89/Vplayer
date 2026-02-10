@@ -121,3 +121,54 @@ pub fn vacuum_database(state: tauri::State<'_, AppState>) -> Result<(), String> 
     info!("Database vacuum completed successfully");
     Ok(())
 }
+
+/// Evict oldest album-art cache files until total size is ≤ `limit_mb` MB.
+#[tauri::command]
+pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> Result<u64, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Failed to get cache dir: {}", e))?
+        .join("album_art");
+
+    if !cache_dir.exists() {
+        return Ok(0);
+    }
+
+    let limit_bytes = limit_mb * 1024 * 1024;
+
+    // Collect all files with metadata
+    let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = Vec::new();
+    let mut total_size: u64 = 0;
+
+    for entry in std::fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        if meta.is_file() {
+            let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            total_size += meta.len();
+            files.push((entry.path(), meta.len(), modified));
+        }
+    }
+
+    if total_size <= limit_bytes {
+        return Ok(0);
+    }
+
+    // Sort oldest first
+    files.sort_by_key(|(_, _, time)| *time);
+
+    let mut removed: u64 = 0;
+    for (path, size, _) in &files {
+        if total_size <= limit_bytes {
+            break;
+        }
+        if std::fs::remove_file(path).is_ok() {
+            total_size -= size;
+            removed += 1;
+        }
+    }
+
+    info!("Cache limit enforced: removed {} files, new size ~{} bytes", removed, total_size);
+    Ok(removed)
+}

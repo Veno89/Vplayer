@@ -7,7 +7,6 @@ import { Track, Playlist, PlaylistTrack, TrackFilter } from '../types';
 
 /** Matches Rust EffectsConfig struct */
 export interface AudioEffectsConfig {
-    pitch_shift: number;
     tempo: number;
     reverb_mix: number;
     reverb_room_size: number;
@@ -240,8 +239,11 @@ class TauriAPIService {
         return this._invoke('remove_folder', { folderId, folderPath });
     }
 
+    /**
+     * @deprecated Use setTrackRating instead - update_track_rating command does not exist
+     */
     async updateTrackRating(trackId: string, rating: number): Promise<void> {
-        return this._invoke('update_track_rating', { trackId, rating });
+        return this.setTrackRating(trackId, rating);
     }
 
     async incrementPlayCount(trackId: string): Promise<void> {

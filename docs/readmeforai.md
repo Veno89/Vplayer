@@ -104,7 +104,7 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.15
+├── package.json                        # v0.9.16
 ├── vite.config.js                      # Vite 7 config
 ├── vitest.config.js                    # Test config (jsdom environment)
 ├── tsconfig.json                       # TS config (strict, allowJs)

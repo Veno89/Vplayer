@@ -67,7 +67,14 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
 
   // ── Derived ───────────────────────────────────────────────────────
   const currentColors = useCurrentColors();
-  const onRatingChange = useCallback(() => refreshTracks(), [refreshTracks]);
+  const onRatingChange = useCallback(async (trackId: string, rating: number) => {
+    try {
+      await TauriAPI.setTrackRating(trackId, rating);
+      refreshTracks();
+    } catch (err) {
+      console.error('Failed to update rating:', err);
+    }
+  }, [refreshTracks]);
   const onEditTags = useCallback((track: Track) => setTagEditorTrack?.(track), [setTagEditorTrack]);
   const onActiveTracksChange = setActivePlaybackTracks;
   /* eslint-disable no-unused-vars */
@@ -439,8 +446,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       onRemove: () => handleRemoveTrack(index),
       onSetRating: () => setShowRatingDialog(track),
       onShowInfo: () => {
-        // Placeholder for info dialog
-        console.log('Show info for:', track);
+        setShowInfoDialog(track);
       }
     });
 
@@ -451,30 +457,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     });
   }, [displayTracks, displayCurrentTrack, onActiveTracksChange, setCurrentTrack, addToQueue, handleRemoveTrack, setContextMenu]);
 
-  // Memoize itemData to prevent recreating on every render
-  const itemData = useMemo(() => ({
-    tracks: displayTracks,
-    currentTrack,
-    onSelect: setCurrentTrack,
-    currentColors,
-    loadingTrackIndex,
-    onRatingChange,
-    isDraggable: !!playlists.currentPlaylist,
-    onDragStart: handleDragStart,
-    onDragOver: handleDragOver,
-    onDrop: handleDrop,
-    draggedIndex,
-    onShowMenu: (index: number, e: TrackMenuEventLike) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setContextMenu({
-        index,
-        track: displayTracks[index],
-        x: e.clientX,
-        y: e.clientY
-      });
-    }
-  }), [displayTracks, currentTrack, setCurrentTrack, currentColors, loadingTrackIndex, onRatingChange, playlists.currentPlaylist, draggedIndex, handleDragStart, handleDragOver, handleDrop]);
+
 
   // Close context menu on outside click
   useEffect(() => {
@@ -741,47 +724,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
           track={showInfoDialog}
           onClose={() => setShowInfoDialog(null)}
           onSave={() => {
-            // Trigger refresh if needed
-            // For now let's just close. User can verify.
+            refreshTracks();
           }}
-        />,
-        document.body
-      )}
-
-      {/* Context Menu - Use Portal to render outside overflow container */}
-      {contextMenu && contextMenu.track && createPortal(
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={getTrackContextMenuItems({
-            track: contextMenu.track,
-            onPlay: () => {
-              handleTrackSelect(contextMenu.index ?? 0);
-            },
-            // onPlayNext removed
-            onAddToQueue: () => {
-              addToQueue(contextMenu.track!, 'end');
-            },
-            onAddToPlaylist: () => {
-              setShowPlaylistPicker(contextMenu.track!);
-              closeContextMenu();
-            },
-            onRemove: () => {
-              handleRemoveTrack(contextMenu.index ?? 0);
-            },
-            // onEditTags merged into onShowInfo
-            onShowInfo: () => {
-              setShowInfoDialog(contextMenu.track!);
-              closeContextMenu();
-            },
-            onSetRating: () => {
-              setShowRatingDialog(contextMenu.track!);
-              closeContextMenu();
-            },
-            currentTrack: currentTrack,
-            isPlaylist: true // Explicitly set for PlaylistWindow
-          })}
-          onClose={closeContextMenu}
         />,
         document.body
       )}
@@ -842,8 +786,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
                 rating={showRatingDialog.rating || 0}
                 onRatingChange={async (newRating: number) => {
                   try {
-                    await TauriAPI.updateTrackRating(showRatingDialog!.id, newRating);
-                    onRatingChange();
+                    await TauriAPI.setTrackRating(showRatingDialog!.id, newRating);
+                    refreshTracks();
                     setShowRatingDialog(null);
                   } catch (err) {
                     console.error('Failed to set rating:', err);

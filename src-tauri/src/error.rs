@@ -15,6 +15,17 @@ pub enum AppError {
     Validation(String),
 }
 
+/// Serialize as a plain string so `Result<T, AppError>` works directly in
+/// `#[tauri::command]` without the intermediate `.map_err(|e| e.to_string())`.
+impl serde::Serialize for AppError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

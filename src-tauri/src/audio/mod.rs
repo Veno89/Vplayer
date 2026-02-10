@@ -439,8 +439,10 @@ impl AudioPlayer {
         let source = Decoder::new(BufReader::new(file))
             .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
 
-        let (_, new_mixer, _) = device::create_high_quality_output_with_device_name()?;
-        let new_sink = Sink::connect_new(&new_mixer);
+        // Reuse the existing device mixer to avoid creating a new OutputStream
+        // per preloaded track (which leaked resources and could mismatch devices).
+        let device = self.device.lock().unwrap();
+        let new_sink = Sink::connect_new(device.mixer());
 
         let current_volume = self.sink.lock().unwrap().volume();
         new_sink.set_volume(current_volume);
@@ -448,7 +450,7 @@ impl AudioPlayer {
         new_sink.pause();
 
         self.preload.lock().unwrap().set(new_sink, path);
-        info!("Audio file preloaded successfully");
+        info!("Audio file preloaded successfully (reusing existing output)");
         Ok(())
     }
 
@@ -490,6 +492,11 @@ impl AudioPlayer {
     // ── Effects ─────────────────────────────────────────────────────
 
     pub fn set_effects(&self, config: EffectsConfig) {
+        // Apply tempo/speed at the Sink level (changes playback rate)
+        let tempo = config.tempo.clamp(0.5, 2.0);
+        if let Ok(sink) = self.sink.lock() {
+            sink.set_speed(tempo);
+        }
         self.effects_processor.lock().unwrap().update_config(config);
     }
 

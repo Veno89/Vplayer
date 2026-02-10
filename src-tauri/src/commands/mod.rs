@@ -11,6 +11,7 @@ pub mod visualizer;
 pub mod lyrics;
 pub mod replaygain;
 pub mod cache;
+pub mod tray;
 
 // Re-export all commands for easy importing in main.rs
 pub use audio::*;
@@ -23,3 +24,4 @@ pub use visualizer::*;
 pub use lyrics::*;
 pub use replaygain::*;
 pub use cache::*;
+pub use tray::*;

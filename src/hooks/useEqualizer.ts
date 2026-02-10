@@ -31,7 +31,6 @@ export function useEqualizer(): EqualizerAPI {
     try {
       const eqGains = convertBandsToBackend(bands);
       await TauriAPI.setAudioEffects({
-        pitch_shift: 0.0,
         tempo: 1.0,
         reverb_mix: 0.0,
         reverb_room_size: 0.5,
@@ -67,7 +66,9 @@ export function useEqualizer(): EqualizerAPI {
 
     const newBands = eqBands.map((band, index) => ({
       ...band,
-      value: 50 + preset.bands[index] * 5 // Convert from -10..+10 to 0..100 scale
+      // Presets are in dB (-12..+12); UI slider is 0-100 (50 = 0 dB)
+      // Convert: ui = 50 + dB * (50/12)
+      value: Math.round(50 + preset.bands[index] * (50 / 12))
     }));
 
     setEqBands(newBands);
@@ -83,7 +84,7 @@ export function useEqualizer(): EqualizerAPI {
   const detectPreset = useCallback(() => {
     for (const [presetName, preset] of Object.entries(EQ_PRESETS as Record<string, { name: string; bands: number[] }>)) {
       const matches = eqBands.every((band, index) => {
-        const expectedValue = 50 + preset.bands[index] * 5;
+        const expectedValue = 50 + preset.bands[index] * (50 / 12);
         return Math.abs(band.value - expectedValue) < 1;
       });
       

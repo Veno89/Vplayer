@@ -68,6 +68,12 @@ impl DeviceState {
     pub fn has_device_changed(&self) -> bool {
         has_device_changed(&self.connected_device_name)
     }
+
+    /// Borrow the current output mixer (used to connect new Sinks without
+    /// creating a new OutputStream).
+    pub fn mixer(&self) -> &Arc<Mixer> {
+        self.mixer.as_ref().expect("DeviceState mixer should always be set")
+    }
 }
 
 /// Audio device information

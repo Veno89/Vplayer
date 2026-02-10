@@ -4,19 +4,9 @@ use log::{info, warn};
 use crate::scanner::Track;
 use std::path::Path;
 use std::sync::Mutex;
-use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-const CACHE_TTL_SECS: u64 = 300; // 5 minutes
 
 /// Current database schema version. Increment when adding migrations.
 const SCHEMA_VERSION: i32 = 6;
-
-#[derive(Clone)]
-struct CachedQuery {
-    data: Vec<Track>,
-    timestamp: u64,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +28,19 @@ pub struct TrackFilter {
 
 pub struct Database {
     pub conn: Mutex<Connection>,
-    query_cache: Mutex<HashMap<String, CachedQuery>>,
+}
+
+impl Database {
+    /// Acquire the database connection lock, recovering from Mutex poisoning.
+    /// A poisoned Mutex means a thread panicked while holding the lock, but the
+    /// underlying SQLite `Connection` is almost certainly still valid, so we recover
+    /// the inner value and log a warning instead of crashing the whole application.
+    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|poisoned| {
+            warn!("Database mutex was poisoned — recovering inner connection");
+            poisoned.into_inner()
+        })
+    }
 }
 
 impl Database {
@@ -132,7 +134,6 @@ impl Database {
         info!("Database initialized successfully");
         Ok(Self { 
             conn: Mutex::new(conn),
-            query_cache: Mutex::new(HashMap::new()),
         })
     }
     
@@ -263,37 +264,8 @@ impl Database {
         }
     }
     
-    fn invalidate_cache(&self) {
-        if let Ok(mut cache) = self.query_cache.lock() {
-            cache.clear();
-        }
-    }
-    
-    fn get_cached_tracks(&self, cache_key: &str) -> Option<Vec<Track>> {
-        let cache = self.query_cache.lock().ok()?;
-        let cached = cache.get(cache_key)?;
-        
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
-        if now - cached.timestamp < CACHE_TTL_SECS {
-            Some(cached.data.clone())
-        } else {
-            None
-        }
-    }
-    
-    fn set_cached_tracks(&self, cache_key: String, tracks: Vec<Track>) {
-        if let Ok(mut cache) = self.query_cache.lock() {
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            cache.insert(cache_key, CachedQuery { data: tracks, timestamp });
-        }
-    }
-    
     pub fn add_track(&self, track: &Track) -> Result<()> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
@@ -316,15 +288,8 @@ impl Database {
     }
     
     pub fn get_all_tracks(&self) -> Result<Vec<Track>> {
-        let cache_key = "all_tracks";
-        
-        if let Some(cached) = self.get_cached_tracks(cache_key) {
-            info!("Returning cached tracks ({} tracks)", cached.len());
-            return Ok(cached);
-        }
-        
         info!("Fetching all tracks from database");
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             &format!("SELECT {} FROM tracks", crate::scanner::TRACK_SELECT_COLUMNS)
         )?;
@@ -332,7 +297,6 @@ impl Database {
         let tracks = stmt.query_map([], Track::from_row)?
             .collect::<Result<Vec<_>>>()?;
         
-        self.set_cached_tracks(cache_key.to_string(), tracks.clone());
         Ok(tracks)
     }
 
@@ -423,7 +387,7 @@ impl Database {
             sql.push_str(" ORDER BY title ASC");
         }
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(&sql)?;
         
         let tracks = stmt.query_map(rusqlite::params_from_iter(params_values.iter()), Track::from_row)?
@@ -434,8 +398,7 @@ impl Database {
     
     // Track statistics
     pub fn increment_play_count(&self, track_id: &str) -> Result<()> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -450,7 +413,7 @@ impl Database {
     
     #[allow(dead_code)]
     pub fn get_play_count(&self, track_id: &str) -> Result<i32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let count: i32 = conn.query_row(
             "SELECT play_count FROM tracks WHERE id = ?1",
             params![track_id],
@@ -460,8 +423,7 @@ impl Database {
     }
     
     pub fn reset_play_count(&self, track_id: &str) -> Result<()> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE tracks SET play_count = 0, last_played = 0 WHERE id = ?1",
             params![track_id],
@@ -470,7 +432,7 @@ impl Database {
     }
 
     pub fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             &format!("{} FROM tracks WHERE last_played > 0 ORDER BY last_played DESC LIMIT ?1",
                 format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS))
@@ -483,7 +445,7 @@ impl Database {
     }
     
     pub fn get_most_played(&self, limit: usize) -> Result<Vec<Track>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             &format!("{} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
                 format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS))
@@ -496,8 +458,7 @@ impl Database {
     }
     
     pub fn remove_tracks_by_folder(&self, folder_path: &str) -> Result<usize> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let count = conn.execute(
             "DELETE FROM tracks WHERE path LIKE ?1",
             params![format!("{}%", folder_path)],
@@ -506,8 +467,7 @@ impl Database {
     }
     
     pub fn add_folder(&self, folder_id: &str, folder_path: &str, folder_name: &str, date_added: i64) -> Result<()> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         // Check if folder with same path already exists
         let mut stmt = conn.prepare("SELECT id FROM folders WHERE path = ?1")?;
@@ -531,8 +491,7 @@ impl Database {
     }
 
     pub fn remove_duplicate_folders(&self) -> Result<usize> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         // First, count how many duplicates exist
         let count_sql = "SELECT COUNT(*) FROM folders f WHERE EXISTS (SELECT 1 FROM folders f2 WHERE f2.path = f.path AND f2.id != f.id)";
@@ -559,7 +518,7 @@ impl Database {
 
     #[allow(dead_code)]
     pub fn get_all_folders(&self) -> Result<Vec<(String, String, String, i64)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, path, name, date_added FROM folders"
         )?;
@@ -578,8 +537,7 @@ impl Database {
     }
     
     pub fn remove_folder(&self, folder_id: &str) -> Result<()> {
-        self.invalidate_cache();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM folders WHERE id = ?1",
             params![folder_id],
@@ -595,7 +553,7 @@ impl Database {
             .unwrap()
             .as_millis() as i64;
         
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO playlists (id, name, created_at) VALUES (?1, ?2, ?3)",
             params![id, name, created_at],
@@ -604,7 +562,7 @@ impl Database {
     }
     
     pub fn get_all_playlists(&self) -> Result<Vec<(String, String, i64)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, created_at FROM playlists ORDER BY created_at DESC"
         )?;
@@ -622,7 +580,7 @@ impl Database {
     }
     
     pub fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         // Allow deletion of any playlist including 'library'
         conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
@@ -636,7 +594,7 @@ impl Database {
     }
     
     pub fn rename_playlist(&self, playlist_id: &str, new_name: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE playlists SET name = ?1 WHERE id = ?2",
             params![new_name, playlist_id],
@@ -645,7 +603,7 @@ impl Database {
     }
     
     pub fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str, position: i32) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
             params![playlist_id, track_id, position],
@@ -655,7 +613,7 @@ impl Database {
     
     /// Batch add multiple tracks to a playlist in a single transaction
     pub fn add_tracks_to_playlist_batch(&self, playlist_id: &str, track_ids: &[String], starting_position: i32) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let tx = conn.unchecked_transaction()?;
         
         let mut count = 0;
@@ -673,7 +631,7 @@ impl Database {
     }
     
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
             params![playlist_id, track_id],
@@ -682,7 +640,7 @@ impl Database {
     }
     
     pub fn reorder_playlist_tracks(&self, playlist_id: &str, track_positions: Vec<(String, i32)>) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         
         // Use a transaction for atomic updates
         let tx = conn.unchecked_transaction()?;
@@ -699,7 +657,7 @@ impl Database {
     }
     
     pub fn get_playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played
              FROM tracks t
@@ -715,7 +673,7 @@ impl Database {
     }
     
     pub fn get_playlist_track_count(&self, playlist_id: &str) -> Result<i32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let count: i32 = conn.query_row(
             "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
             params![playlist_id],
@@ -726,7 +684,7 @@ impl Database {
     
     // Failed tracks management
     pub fn add_failed_track(&self, path: &str, error: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -740,7 +698,7 @@ impl Database {
     }
     
     pub fn is_failed_track(&self, path: &str) -> bool {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let result: Result<i32> = conn.query_row(
             "SELECT 1 FROM failed_tracks WHERE path = ?1",
             params![path],
@@ -750,14 +708,14 @@ impl Database {
     }
     
     pub fn clear_failed_tracks(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM failed_tracks", [])?;
         Ok(())
     }
     
     // Star rating for tracks
     pub fn set_track_rating(&self, track_id: &str, rating: i32) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let clamped_rating = rating.max(0).min(5); // 0-5 stars
         conn.execute(
             "UPDATE tracks SET rating = ?1 WHERE id = ?2",
@@ -768,7 +726,7 @@ impl Database {
     
     // Get all track paths for validation
     pub fn get_all_track_paths(&self) -> Result<Vec<(String, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare("SELECT id, path FROM tracks")?;
         
         let paths = stmt.query_map([], |row| {
@@ -781,7 +739,7 @@ impl Database {
     
     // Update track path (for relocating missing files)
     pub fn update_track_path(&self, track_id: &str, new_path: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE tracks SET path = ?1 WHERE id = ?2",
             params![new_path, track_id],
@@ -789,17 +747,27 @@ impl Database {
         Ok(())
     }
     
-    pub fn update_track_metadata(&self, track_id: &str, title: &Option<String>, artist: &Option<String>, album: &Option<String>) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+    pub fn update_track_metadata(
+        &self,
+        track_id: &str,
+        title: &Option<String>,
+        artist: &Option<String>,
+        album: &Option<String>,
+        genre: &Option<String>,
+        year: &Option<i32>,
+        track_number: &Option<i32>,
+        disc_number: &Option<i32>,
+    ) -> Result<()> {
+        let conn = self.conn();
         conn.execute(
-            "UPDATE tracks SET title = ?1, artist = ?2, album = ?3 WHERE id = ?4",
-            params![title, artist, album, track_id],
+            "UPDATE tracks SET title = ?1, artist = ?2, album = ?3, genre = ?4, year = ?5, track_number = ?6, disc_number = ?7 WHERE id = ?8",
+            params![title, artist, album, genre, year, track_number, disc_number, track_id],
         )?;
         Ok(())
     }
     
     pub fn get_track_by_path(&self, path: &str) -> Result<Option<Track>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             &format!("SELECT {} FROM tracks WHERE path = ?1", crate::scanner::TRACK_SELECT_COLUMNS)
         )?;
@@ -815,7 +783,7 @@ impl Database {
     // Find duplicate tracks based on metadata similarity
     pub fn find_duplicates(&self) -> Result<Vec<Vec<Track>>> {
         info!("Searching for duplicate tracks");
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         
         // Step 1: SQL finds (title, artist, album) combos that appear more than once.
         // This avoids loading the entire tracks table into memory.
@@ -888,7 +856,7 @@ impl Database {
     // Remove a track from the library
     pub fn remove_track(&self, track_id: &str) -> Result<()> {
         info!("Removing track: {}", track_id);
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM tracks WHERE id = ?1",
             params![track_id],
@@ -899,7 +867,7 @@ impl Database {
     // Get tracks for a specific folder with their modification times
     pub fn get_folder_tracks(&self, folder_path: &str) -> Result<Vec<(String, String, i64)>> {
         info!("Getting tracks for folder: {}", folder_path);
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, path, file_modified FROM tracks WHERE path LIKE ?1"
         )?;
@@ -918,7 +886,7 @@ impl Database {
     
     // Update track with file modification time
     pub fn add_track_with_mtime(&self, track: &Track, file_modified: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?13)",
@@ -943,7 +911,7 @@ impl Database {
     
     // Album art operations
     pub fn get_album_art(&self, track_id: &str) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let result: Result<Option<Vec<u8>>> = conn.query_row(
             "SELECT album_art FROM tracks WHERE id = ?1",
             params![track_id],
@@ -953,7 +921,7 @@ impl Database {
     }
     
     pub fn set_album_art(&self, track_id: &str, art_data: &[u8]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE tracks SET album_art = ?1 WHERE id = ?2",
             params![art_data, track_id],
@@ -962,7 +930,7 @@ impl Database {
     }
     
     pub fn has_album_art(&self, track_id: &str) -> bool {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let result: Result<i32> = conn.query_row(
             "SELECT 1 FROM tracks WHERE id = ?1 AND album_art IS NOT NULL",
             params![track_id],
