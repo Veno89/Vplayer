@@ -31,6 +31,7 @@ export interface PlaylistsAPI {
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   reorderPlaylistTracks: (playlistId: string, trackPositions: [string, number][]) => Promise<void>;
   loadPlaylists: () => Promise<void>;
+  refreshPlaylistTracks: () => Promise<void>;
 }
 
 export function usePlaylists(): PlaylistsAPI {
@@ -199,6 +200,12 @@ export function usePlaylists(): PlaylistsAPI {
     setLastPlaylistId(currentPlaylist);
   }, [currentPlaylist, loadPlaylistTracks, setLastPlaylistId]);
 
+  const refreshPlaylistTracks = useCallback(async () => {
+    if (currentPlaylist) {
+      await loadPlaylistTracks(currentPlaylist);
+    }
+  }, [currentPlaylist, loadPlaylistTracks]);
+
   return {
     playlists,
     currentPlaylist,
@@ -214,5 +221,6 @@ export function usePlaylists(): PlaylistsAPI {
     removeTrackFromPlaylist,
     reorderPlaylistTracks,
     loadPlaylists,
+    refreshPlaylistTracks,
   };
 }

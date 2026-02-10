@@ -3,6 +3,13 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.17] - 2026-02-10
+
+### Bug Fixes
+- **Star ratings now visually update in playlist**: Inline star clicks and the "Set Rating" context menu dialog now refresh playlist tracks (not just library tracks), so the new rating is immediately visible.
+- **Inline star clicks wired up**: The `onRatingChange` prop was missing from the `TrackList` component in the playlist window — clicking stars did nothing. Now properly connected.
+- **Search no longer returns nearly all tracks**: Playlist search used subsequence matching (characters of query scattered anywhere in text), causing a search for "Soen" to match 1445 tracks. Replaced with word-based substring matching — every word in the query must appear in the track's title, artist, album, or genre.
+
 ## [0.9.16] - 2026-02-10
 
 ### Bug Fixes — Context Menu & Star Ratings

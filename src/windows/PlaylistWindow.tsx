@@ -67,14 +67,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
 
   // ── Derived ───────────────────────────────────────────────────────
   const currentColors = useCurrentColors();
-  const onRatingChange = useCallback(async (trackId: string, rating: number) => {
-    try {
-      await TauriAPI.setTrackRating(trackId, rating);
-      refreshTracks();
-    } catch (err) {
-      console.error('Failed to update rating:', err);
-    }
-  }, [refreshTracks]);
   const onEditTags = useCallback((track: Track) => setTagEditorTrack?.(track), [setTagEditorTrack]);
   const onActiveTracksChange = setActivePlaybackTracks;
   /* eslint-disable no-unused-vars */
@@ -106,6 +98,14 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   const trackListRef = useRef<TrackListHandle>(null);
 
   const playlists = usePlaylists();
+  const onRatingChange = useCallback(async (trackId: string, rating: number) => {
+    try {
+      await TauriAPI.setTrackRating(trackId, rating);
+      await playlists.refreshPlaylistTracks();
+    } catch (err) {
+      console.error('Failed to update rating:', err);
+    }
+  }, [playlists]);
   const queue = useStore((state) => state.queue);
   const addToQueue = useStore(state => state.addToQueue);
   const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
@@ -185,14 +185,9 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
           track.genre
         ].filter(Boolean).join(' ').toLowerCase();
 
-        // Fuzzy match
-        let queryIndex = 0;
-        for (let i = 0; i < searchableText.length && queryIndex < query.length; i++) {
-          if (searchableText[i] === query[queryIndex]) {
-            queryIndex++;
-          }
-        }
-        return queryIndex === query.length;
+        // Word-based substring match: every word in the query must appear in the searchable text
+        const queryWords = query.split(/\s+/).filter(Boolean);
+        return queryWords.every(word => searchableText.includes(word));
       });
     }
 
@@ -671,6 +666,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             onSelectionChange={setSelectedIndices}
             onBatchAction={handleBatchAction}
             showRating={true} // Enable rating display
+            onRatingChange={onRatingChange}
             columnWidths={columnWidths} // Pass dynamic widths
           />
         )
@@ -787,7 +783,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
                 onRatingChange={async (newRating: number) => {
                   try {
                     await TauriAPI.setTrackRating(showRatingDialog!.id, newRating);
-                    refreshTracks();
+                    await playlists.refreshPlaylistTracks();
                     setShowRatingDialog(null);
                   } catch (err) {
                     console.error('Failed to set rating:', err);
