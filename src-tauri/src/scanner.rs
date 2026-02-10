@@ -70,7 +70,8 @@ pub struct ScanProgress {
 
 pub struct Scanner;
 
-const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac"];
+/// Supported audio file extensions, shared with watcher module.
+pub const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac"];
 
 impl Scanner {
     /// Collect all audio file paths from a directory tree.

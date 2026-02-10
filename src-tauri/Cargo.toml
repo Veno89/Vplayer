@@ -1,6 +1,6 @@
 [package]
 name = "vplayer"
-version = "0.9.13"
+version = "0.9.14"
 description = "A modern music player"
 authors = ["you"]
 license = ""
@@ -28,7 +28,6 @@ log = "0.4"
 tauri-plugin-log = "2"
 notify = "6"
 anyhow = "1.0"
-image = "0.25"
 base64 = "0.22"
 ebur128 = "0.1"
 rustfft = "6.2"

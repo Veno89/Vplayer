@@ -4,29 +4,30 @@
  * Each window component is self-sufficient: it reads its own state from
  * useStore / usePlayerContext / useCurrentColors.  No props are passed.
  *
- * This replaces the former useWindowConfigs hook, which threaded ~70 props
- * through a single mega-hub and rebuilt JSX on every state change.
+ * Components are lazy-loaded so only the windows the user opens are
+ * included in the initial bundle.
  */
+import React from 'react';
 import {
   Music, Settings, List, Sliders, FolderOpen, ListOrdered,
   History, Disc, Sparkles, FileText, Keyboard, BarChart3, Tag, Library,
 } from 'lucide-react';
 
-import { PlayerWindow }        from './windows/PlayerWindow';
-import { PlaylistWindow }      from './windows/PlaylistWindow';
-import { LibraryWindow }       from './windows/LibraryWindow';
-import { EqualizerWindow }     from './windows/EqualizerWindow';
-import { VisualizerWindow }    from './windows/VisualizerWindow';
-import { OptionsWindowEnhanced as OptionsWindow } from './windows/OptionsWindowEnhanced';
-import { QueueWindow }         from './windows/QueueWindow';
-import { HistoryWindow }       from './windows/HistoryWindow';
-import { AlbumViewWindow }     from './windows/AlbumViewWindow';
-import { SmartPlaylistsWindow } from './windows/SmartPlaylistsWindow';
-import { LibraryStatsWindow }  from './windows/LibraryStatsWindow';
-import { TagEditorWindow }     from './windows/TagEditorWindow';
-import { DiscographyWindow }   from './windows/DiscographyWindow';
-import LyricsWindow            from './windows/LyricsWindow';
-import ShortcutsWindow         from './windows/ShortcutsWindow';
+const PlayerWindow        = React.lazy(() => import('./windows/PlayerWindow').then(m => ({ default: m.PlayerWindow })));
+const PlaylistWindow      = React.lazy(() => import('./windows/PlaylistWindow').then(m => ({ default: m.PlaylistWindow })));
+const LibraryWindow       = React.lazy(() => import('./windows/LibraryWindow').then(m => ({ default: m.LibraryWindow })));
+const EqualizerWindow     = React.lazy(() => import('./windows/EqualizerWindow').then(m => ({ default: m.EqualizerWindow })));
+const VisualizerWindow    = React.lazy(() => import('./windows/VisualizerWindow').then(m => ({ default: m.VisualizerWindow })));
+const OptionsWindow       = React.lazy(() => import('./windows/OptionsWindowEnhanced').then(m => ({ default: m.OptionsWindowEnhanced })));
+const QueueWindow         = React.lazy(() => import('./windows/QueueWindow').then(m => ({ default: m.QueueWindow })));
+const HistoryWindow       = React.lazy(() => import('./windows/HistoryWindow').then(m => ({ default: m.HistoryWindow })));
+const AlbumViewWindow     = React.lazy(() => import('./windows/AlbumViewWindow').then(m => ({ default: m.AlbumViewWindow })));
+const SmartPlaylistsWindow = React.lazy(() => import('./windows/SmartPlaylistsWindow').then(m => ({ default: m.SmartPlaylistsWindow })));
+const LibraryStatsWindow  = React.lazy(() => import('./windows/LibraryStatsWindow').then(m => ({ default: m.LibraryStatsWindow })));
+const TagEditorWindow     = React.lazy(() => import('./windows/TagEditorWindow').then(m => ({ default: m.TagEditorWindow })));
+const DiscographyWindow   = React.lazy(() => import('./windows/DiscographyWindow').then(m => ({ default: m.DiscographyWindow })));
+const LyricsWindow        = React.lazy(() => import('./windows/LyricsWindow'));
+const ShortcutsWindow     = React.lazy(() => import('./windows/ShortcutsWindow'));
 
 /** @type {Array<{ id: string; title: string; icon: import('lucide-react').LucideIcon; Component: React.ComponentType }>} */
 export const WINDOW_REGISTRY = [

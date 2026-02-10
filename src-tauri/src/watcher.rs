@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
+use log::error;
 
 pub struct FolderWatcher {
     watcher: Option<RecommendedWatcher>,
@@ -49,7 +50,8 @@ impl FolderWatcher {
                                     // Check if it's an audio file
                                     if let Some(ext) = path.extension() {
                                         let ext_str = ext.to_string_lossy().to_lowercase();
-                                        if matches!(ext_str.as_str(), "mp3" | "flac" | "ogg" | "wav" | "aac" | "m4a" | "wma" | "opus") {
+                                        // Use shared extension list from scanner module
+                                        if crate::scanner::AUDIO_EXTENSIONS.contains(&ext_str.as_str()) {
                                             callback(path.clone());
                                         }
                                     }
@@ -58,7 +60,7 @@ impl FolderWatcher {
                             _ => {}
                         }
                     }
-                    Err(e) => eprintln!("Watch error: {:?}", e),
+                    Err(e) => error!("Watch error: {:?}", e),
                 }
             }
         });

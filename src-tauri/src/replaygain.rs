@@ -112,23 +112,32 @@ pub fn analyze_track(path: &str) -> Result<ReplayGainData, String> {
                 // Convert to f32 samples for analysis
                 let spec = *decoded.spec();
                 let duration = decoded.capacity() as u64;
+                let num_channels = spec.channels.count();
                 
                 // Create audio buffer
                 let mut audio_buf = AudioBuffer::<f32>::new(duration, spec);
                 decoded.convert(&mut audio_buf);
                 
-                // Get samples as interleaved
-                let samples = audio_buf.chan(0); // Get first channel
+                // Interleave all channels for EBU R128 analysis
+                let num_frames = audio_buf.chan(0).len();
+                let mut interleaved = Vec::with_capacity(num_channels * num_frames);
+                for frame in 0..num_frames {
+                    for ch in 0..num_channels {
+                        interleaved.push(audio_buf.chan(ch)[frame]);
+                    }
+                }
                 
-                // Feed to EBU R128
-                ebur.add_frames_f32(samples)
+                // Feed interleaved samples to EBU R128
+                ebur.add_frames_f32(&interleaved)
                     .map_err(|e| format!("Failed to add frames: {}", e))?;
                 
-                // Track peak
-                for &sample in samples {
-                    let abs = sample.abs() as f64;
-                    if abs > peak {
-                        peak = abs;
+                // Track peak across ALL channels
+                for ch in 0..num_channels {
+                    for &sample in audio_buf.chan(ch) {
+                        let abs = sample.abs() as f64;
+                        if abs > peak {
+                            peak = abs;
+                        }
                     }
                 }
             }

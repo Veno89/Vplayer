@@ -318,60 +318,25 @@ impl Echo {
 }
 
 /**
- * Simple bass boost using low-shelf filter
+ * Bass boost using low-shelf filter (delegates to BiquadFilter)
  */
 pub struct BassBoost {
-    z1: f32,
-    z2: f32,
-    a0: f32,
-    a1: f32,
-    a2: f32,
-    b1: f32,
-    b2: f32,
+    filter: BiquadFilter,
 }
 
 impl BassBoost {
     pub fn new(sample_rate: u32, boost_db: f32) -> Self {
-        let mut filter = Self {
-            z1: 0.0,
-            z2: 0.0,
-            a0: 1.0,
-            a1: 0.0,
-            a2: 0.0,
-            b1: 0.0,
-            b2: 0.0,
-        };
-        filter.set_boost(sample_rate, boost_db);
-        filter
+        let mut filter = BiquadFilter::new();
+        filter.set_lowshelf(sample_rate, 200.0, 0.707, boost_db);
+        Self { filter }
     }
     
     pub fn set_boost(&mut self, sample_rate: u32, boost_db: f32) {
-        let freq = 200.0; // Bass frequency cutoff
-        let q = 0.707;
-        let gain = 10_f32.powf(boost_db / 20.0);
-        
-        let w0 = 2.0 * PI * freq / sample_rate as f32;
-        let cos_w0 = w0.cos();
-        let sin_w0 = w0.sin();
-        let alpha = sin_w0 / (2.0 * q);
-        
-        let a = gain.sqrt();
-        
-        self.b1 = -2.0 * cos_w0;
-        self.b2 = 1.0 - alpha;
-        self.a0 = (1.0 + alpha + 2.0 * a.sqrt() * alpha) / (1.0 + alpha);
-        self.a1 = (-2.0 * cos_w0) / (1.0 + alpha);
-        self.a2 = (1.0 - alpha - 2.0 * a.sqrt() * alpha) / (1.0 + alpha);
+        self.filter.set_lowshelf(sample_rate, 200.0, 0.707, boost_db);
     }
     
     pub fn process(&mut self, input: f32) -> f32 {
-        let output = self.a0 * input + self.a1 * self.z1 + self.a2 * self.z2
-            - self.b1 * self.z1 - self.b2 * self.z2;
-        
-        self.z2 = self.z1;
-        self.z1 = input;
-        
-        output
+        self.filter.process(input)
     }
 }
 

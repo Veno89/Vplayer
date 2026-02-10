@@ -1,5 +1,4 @@
 import React from 'react';
-import type { ColorScheme } from '../store/types';
 
 interface LibraryFolder {
   path: string;
@@ -16,11 +15,9 @@ interface LibraryContentProps {
   scanProgress: number;
   handleAddFolder: () => void;
   handleRemoveFolder: (id: string, path: string) => void;
-  handleRescanAll?: () => void;
-  currentColors?: ColorScheme;
 }
 
-export const LibraryContent = React.memo(({ libraryFolders, tracksCount, isScanning, scanProgress, handleAddFolder, handleRemoveFolder, currentColors }: LibraryContentProps) => {
+export const LibraryContent = React.memo(({ libraryFolders, tracksCount, isScanning, scanProgress, handleAddFolder, handleRemoveFolder }: LibraryContentProps) => {
   return (
     <div className="flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between">

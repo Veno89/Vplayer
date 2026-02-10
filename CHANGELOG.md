@@ -3,6 +3,26 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.14] - 2026-02-10
+
+### Bug Fixes (Phase 1 — continued)
+- **BassBoost biquad filter** — replaced broken Direct Form I with thin wrapper around `BiquadFilter::set_lowshelf`, fixing distorted bass boost
+- **ReplayGain all-channel analysis** — analyze interleaved samples from all channels instead of mono-only `chan(0)`
+- **Scanner/watcher extension mismatch** — watcher now references shared `AUDIO_EXTENSIONS` from scanner (removes unsupported `wma`)
+- **`formatDuration` hours support** — durations over 3600s now display as `H:MM:SS` instead of `60:00`
+- **Native dialogs in playlists** — replaced browser `confirm()`/`alert()` with Tauri native dialogs
+- **Missing `use tauri::Manager`** — fixed compilation error in `library.rs` for `app_handle.path()`
+
+### Performance (Phase 3)
+- **SQLite WAL mode** — enabled `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON` for better concurrent reads
+- **Lazy-loaded windows** — all 15 window components use `React.lazy()` + `Suspense`, reducing initial bundle size
+
+### Code Quality
+- **Deduplicated useDiscography** — extracted shared `findBestArtistMatch()` helper, eliminating 3 duplicate verification loops (~90 lines)
+- **Removed dead code** — `ErrorContext` trait, redundant re-exports, unused `requestQueue`/`isProcessingQueue`, unused `image` crate, dead `handleRescanAll`/`currentColors` props
+- **Watcher logging** — replaced `eprintln!` with structured `log::error!`
+
+
 ## [0.9.13] - 2026-02-09
 
 ### Security (Phase 0)

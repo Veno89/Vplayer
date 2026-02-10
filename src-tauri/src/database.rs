@@ -46,6 +46,12 @@ impl Database {
         info!("Initializing database at {:?}", db_path);
         let conn = Connection::open(db_path)?;
         
+        // Enable WAL mode for better concurrent read performance,
+        // NORMAL synchronous for durability with WAL, and foreign key enforcement.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;"
+        )?;
+        
         // Create core tables (includes all columns for fresh installs)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS tracks (

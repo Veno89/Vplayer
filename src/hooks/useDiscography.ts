@@ -49,6 +49,62 @@ interface DiscographyStats {
   totalUncertain: number;
 }
 
+interface VerifyResult {
+  bestMatch: MBArtistResult | null;
+  bestVerification: { verified: boolean; matchedAlbums: number; confidence: number };
+}
+
+/**
+ * Shared helper: iterate MusicBrainz candidates, verify each against local
+ * albums, and return the best match.  Extracted to deduplicate the
+ * verification loop used in autoResolve, reResolve, and reResolveAll.
+ */
+async function findBestArtistMatch(
+  results: MBArtistResult[],
+  localAlbums: Map<string, LocalAlbumData>,
+  config: DiscographyConfig,
+  options: { scoreThreshold?: number; bypassCache?: boolean } = {},
+): Promise<VerifyResult> {
+  const threshold = options.scoreThreshold ?? 80;
+  let bestMatch: MBArtistResult | null = null;
+  let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
+
+  for (const candidate of results) {
+    if (candidate.score < threshold) continue;
+
+    try {
+      const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
+        includeEPs: config.includeEPs,
+        includeLive: config.includeLive,
+        includeCompilations: config.includeCompilations,
+        includeBootlegs: config.includeBootlegs,
+        quickCheck: true,
+        bypassCache: options.bypassCache,
+      });
+
+      const verification = DiscographyMatcher.verifyArtistByAlbums(candidateAlbums, localAlbums);
+
+      log.info(`[useDiscography] Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
+
+      if (verification.verified && verification.confidence > bestVerification.confidence) {
+        bestMatch = candidate;
+        bestVerification = verification;
+      } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
+        bestMatch = candidate;
+        bestVerification = verification;
+      }
+
+      if (verification.verified && verification.confidence >= 90) {
+        break;
+      }
+    } catch (err) {
+      console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
+    }
+  }
+
+  return { bestMatch, bestVerification };
+}
+
 /**
  * Hook for discography lookup and matching
  * @param {Object[]} tracks - Library tracks for matching
@@ -321,49 +377,10 @@ export function useDiscography(tracks: Track[] = []) {
             continue;
           }
 
-          // Try to find the correct artist by verifying albums
-          let bestMatch = null;
-          let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
-
-          for (const candidate of results) {
-            // Only consider candidates with reasonable name match
-            if (candidate.score < 80) continue;
-
-            try {
-              // Quick fetch of albums to verify this is the right artist
-              const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
-                includeEPs: discographyConfig.includeEPs,
-                includeLive: discographyConfig.includeLive,
-                includeCompilations: discographyConfig.includeCompilations,
-                includeBootlegs: discographyConfig.includeBootlegs,
-                quickCheck: true, // Only fetch first page for verification
-              });
-
-              const verification = DiscographyMatcher.verifyArtistByAlbums(
-                candidateAlbums,
-                artist.localAlbums
-              );
-
-              log.info(`[useDiscography] Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
-
-              // If this candidate has matching albums, consider it
-              if (verification.verified && verification.confidence > bestVerification.confidence) {
-                bestMatch = candidate;
-                bestVerification = verification;
-              } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
-                // If no verified match yet, prefer candidates with more album matches
-                bestMatch = candidate;
-                bestVerification = verification;
-              }
-
-              // If we found a highly confident match, stop searching
-              if (verification.verified && verification.confidence >= 90) {
-                break;
-              }
-            } catch (err) {
-              console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
-            }
-          }
+          // Find the best matching artist via album verification
+          const { bestMatch, bestVerification } = await findBestArtistMatch(
+            results, artist.localAlbums, discographyConfig, { scoreThreshold: 80 },
+          );
 
           // Accept the match if verified, or if the name match is very high and we have some album matches
           if (bestMatch && (bestVerification.verified ||
@@ -536,46 +553,10 @@ export function useDiscography(tracks: Track[] = []) {
         return false;
       }
 
-      // Try to find the correct artist by verifying albums
-      let bestMatch = null;
-      let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
-
-      for (const candidate of results) {
-        if (candidate.score < 70) continue;
-
-        try {
-          // Also bypass discography cache for re-resolution
-          const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
-            includeEPs: discographyConfig.includeEPs,
-            includeLive: discographyConfig.includeLive,
-            includeCompilations: discographyConfig.includeCompilations,
-            includeBootlegs: discographyConfig.includeBootlegs,
-            quickCheck: true,
-            bypassCache: true,
-          });
-
-          const verification = DiscographyMatcher.verifyArtistByAlbums(
-            candidateAlbums,
-            artistData.albums
-          );
-
-log.info(`[useDiscography] Re-resolve: Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
-
-          if (verification.verified && verification.confidence > bestVerification.confidence) {
-            bestMatch = candidate;
-            bestVerification = verification;
-          } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
-            bestMatch = candidate;
-            bestVerification = verification;
-          }
-
-          if (verification.verified && verification.confidence >= 90) {
-            break;
-          }
-        } catch (err) {
-          console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
-        }
-      }
+      // Find the best matching artist via album verification
+      const { bestMatch, bestVerification } = await findBestArtistMatch(
+        results, artistData.albums, discographyConfig, { scoreThreshold: 70, bypassCache: true },
+      );
 
       // Accept the match if verified
       if (bestMatch && (bestVerification.verified ||
@@ -647,45 +628,10 @@ log.info(`[useDiscography] Re-resolve: Verifying "${candidate.name}" (score: ${c
             continue;
           }
 
-          // Try to find the correct artist by verifying albums
-          let bestMatch = null;
-          let bestVerification = { verified: false, matchedAlbums: 0, confidence: 0 };
-
-          for (const candidate of results) {
-            if (candidate.score < 70) continue;
-
-            try {
-              const candidateAlbums = await MusicBrainzAPI.getArtistDiscography(candidate.id, {
-                includeEPs: discographyConfig.includeEPs,
-                includeLive: discographyConfig.includeLive,
-                includeCompilations: discographyConfig.includeCompilations,
-                includeBootlegs: discographyConfig.includeBootlegs,
-                quickCheck: true,
-                bypassCache: true,
-              });
-
-              const verification = DiscographyMatcher.verifyArtistByAlbums(
-                candidateAlbums,
-                artist.localAlbums
-              );
-
-              log.info(`[useDiscography] Re-resolve all: Verifying "${candidate.name}" (score: ${candidate.score}):`, verification);
-
-              if (verification.verified && verification.confidence > bestVerification.confidence) {
-                bestMatch = candidate;
-                bestVerification = verification;
-              } else if (!bestVerification.verified && verification.matchedAlbums > bestVerification.matchedAlbums) {
-                bestMatch = candidate;
-                bestVerification = verification;
-              }
-
-              if (verification.verified && verification.confidence >= 90) {
-                break;
-              }
-            } catch (err) {
-              console.warn(`[useDiscography] Failed to verify candidate: ${candidate.name}`, err);
-            }
-          }
+          // Find the best matching artist via album verification
+          const { bestMatch, bestVerification } = await findBestArtistMatch(
+            results, artist.localAlbums, discographyConfig, { scoreThreshold: 70, bypassCache: true },
+          );
 
           // Accept the match if verified
           if (bestMatch && (bestVerification.verified ||

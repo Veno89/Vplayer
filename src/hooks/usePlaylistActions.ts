@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { log } from '../utils/logger';
+import { nativeConfirm, nativeAlert } from '../utils/nativeDialog';
 import type { Track } from '../types';
 import type { PlaylistsAPI } from './usePlaylists';
 
@@ -159,8 +160,7 @@ export function usePlaylistActions({
             log.info('Adding tracks to playlist:', tracks.length);
             await playlists.addTracksToPlaylist(playlists.currentPlaylist!, tracks.map((t: { id: string }) => t.id));
         } catch (err) {
-            console.error('Drop failed:', err);
-            alert('Failed to add tracks to playlist');
+            await nativeAlert('Failed to add tracks to playlist', 'Error');
         }
     }, [playlists, setIsDraggingOver]);
 
@@ -170,12 +170,16 @@ export function usePlaylistActions({
     }, [setContextMenu]);
 
     // Handle track removal with confirmation
-    const handleRemoveTrack = useCallback((index: number) => {
+    const handleRemoveTrack = useCallback(async (index: number) => {
         const track = displayTracks[index];
         if (!track || !playlists.currentPlaylist) return;
 
         // Remove from playlist
-        if (confirm(`Remove "${track.title}" from this playlist?`)) {
+        const confirmed = await nativeConfirm(
+            `Remove "${track.title}" from this playlist?`,
+            'Remove Track'
+        );
+        if (confirmed) {
             playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
         }
 
@@ -202,7 +206,7 @@ export function usePlaylistActions({
                 await playlists.setCurrentPlaylist(newPlaylist);
             }
         } catch (err) {
-            alert('Failed to create playlist');
+            await nativeAlert('Failed to create playlist', 'Error');
         }
     }, [newPlaylistName, playlists, setNewPlaylistName, setShowNewPlaylistDialog]);
 
@@ -218,7 +222,7 @@ export function usePlaylistActions({
                 useStore.getState().setLastPlaylistId(null);
             }
         } catch (err) {
-            alert('Failed to delete playlist');
+            await nativeAlert('Failed to delete playlist', 'Error');
         }
     }, [playlists]);
 

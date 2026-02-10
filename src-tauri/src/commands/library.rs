@@ -2,7 +2,7 @@
 use crate::AppState;
 use crate::scanner::{Scanner, Track};
 use log::info;
-use tauri::Window;
+use tauri::{Manager, Window};
 use base64::{Engine as _, engine::general_purpose};
 
 #[tauri::command]

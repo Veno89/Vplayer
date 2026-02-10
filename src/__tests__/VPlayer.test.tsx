@@ -10,8 +10,8 @@ describe('VPlayer UI', () => {
 
   it('renders main player and can open options', async () => {
     render(<App />);
-    // Settings button has aria-label="Open Settings"
-    const settingsBtn = screen.getByRole('button', { name: /open settings/i });
+    // Settings button has aria-label="Open Settings" (may be inside a lazy-loaded window)
+    const settingsBtn = await screen.findByRole('button', { name: /open settings/i });
     expect(settingsBtn).toBeInTheDocument();
     // click should not throw and should keep app rendered
     fireEvent.click(settingsBtn);

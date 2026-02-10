@@ -1,9 +1,16 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Window } from './Window';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { WINDOW_REGISTRY } from '../windowRegistry';
+
+/** Lightweight loading placeholder shown while a lazy window is being loaded. */
+const WindowFallback = () => (
+  <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+    Loading…
+  </div>
+);
 
 /**
  * Window manager component
@@ -34,7 +41,9 @@ export const WindowManager = () => {
               toggleWindow={toggleWindow}
               windowOpacity={windowOpacity}
             >
-              <cfg.Component />
+              <Suspense fallback={<WindowFallback />}>
+                <cfg.Component />
+              </Suspense>
             </Window>
           </ErrorBoundary>
         )

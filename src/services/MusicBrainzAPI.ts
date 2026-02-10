@@ -8,7 +8,7 @@
  */
 
 const MB_BASE_URL = 'https://musicbrainz.org/ws/2';
-const USER_AGENT = 'VPlayer/0.9.13 (https://github.com/veno/vplayer)';
+const USER_AGENT = 'VPlayer/0.9.14 (https://github.com/veno/vplayer)';
 const RATE_LIMIT_MS = 1100; // Slightly over 1 second to be safe
 
 // Storage keys for persistent caching
@@ -74,15 +74,11 @@ interface CacheData<T> {
 
 class MusicBrainzAPIService {
   lastRequestTime: number;
-  requestQueue: Array<() => void>;
-  isProcessingQueue: boolean;
   artistCache: Record<string, MBArtistResult[] | MBArtistResult>;
   discographyCache: Record<string, MBReleaseGroup[]>;
 
   constructor() {
     this.lastRequestTime = this._getLastRequestTime();
-    this.requestQueue = [];
-    this.isProcessingQueue = false;
     this.artistCache = this._loadCache<MBArtistResult[] | MBArtistResult>(STORAGE_KEYS.ARTIST_CACHE);
     this.discographyCache = this._loadCache<MBReleaseGroup[]>(STORAGE_KEYS.DISCOGRAPHY_CACHE);
   }
