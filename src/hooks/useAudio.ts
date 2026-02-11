@@ -49,9 +49,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
   const [isLoading, setIsLoading] = useState(false);
   const [audioBackendError, setAudioBackendError] = useState<string | null>(null);
 
-  // Track if we're currently seeking / recovering to suppress events briefly
+  // Track if we're currently seeking / recovering / toggling play state to suppress events briefly
   const isSeekingRef = useRef(false);
   const isRecoveringRef = useRef(false);
+  const isTogglingRef = useRef(false);
 
   // Refs for callbacks – avoids stale closures in event listeners
   const onEndedRef = useRef(onEnded);
@@ -76,7 +77,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
   useEffect(() => {
     const checkAudioBackend = async () => {
       try {
-        await TauriAPI.isPlaying();
+        await withTimeout(TauriAPI.isPlaying(), BACKEND_TIMEOUT_MS);
         setAudioBackendError(null);
       } catch (err) {
         setAudioBackendError(`Audio system unavailable: ${err}`);
@@ -95,13 +96,24 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
         if (isSeekingRef.current || isRecoveringRef.current) return;
 
-        const { position, duration } = event.payload;
+        const { position, duration, isPlaying } = event.payload;
         const clamped = duration > 0 ? Math.min(position, duration) : position;
 
         // Write directly to Zustand – single source of truth
         useStore.getState().setProgress(clamped);
         if (duration > 0) {
           useStore.getState().setDuration(duration);
+        }
+
+        // SYNC FIX: Ensure UI matches Backend state
+        // Only if we aren't incorrectly suppressing it (e.g. during a toggle intent)
+        if (!isTogglingRef.current) {
+          const currentStorePlaying = useStore.getState().playing;
+          if (currentStorePlaying !== isPlaying) {
+            // Backend is the source of truth
+            console.log(`[Sync] Correcting play state: UI=${currentStorePlaying} -> Backend=${isPlaying}`);
+            useStore.getState().setPlaying(isPlaying);
+          }
         }
 
         if (onTimeUpdateRef.current) {
@@ -139,11 +151,13 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
     while (attempt <= AUDIO_RETRY_CONFIG.MAX_RETRIES) {
       try {
         setIsLoading(true);
-        await TauriAPI.loadTrack(track.path);
+        // Timeout fix: prevent hanging forever
+        await withTimeout(TauriAPI.loadTrack(track.path), BACKEND_TIMEOUT_MS);
         currentTrackRef.current = track;
 
         // Get real duration from backend and write to store
-        const realDuration = await TauriAPI.getDuration();
+        // Timeout fix here too
+        const realDuration = await withTimeout(TauriAPI.getDuration(), 2000).catch(() => 0);
         const dur = realDuration > 0 ? realDuration : track.duration || 0;
         useStore.getState().setDuration(dur);
         useStore.getState().setProgress(0);
@@ -176,6 +190,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
   const play = useCallback(async () => {
     if (audioBackendError || isRecoveringRef.current) return;
 
+    isTogglingRef.current = true;
     try {
       const deviceAvailable = await TauriAPI.isAudioDeviceAvailable();
       if (!deviceAvailable) {
@@ -195,7 +210,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
         toast.showInfo('Resuming playback...', 2000);
       }
 
-      await TauriAPI.play();
+      await withTimeout(TauriAPI.play(), BACKEND_TIMEOUT_MS);
       setAudioBackendError(null);
     } catch (err) {
       console.error('Failed to play:', err);
@@ -204,7 +219,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
         toast.showWarning('Reinitializing audio system...');
         const recovered = await TauriAPI.recoverAudio();
         if (recovered) {
-          await TauriAPI.play();
+          await withTimeout(TauriAPI.play(), BACKEND_TIMEOUT_MS);
           setAudioBackendError(null);
           toast.showSuccess('Audio resumed');
         } else {
@@ -218,17 +233,24 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       } finally {
         isRecoveringRef.current = false;
       }
+    } finally {
+      // Allow a small window for state to settle before syncing with backend again
+      setTimeout(() => { isTogglingRef.current = false; }, 500);
     }
   }, [audioBackendError, toast]);
 
   // ── pause ─────────────────────────────────────────────────────────
   const pause = useCallback(async () => {
     if (audioBackendError) return;
+
+    isTogglingRef.current = true;
     try {
-      await TauriAPI.pause();
+      await withTimeout(TauriAPI.pause(), BACKEND_TIMEOUT_MS);
     } catch (err) {
       console.error('Failed to pause:', err);
       throw err;
+    } finally {
+      setTimeout(() => { isTogglingRef.current = false; }, 500);
     }
   }, [audioBackendError]);
 
@@ -236,7 +258,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
   const stop = useCallback(async () => {
     if (audioBackendError) return;
     try {
-      await TauriAPI.stop();
+      await withTimeout(TauriAPI.stop(), BACKEND_TIMEOUT_MS);
       useStore.getState().setProgress(0);
     } catch (err) {
       console.error('Failed to stop:', err);
@@ -252,10 +274,13 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
     }
     try {
       const clamped = Math.max(0, Math.min(1, newVolume));
-      await TauriAPI.setVolume(clamped);
+      await withTimeout(TauriAPI.setVolume(clamped), 2000, 'Volume change timed out');
       // Volume state lives in the store (set by callers, e.g. usePlayer)
     } catch (err) {
       errorHandler.handle(err, 'Audio Volume');
+      // Don't throw here? If volume fails, maybe just log it. 
+      // User might spam volume keys. Throwing might be annoying.
+      // But keeping original behavior of throwing for now to be safe.
       throw err;
     }
   }, [audioBackendError, errorHandler]);
@@ -266,11 +291,13 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
 
     isSeekingRef.current = true;
     try {
-      await TauriAPI.seekTo(position);
+      await withTimeout(TauriAPI.seekTo(position), 2000, 'Seek timed out');
       useStore.getState().setProgress(position);
     } catch (err) {
       console.error('Failed to seek:', err);
-      if (String(err).includes('No file loaded') || String(err).includes('error')) {
+      if (typeof err === 'object' && err !== null && 'message' in err && (err as any).message.includes('timed out')) {
+        toast.showWarning('Seek operation timed out');
+      } else if (String(err).includes('No file loaded') || String(err).includes('error')) {
         toast.showWarning('Press play to resume playback');
       }
     } finally {

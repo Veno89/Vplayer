@@ -3,6 +3,13 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.18] - 2026-02-11
+
+### Playback Reliability (Architecture Analysis §4.4)
+- **Fixed Race Condition**: Rapid track changes (spamming "Next") no longer confuses the player. Implemented "latest wins" logic in `useTrackLoading` key to ignore stale load results.
+- **Backend Timeouts**: All 6 audio operations (`loadTrack`, `play`, `pause`, `stop`, `seek`, `changeVolume`) now wrapped in 2-5s timeouts. Prevents "infinite loading" hangs if audio hardware or backend becomes unresponsive.
+- **True Play/Pause Sync**: UI now listens to `playback-tick` event's `isPlaying` flag for the ultimate source of truth, ensuring the "Play" button never desyncs from actual audio state.
+
 ## [0.9.17] - 2026-02-10
 
 ### Bug Fixes
