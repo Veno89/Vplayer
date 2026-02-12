@@ -3,6 +3,14 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.19] - 2026-02-12
+
+### Audio Quality Overhaul (Architecture Analysis §5.1)
+- **High-Fidelity Output**: Replaced 16-bit integer stream with 32-bit floating-point pipeline (`SampleFormat::F32`), massively increasing dynamic range and preventing intermediate clipping.
+- **Soft Clipper**: Added a cubic soft clipper to the final DSP stage. Instead of harsh digital crackling when volume exceeds 0dB, loud signals now saturate warmly (analog-style limiting).
+- **Better Reverb**: Replaced basic delay-line reverb with a Schroeder-Moorer `Freeverb` implementation (parallel comb filters + series allpass filters) for smoother, denser tails.
+- **Rodio 0.21 Upgrade**: Refactored `device.rs` and `audio/mod.rs` to fully adopt `rodio` 0.21's `Mixer` and `OutputStreamBuilder` APIs, removing deprecated/broken types like `DynamicMixerController`.
+
 ## [0.9.18] - 2026-02-11
 
 ### Playback Reliability (Architecture Analysis §4.4)
