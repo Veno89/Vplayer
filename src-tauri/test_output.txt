@@ -1,0 +1,83 @@
+warning: unused import: `error`
+ --> src\audio\device.rs:9:23
+  |
+9 | ...warn, error};
+  |          ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+  --> src\audio\device.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `DeviceTrait`
+ --> src\audio\device.rs:7:38
+  |
+7 | ...t, DeviceTrait as...
+  |       ^^^^^^^^^^^
+
+warning: method `resize` is never used
+   --> src\effects.rs:229:8
+    |
+191 | impl CombFilter {
+    | --------------- method in this implementation
+...
+229 |     fn resize(&mut...
+    |        ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `resize` is never used
+   --> src\effects.rs:270:8
+    |
+245 | impl AllpassFilter {
+    | ------------------ method in this implementation
+...
+270 |     fn resize(&mut se...
+    |        ^^^^^^
+
+warning: multiple associated constants are never used
+   --> src\effects.rs:291:11
+    |
+289 | impl Reverb {
+    | ----------- associated constants in this implementation
+290 |     // Freeverb tuning cons...
+291 |     const COMB_TUNING_L1: u...
+    |           ^^^^^^^^^^^^^^
+292 |     const COMB_TUNING_R1: u...
+    |           ^^^^^^^^^^^^^^
+293 |     const COMB_TUNING_L2: u...
+    |           ^^^^^^^^^^^^^^
+294 |     const COMB_TUNING_R2: u...
+    |           ^^^^^^^^^^^^^^
+295 |     const COMB_TUNING_L3: u...
+    |           ^^^^^^^^^^^^^^
+296 |     const COMB_TUNING_R3: u...
+    |           ^^^^^^^^^^^^^^
+297 |     const COMB_TUNING_L4: u...
+    |           ^^^^^^^^^^^^^^
+298 |     const COMB_TUNING_R4: u...
+    |           ^^^^^^^^^^^^^^
+
+warning: associated function `process` is never used
+   --> src\effects.rs:450:12
+    |
+449 | impl SoftClipper {
+    | ---------------- associated function in this implementation
+450 |     pub fn process(in...
+    |            ^^^^^^^
+
+warning: `vplayer` (bin "vplayer" test) generated 7 warnings (run `cargo fix --bin "vplayer" --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.65s
+     Running unittests src\main.rs (target\debug\deps\vplayer-e886935f811d960f.exe)
+
+running 4 tests
+test effects::tests::test_effects_config_default ... ok
+test effects::tests::test_soft_clipper ... ok
+test effects::tests::test_effects_processor_chain ... ok
+test effects::tests::test_reverb_process ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.00s
+

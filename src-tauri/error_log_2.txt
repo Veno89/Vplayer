@@ -1,0 +1,66 @@
+    Checking vplayer v0.9.17 (C:\Users\Zhitn\Desktop\Vplayer\src-tauri)
+error[E0432]: unresolved import `rodio::OutputStreamHandle`
+ --> src\audio\device.rs:6:40
+  |
+6 | use rodio::{DeviceTrait, OutputStream, OutputStreamHandle, Source};
+  |                                        ^^^^^^^^^^^^^^^^^^
+  |                                        |
+  |                                        no `OutputStreamHandle` in the root
+  |                                        help: a similar name exists in the module: `OutputStreamBuilder`
+
+error[E0432]: unresolved imports `rodio::dynamic_mixer`, `rodio::dynamic_mixer`
+ --> src\audio\device.rs:8:12
+  |
+8 | use rodio::dynamic_mixer::{self, DynamicMixerController};
+  |            ^^^^^^^^^^^^^   ^^^^ no `dynamic_mixer` in the root
+  |            |
+  |            could not find `dynamic_mixer` in `rodio`
+
+warning: unused import: `error`
+ --> src\audio\device.rs:9:23
+  |
+9 | use log::{info, warn, error};
+  |                       ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no function or associated item named `try_from_device` found for struct `OutputStream` in the current scope
+   --> src\audio\device.rs:101:42
+    |
+101 |     let (stream, handle) = OutputStream::try_from_device(&device)
+    |                                          ^^^^^^^^^^^^^^^ function or associated item not found in `OutputStream`
+    |
+help: there is an associated function `try_from` with a similar name
+    |
+101 -     let (stream, handle) = OutputStream::try_from_device(&device)
+101 +     let (stream, handle) = OutputStream::try_from(&device)
+    |
+
+error[E0599]: no function or associated item named `try_new` found for struct `rodio::Sink` in the current scope
+  --> src\audio\mod.rs:74:26
+   |
+74 |         let sink = Sink::try_new(&mixer).or_else(|_| {
+   |                          ^^^^^^^ function or associated item not found in `rodio::Sink`
+   |
+note: if you're trying to build a new `rodio::Sink`, consider using `rodio::Sink::connect_new` which returns `rodio::Sink`
+  --> C:\Users\Zhitn\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\sink.rs:72:5
+   |
+72 |     pub fn connect_new(mixer: &Mixer) -> Sink {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DeviceTrait`
+ --> src\audio\device.rs:7:38
+  |
+7 | use rodio::cpal::traits::{HostTrait, DeviceTrait as CpalDeviceTrait};
+  |                                      ^^^^^^^^^^^
+
+warning: unused import: `Source`
+ --> src\audio\device.rs:6:60
+  |
+6 | use rodio::{DeviceTrait, OutputStream, OutputStreamHandle, Source};
+  |                                                            ^^^^^^
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+warning: `vplayer` (bin "vplayer") generated 3 warnings
+error: could not compile `vplayer` (bin "vplayer") due to 4 previous errors; 3 warnings emitted

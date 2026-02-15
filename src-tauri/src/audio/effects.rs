@@ -59,7 +59,15 @@ where
             self.sample_rate_initialized = true;
         }
         
-        self.input.next().map(|sample| {
+        let sample = self.input.next();
+        
+        if sample.is_none() {
+            // Log once when source finishes to avoid spamming
+            // We can't easily dedup here without more state, but normally this returns None forever once done.
+            log::debug!("EffectsSource input returned None - track finished or decode error");
+        }
+
+        sample.map(|sample| {
             // Convert sample to f32 first
             let sample_f32: f32 = f32::from_sample_(sample);
             
@@ -108,3 +116,14 @@ where
         self.input.try_seek(pos)
     }
 }
+
+impl<I> Drop for EffectsSource<I>
+where
+    I: Source,
+    f32: FromSample<I::Item>,
+{
+    fn drop(&mut self) {
+        log::info!("EffectsSource dropped - track finished or removed from sink");
+    }
+}
+

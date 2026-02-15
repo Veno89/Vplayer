@@ -4,10 +4,9 @@
 //! device change detection for graceful recovery.
 
 use rodio::{DeviceTrait, OutputStream, OutputStreamBuilder};
-use rodio::cpal::traits::HostTrait;
-use rodio::cpal::SampleFormat;
+use rodio::cpal::traits::{HostTrait, DeviceTrait as CpalDeviceTrait};
 use rodio::mixer::Mixer;
-use log::{info, warn};
+use log::{info, warn, error};
 use std::sync::Arc;
 use std::time::Instant;
 use serde::Serialize;
@@ -18,34 +17,30 @@ use crate::error::{AppError, AppResult};
 // ---------------------------------------------------------------------------
 
 /// Newtype wrapper to safely mark OutputStream as Send.
-///
-/// # Safety
-/// AudioPlayer holds OutputStream behind a Mutex for exclusive access.
-/// It lives in Tauri managed state and is never moved between threads.
-/// The OutputStream only keeps the audio device connection alive;
-/// no cross-thread method calls are made on it.
 #[allow(dead_code)]
 pub(crate) struct SendOutputStream(pub OutputStream);
 
-// SAFETY: see doc-comment above.
+// SAFETY: OutputStream is !Send but we only access it from the main thread
+// or wrap it in Mutex in AudioPlayer.
 unsafe impl Send for SendOutputStream {}
+unsafe impl Sync for SendOutputStream {}
 
 // ---------------------------------------------------------------------------
 // DeviceState — groups all audio-output resources
 // ---------------------------------------------------------------------------
 
 /// Holds the audio output resources (stream, mixer, device info).
-///
-/// The OutputStream keeps the audio device alive — dropping it stops all audio.
 pub struct DeviceState {
     pub stream: Option<SendOutputStream>,
-    pub mixer: Option<Arc<Mixer>>,
+    // We hold the mixer to connect new Sinks to the output.
+    // Mixer is a handle (Arc<Inner>) so it is cheap to clone and Send.
+    pub mixer: Option<Mixer>,
     pub connected_device_name: Option<String>,
     pub last_active: Instant,
 }
 
 impl DeviceState {
-    pub fn new(stream: OutputStream, mixer: Arc<Mixer>, device_name: Option<String>) -> Self {
+    pub fn new(stream: OutputStream, mixer: Mixer, device_name: Option<String>) -> Self {
         Self {
             stream: Some(SendOutputStream(stream)),
             mixer: Some(mixer),
@@ -58,7 +53,7 @@ impl DeviceState {
         self.last_active = Instant::now();
     }
 
-    pub fn replace(&mut self, stream: OutputStream, mixer: Arc<Mixer>, device_name: Option<String>) {
+    pub fn replace(&mut self, stream: OutputStream, mixer: Mixer, device_name: Option<String>) {
         self.stream = Some(SendOutputStream(stream));
         self.mixer = Some(mixer);
         self.connected_device_name = device_name;
@@ -69,9 +64,7 @@ impl DeviceState {
         has_device_changed(&self.connected_device_name)
     }
 
-    /// Borrow the current output mixer (used to connect new Sinks without
-    /// creating a new OutputStream).
-    pub fn mixer(&self) -> &Arc<Mixer> {
+    pub fn mixer(&self) -> &Mixer {
         self.mixer.as_ref().expect("DeviceState mixer should always be set")
     }
 }
@@ -83,46 +76,40 @@ pub struct AudioDevice {
     pub is_default: bool,
 }
 
-/// Create high quality output and return the device name we connected to
-pub fn create_high_quality_output_with_device_name() -> AppResult<(OutputStream, Arc<Mixer>, Option<String>)> {
+/// Creates a high-quality (F32) output stream and returns it along with the mixer handle.
+pub fn create_high_quality_output_with_device_name() -> AppResult<(OutputStream, Mixer, Option<String>)> {
     let host = rodio::cpal::default_host();
     let device = host.default_output_device()
         .ok_or_else(|| AppError::Audio("No output device available".to_string()))?;
     
     let device_name = device.name().ok();
     info!("Using audio device: {:?}", device_name);
+
+    if let Ok(config) = device.default_output_config() {
+         info!("Device default sample rate: {}", config.sample_rate().0);
+    }
     
-    // Try to get supported configs
-    let supported_configs = device.supported_output_configs()
-        .map_err(|e| AppError::Audio(format!("Failed to get supported configs: {}", e)))?;
-    
-    // Find the best config: prefer 32-bit float, highest sample rate
-    let best_config = supported_configs
-        .filter(|config| config.sample_format() == SampleFormat::F32)
-        .max_by_key(|config| config.max_sample_rate().0)
-        .or_else(|| {
-            // Fallback to any config if F32 not available
-            device.supported_output_configs()
-                .ok()
-                .and_then(|mut configs| configs.next())
-        })
-        .ok_or_else(|| AppError::Audio("No supported audio config found".to_string()))?;
-    
-    // Use maximum sample rate supported
-    let sample_rate = best_config.max_sample_rate();
-    let config_with_rate = best_config.with_sample_rate(sample_rate);
-    
-    info!("Using audio config: sample_rate={:?}, channels={}, format={:?}", 
-          config_with_rate.sample_rate(), 
-          config_with_rate.channels(),
-          config_with_rate.sample_format());
-    
-    // Create output stream
-    let stream = OutputStreamBuilder::open_default_stream()
-        .map_err(|e| AppError::Audio(format!("Failed to create audio output: {}", e)))?;
-    let mixer = Arc::new(stream.mixer().clone());
-    
-    Ok((stream, mixer, device_name))
+    // We use OutputStreamBuilder to customize the stream
+    let result = OutputStreamBuilder::from_device(device.clone())
+        .map_err(|e| AppError::Audio(format!("Failed to create stream builder: {}", e)))?
+        .with_sample_format(rodio::cpal::SampleFormat::F32)
+        .open_stream();
+        
+    match result {
+        Ok(stream) => {
+             // Extract mixer from stream
+             let mixer = stream.mixer().clone();
+             Ok((stream, mixer, device_name))
+        },
+        Err(e) => {
+            // Fallback to default if F32 fails (unlikely given rodio converts, but possible)
+            warn!("Failed to open F32 stream, trying default config: {}", e);
+            let stream = OutputStreamBuilder::open_default_stream()
+                .map_err(|e| AppError::Audio(format!("Failed to open default stream: {}", e)))?;
+            let mixer = stream.mixer().clone();
+            Ok((stream, mixer, device_name))
+        }
+    }
 }
 
 /// Check if the default audio device has changed
@@ -151,13 +138,10 @@ pub fn has_device_changed(connected_device_name: &Option<String>) -> bool {
 /// Check if there's any audio device available
 pub fn is_device_available() -> bool {
     let host = rodio::cpal::default_host();
-    
-    // Check if there's any default output device
     if host.default_output_device().is_none() {
         warn!("No default audio output device available");
         return false;
     }
-    
     true
 }
 
@@ -166,14 +150,12 @@ pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
     let host = rodio::cpal::default_host();
     let mut devices = Vec::new();
     
-    // Get default device name
     let default_device = host.default_output_device();
     let default_name = default_device
         .as_ref()
         .and_then(|d| d.name().ok())
         .unwrap_or_else(|| "Default".to_string());
     
-    // Enumerate all output devices
     let output_devices = host.output_devices()
         .map_err(|e| AppError::Audio(format!("Failed to enumerate devices: {}", e)))?;
     
@@ -187,7 +169,6 @@ pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
         }
     }
     
-    // If no devices found, add default
     if devices.is_empty() {
         devices.push(AudioDevice {
             name: default_name,
@@ -197,3 +178,6 @@ pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
     
     Ok(devices)
 }
+
+
+

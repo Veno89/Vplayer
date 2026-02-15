@@ -7,6 +7,10 @@
 //! - device: Device detection, DeviceState, SendOutputStream
 //! - effects: EQ and effects processing
 //! - visualizer: Audio visualization buffer
+//! 
+//! # Thread Safety
+//! All public methods are thread-safe (Send + Sync).
+//! AudioPlayer is designed to be held in an Arc<AudioPlayer> or Tauri state.
 
 pub mod visualizer;
 pub mod effects;
@@ -65,7 +69,10 @@ impl AudioPlayer {
         info!("Initializing audio player with high-quality settings");
 
         let (stream, mixer, device_name) = device::create_high_quality_output_with_device_name()?;
+        
+        // Use Sink::connect_new to attach to our manual mixer
         let sink = Sink::connect_new(&mixer);
+        
         let visualizer_buffer = Arc::new(Mutex::new(VisualizerBuffer::new(4096)));
 
         info!("Audio player initialized successfully on device: {:?}", device_name);
@@ -158,6 +165,14 @@ impl AudioPlayer {
             ));
         }
 
+        // Check if sink is empty but we think we have a track
+        // This handles cases where the stream died, finished, or was dropped
+        let needs_reload = {
+            let sink = self.sink.lock().unwrap();
+            let pb = self.playback.lock().unwrap();
+            sink.empty() && pb.current_path.is_some()
+        };
+
         let needs_reinit = device_changed
             || pause_duration > LONG_PAUSE_THRESHOLD
             || time_since_active > LONG_PAUSE_THRESHOLD;
@@ -182,6 +197,7 @@ impl AudioPlayer {
                 Ok((new_stream, new_mixer, new_device_name)) => {
                     info!("Audio stream reinitialized on device: {:?}", new_device_name);
 
+                    // Use connect_new
                     let new_sink = Sink::connect_new(&new_mixer);
                     new_sink.set_volume(self.volume_mgr.lock().unwrap().effective_volume());
 
@@ -208,6 +224,25 @@ impl AudioPlayer {
                 Err(e) => {
                     error!("Failed to reinitialize audio: {}", e);
                     return Err(e);
+                }
+            }
+        } else if needs_reload {
+            // Sink is empty but we have a track - reload it
+            info!("Sink is empty but track is loaded - attempting reload/resume");
+            let current_path = self.playback.lock().unwrap().current_path.clone();
+            let current_position = self.get_position();
+            
+            if let Some(path) = current_path {
+                info!("Reloading track for resume: {}", path);
+                if let Err(e) = self.load(path) {
+                    error!("Failed to reload track for resume: {}", e);
+                    return Err(e);
+                }
+                // Seek if we weren't at the very beginning
+                if current_position > 0.5 {
+                    if let Err(e) = self.seek(current_position) {
+                        warn!("Failed to restore position for resume: {}", e);
+                    }
                 }
             }
         }
@@ -439,11 +474,10 @@ impl AudioPlayer {
         let source = Decoder::new(BufReader::new(file))
             .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
 
-        // Reuse the existing device mixer to avoid creating a new OutputStream
-        // per preloaded track (which leaked resources and could mismatch devices).
+        // Reuse the existing device mixer
         let device = self.device.lock().unwrap();
         let new_sink = Sink::connect_new(device.mixer());
-
+        
         let current_volume = self.sink.lock().unwrap().volume();
         new_sink.set_volume(current_volume);
         new_sink.append(source);

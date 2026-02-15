@@ -1,0 +1,216 @@
+    Checking vplayer v0.9.17 (C:\Users\Zhitn\Desktop\Vplayer\src-tauri)
+error[E0432]: unresolved import `rodio::OutputStreamHandle`
+  --> src\audio\mod.rs:18:36
+   |
+18 | use rodio::{Decoder, Sink, Source, OutputStreamHandle};
+   |                                    ^^^^^^^^^^^^^^^^^^
+   |                                    |
+   |                                    no `OutputStreamHandle` in the root
+   |                                    help: a similar name exists in the module: `OutputStreamBuilder`
+
+error[E0432]: unresolved import `device::AudioDevice`
+  --> src\audio\mod.rs:34:9
+   |
+34 | pub use device::AudioDevice;
+   |         ^^^^^^^^^^^^^^^^^^^ no `AudioDevice` in `audio::device`
+
+error[E0412]: cannot find type `DynamicMixerController` in crate `rodio`
+  --> src\audio\device.rs:41:34
+   |
+41 |     pub mixer: Option<Arc<rodio::DynamicMixerController<f32>>>,
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^ not found in `rodio`
+
+error[E0412]: cannot find type `DynamicMixerController` in crate `rodio`
+  --> src\audio\device.rs:47:50
+   |
+47 |     pub fn new(stream: Stream, mixer: Arc<rodio::DynamicMixerController<f32>>, device_name: Option<String>) -> Self {
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^ not found in `rodio`
+
+error[E0412]: cannot find type `DynamicMixerController` in crate `rodio`
+  --> src\audio\device.rs:60:65
+   |
+60 |     pub fn replace(&mut self, stream: Stream, mixer: Arc<rodio::DynamicMixerController<f32>>, device_name: Option<String>) {
+   |                                                                 ^^^^^^^^^^^^^^^^^^^^^^ not found in `rodio`
+
+error[E0412]: cannot find type `OutputStreamHandle` in this scope
+   --> src\audio\device.rs:220:30
+    |
+220 |     pub fn handle(&self) -> &OutputStreamHandle {
+    |                              ^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `create_high_quality_output_with_device_name` in module `device`
+  --> src\audio\mod.rs:67:53
+   |
+67 |         let (stream, handle, device_name) = device::create_high_quality_output_with_device_name()?;
+   |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `device`
+
+error[E0425]: cannot find function `is_device_available` in module `device`
+  --> src\audio\mod.rs:93:17
+   |
+93 |         device::is_device_available()
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in `device`
+
+error[E0425]: cannot find function `get_audio_devices` in module `device`
+  --> src\audio\mod.rs:97:17
+   |
+97 |         device::get_audio_devices()
+   |                 ^^^^^^^^^^^^^^^^^ not found in `device`
+   |
+help: consider importing this function through its public re-export
+   |
+18 + use crate::get_audio_devices;
+   |
+help: if you import `get_audio_devices`, refer to it directly
+   |
+97 -         device::get_audio_devices()
+97 +         get_audio_devices()
+   |
+
+error[E0425]: cannot find function `create_high_quality_output_with_device_name` in module `device`
+   --> src\audio\mod.rs:181:27
+    |
+181 |             match device::create_high_quality_output_with_device_name() {
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `device`
+
+error[E0425]: cannot find function `create_high_quality_output_with_device_name` in module `device`
+   --> src\audio\mod.rs:407:21
+    |
+407 |             device::create_high_quality_output_with_device_name()?;
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `device`
+
+error[E0425]: cannot find function `create_high_quality_output_with_device_name` in module `device`
+   --> src\audio\mod.rs:529:23
+    |
+529 |         match device::create_high_quality_output_with_device_name() {
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `device`
+
+warning: unused import: `DeviceTrait`
+ --> src\audio\device.rs:6:13
+  |
+6 | use rodio::{DeviceTrait};
+  |             ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `DeviceTrait as CpalDeviceTrait`, `HostTrait`, and `StreamTrait`
+ --> src\audio\device.rs:7:27
+  |
+7 | use rodio::cpal::traits::{HostTrait, DeviceTrait as CpalDeviceTrait, StreamTrait};
+  |                           ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `SampleFormat` and `StreamConfig`
+ --> src\audio\device.rs:8:19
+  |
+8 | use rodio::cpal::{SampleFormat, Stream, StreamConfig};
+  |                   ^^^^^^^^^^^^          ^^^^^^^^^^^^
+
+warning: unused imports: `error`, `info`, and `warn`
+ --> src\audio\device.rs:9:11
+  |
+9 | use log::{info, warn, error};
+  |           ^^^^  ^^^^  ^^^^^
+
+warning: unused import: `Mutex`
+  --> src\audio\device.rs:10:22
+   |
+10 | use std::sync::{Arc, Mutex};
+   |                      ^^^^^
+
+warning: unused import: `serde::Serialize`
+  --> src\audio\device.rs:12:5
+   |
+12 | use serde::Serialize;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AppError` and `AppResult`
+  --> src\audio\device.rs:13:20
+   |
+13 | use crate::error::{AppError, AppResult};
+   |                    ^^^^^^^^  ^^^^^^^^^
+
+error[E0425]: cannot find function `has_device_changed` in this scope
+  --> src\audio\device.rs:68:9
+   |
+68 |         has_device_changed(&self.connected_device_name)
+   |         ^^^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: consider using the method on `Self`
+   |
+68 |         self.has_device_changed(&self.connected_device_name)
+   |         +++++
+
+error[E0615]: attempted to take value of method `handle` on type `&DeviceState`
+   --> src\audio\device.rs:221:14
+    |
+221 |         self.handle.as_ref().expect("DeviceState handle should always be set")
+    |              ^^^^^^ method, not a field
+    |
+help: use parentheses to call the method
+    |
+221 |         self.handle().as_ref().expect("DeviceState handle should always be set")
+    |                    ++
+
+error[E0599]: no function or associated item named `try_new` found for struct `rodio::Sink` in the current scope
+  --> src\audio\mod.rs:68:26
+   |
+68 |         let sink = Sink::try_new(&handle).map_err(|e| AppError::Audio(format!("Failed to create sink: {}", e)))?;
+   |                          ^^^^^^^ function or associated item not found in `rodio::Sink`
+   |
+note: if you're trying to build a new `rodio::Sink`, consider using `rodio::Sink::connect_new` which returns `rodio::Sink`
+  --> C:\Users\Zhitn\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\sink.rs:72:5
+   |
+72 |     pub fn connect_new(mixer: &Mixer) -> Sink {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `try_new` found for struct `rodio::Sink` in the current scope
+   --> src\audio\mod.rs:185:42
+    |
+185 |                     let new_sink = Sink::try_new(&new_handle).map_err(|e| AppError::Audio(format!("Failed to create sink: {}", e)))?;
+    |                                          ^^^^^^^ function or associated item not found in `rodio::Sink`
+    |
+note: if you're trying to build a new `rodio::Sink`, consider using `rodio::Sink::connect_new` which returns `rodio::Sink`
+   --> C:\Users\Zhitn\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\sink.rs:72:5
+    |
+ 72 |     pub fn connect_new(mixer: &Mixer) -> Sink {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `try_new` found for struct `rodio::Sink` in the current scope
+   --> src\audio\mod.rs:409:30
+    |
+409 |         let new_sink = Sink::try_new(&new_handle).map_err(|e| AppError::Audio(format!("Failed to create sink: {}", e)))?;
+    |                              ^^^^^^^ function or associated item not found in `rodio::Sink`
+    |
+note: if you're trying to build a new `rodio::Sink`, consider using `rodio::Sink::connect_new` which returns `rodio::Sink`
+   --> C:\Users\Zhitn\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\sink.rs:72:5
+    |
+ 72 |     pub fn connect_new(mixer: &Mixer) -> Sink {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `try_new` found for struct `rodio::Sink` in the current scope
+   --> src\audio\mod.rs:445:30
+    |
+445 |         let new_sink = Sink::try_new(device.handle()).map_err(|e| AppError::Audio(format!("Failed to create sink for preload: {}", e)))?;
+    |                              ^^^^^^^ function or associated item not found in `rodio::Sink`
+    |
+note: if you're trying to build a new `rodio::Sink`, consider using `rodio::Sink::connect_new` which returns `rodio::Sink`
+   --> C:\Users\Zhitn\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\sink.rs:72:5
+    |
+ 72 |     pub fn connect_new(mixer: &Mixer) -> Sink {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `try_new` found for struct `rodio::Sink` in the current scope
+   --> src\audio\mod.rs:533:38
+    |
+533 |                 let new_sink = Sink::try_new(&new_handle).map_err(|e| AppError::Audio(format!("Failed to create sink: {}", e)))?;
+    |                                      ^^^^^^^ function or associated item not found in `rodio::Sink`
+    |
+note: if you're trying to build a new `rodio::Sink`, consider using `rodio::Sink::connect_new` which returns `rodio::Sink`
+   --> C:\Users\Zhitn\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\sink.rs:72:5
+    |
+ 72 |     pub fn connect_new(mixer: &Mixer) -> Sink {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0412, E0425, E0432, E0599, E0615.
+For more information about an error, try `rustc --explain E0412`.
+warning: `vplayer` (bin "vplayer") generated 7 warnings
+error: could not compile `vplayer` (bin "vplayer") due to 19 previous errors; 7 warnings emitted

@@ -3,6 +3,12 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.20] - 2026-02-13
+
+### Audio Reliability
+- **Freeze Auto-Recovery**: Fixed an issue where playback would freeze or get stuck at 0:00 if the audio device glitch or decoder error caused the stream to end unexpectedly. The player now detects this "empty sink" state on Play and automatically reloads the track to resume playback.
+- **Diagnostics**: Added detailed logging to the audio engine to trace "End of Stream" vs "Dropped Source" events, helping diagnose future playback issues.
+
 ## [0.9.19] - 2026-02-12
 
 ### Audio Quality Overhaul (Architecture Analysis §5.1)

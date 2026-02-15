@@ -1,0 +1,74 @@
+    Checking vplayer v0.9.17 (C:\Users\Zhitn\Desktop\Vplayer\src-tauri)
+warning: unused import: `error`
+ --> src\audio\device.rs:9:23
+  |
+9 | use log::{info, warn, error};
+  |                       ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+  --> src\audio\device.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `DeviceTrait`
+ --> src\audio\device.rs:7:38
+  |
+7 | use rodio::cpal::traits::{HostTrait, DeviceTrait as CpalDeviceTrait};
+  |                                      ^^^^^^^^^^^
+
+warning: method `resize` is never used
+   --> src\effects.rs:229:8
+    |
+191 | impl CombFilter {
+    | --------------- method in this implementation
+...
+229 |     fn resize(&mut self, size: usize) {
+    |        ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `resize` is never used
+   --> src\effects.rs:270:8
+    |
+245 | impl AllpassFilter {
+    | ------------------ method in this implementation
+...
+270 |     fn resize(&mut self, size: usize) {
+    |        ^^^^^^
+
+warning: multiple associated constants are never used
+   --> src\effects.rs:291:11
+    |
+289 | impl Reverb {
+    | ----------- associated constants in this implementation
+290 |     // Freeverb tuning constants
+291 |     const COMB_TUNING_L1: usize = 1116;
+    |           ^^^^^^^^^^^^^^
+292 |     const COMB_TUNING_R1: usize = 1116 + 23;
+    |           ^^^^^^^^^^^^^^
+293 |     const COMB_TUNING_L2: usize = 1188;
+    |           ^^^^^^^^^^^^^^
+294 |     const COMB_TUNING_R2: usize = 1188 + 23;
+    |           ^^^^^^^^^^^^^^
+295 |     const COMB_TUNING_L3: usize = 1277;
+    |           ^^^^^^^^^^^^^^
+296 |     const COMB_TUNING_R3: usize = 1277 + 23;
+    |           ^^^^^^^^^^^^^^
+297 |     const COMB_TUNING_L4: usize = 1356;
+    |           ^^^^^^^^^^^^^^
+298 |     const COMB_TUNING_R4: usize = 1356 + 23;
+    |           ^^^^^^^^^^^^^^
+
+warning: associated function `process` is never used
+   --> src\effects.rs:450:12
+    |
+449 | impl SoftClipper {
+    | ---------------- associated function in this implementation
+450 |     pub fn process(input: f32) -> f32 {
+    |            ^^^^^^^
+
+warning: `vplayer` (bin "vplayer") generated 7 warnings (run `cargo fix --bin "vplayer"` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.88s
