@@ -227,6 +227,10 @@ impl AudioPlayer {
                         .replace(new_stream, new_mixer, new_device_name);
                     *lock_or_recover(&self.sink) = new_sink;
 
+                    // Discard any preloaded track — its sink was connected to
+                    // the old mixer/stream which is now dead.
+                    self.clear_preload();
+
                     // Reload the track if there was one
                     if let Some(path) = current_path {
                         info!("Reloading track after audio reinit: {}", path);
@@ -488,6 +492,9 @@ impl AudioPlayer {
             .replace(new_stream, new_mixer, new_device_name);
         *lock_or_recover(&self.sink) = new_sink;
 
+        // Discard stale preload — its sink was connected to the old mixer.
+        self.clear_preload();
+
         if let Some(path) = current_path {
             self.load(path)?;
             if current_position > 0.0 {
@@ -611,6 +618,9 @@ impl AudioPlayer {
                 lock_or_recover(&self.device)
                     .replace(new_stream, new_mixer, new_device_name);
                 *lock_or_recover(&self.sink) = new_sink;
+
+                // Discard stale preload — its sink was connected to the old mixer.
+                self.clear_preload();
 
                 if let Some(path) = current_path {
                     info!("Reloading track after recovery: {}", path);

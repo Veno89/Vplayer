@@ -162,12 +162,19 @@ fn main() {
             // Uses `broadcast_snapshot()` to capture is_playing, is_finished,
             // position, and duration under a single lock — preventing the race
             // where state changes between separate queries.
+            //
+            // Adaptive sleep: 100ms while playing for smooth UI updates,
+            // 1000ms while idle to save CPU during long pauses/overnight.
+            //
+            // Device-loss guard: when we detect a transition from playing to
+            // finished, we check if the audio device is still available before
+            // emitting `track-ended`. If the device disappeared, we emit
+            // `device-lost` instead so the frontend can show a reconnect
+            // prompt rather than advancing to the next track.
             let broadcast_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut was_playing = false;
                 loop {
-                    std::thread::sleep(Duration::from_millis(100));
-
                     let snap = player_for_broadcast.broadcast_snapshot();
 
                     // Emit tick while playing (position updates)
@@ -183,10 +190,21 @@ fn main() {
 
                     // Detect track-end transition: was playing → now finished
                     if was_playing && !snap.is_playing && snap.is_finished {
-                        let _ = broadcast_handle.emit("track-ended", ());
+                        // Guard: if the device disappeared, the sink empties but
+                        // the track didn't truly finish — it was interrupted.
+                        if player_for_broadcast.is_device_available() {
+                            let _ = broadcast_handle.emit("track-ended", ());
+                        } else {
+                            info!("Device lost during playback — suppressing track-ended");
+                            let _ = broadcast_handle.emit("device-lost", ());
+                        }
                     }
 
                     was_playing = snap.is_playing;
+
+                    // Adaptive sleep: fast ticks while playing, slow while idle
+                    let sleep_ms = if snap.is_playing { 100 } else { 1000 };
+                    std::thread::sleep(Duration::from_millis(sleep_ms));
                 }
             });
             
