@@ -223,9 +223,7 @@ impl AudioPlayer {
                     let new_sink = Sink::connect_new(&new_mixer);
                     new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
 
-                    self.device
-                        .lock()
-                        .unwrap()
+                    lock_or_recover(&self.device)
                         .replace(new_stream, new_mixer, new_device_name);
                     *lock_or_recover(&self.sink) = new_sink;
 
@@ -486,9 +484,7 @@ impl AudioPlayer {
         let new_sink = Sink::connect_new(&new_mixer);
         new_sink.set_volume(current_volume);
 
-        self.device
-            .lock()
-            .unwrap()
+        lock_or_recover(&self.device)
             .replace(new_stream, new_mixer, new_device_name);
         *lock_or_recover(&self.sink) = new_sink;
 
@@ -612,9 +608,7 @@ impl AudioPlayer {
                 let new_sink = Sink::connect_new(&new_mixer);
                 new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
 
-                self.device
-                    .lock()
-                    .unwrap()
+                lock_or_recover(&self.device)
                     .replace(new_stream, new_mixer, new_device_name);
                 *lock_or_recover(&self.sink) = new_sink;
 
