@@ -64,8 +64,14 @@ impl DeviceState {
         has_device_changed(&self.connected_device_name)
     }
 
-    pub fn mixer(&self) -> &Mixer {
-        self.mixer.as_ref().expect("DeviceState mixer should always be set")
+    /// Returns a reference to the mixer handle.
+    ///
+    /// Panics are replaced with a Result to prevent bringing down the audio
+    /// system if the mixer is unexpectedly None (e.g. after a failed reinit).
+    pub fn mixer(&self) -> Result<&Mixer, crate::error::AppError> {
+        self.mixer.as_ref().ok_or_else(|| {
+            crate::error::AppError::Audio("Audio mixer unavailable — device may need reinit".into())
+        })
     }
 }
 

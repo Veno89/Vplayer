@@ -87,10 +87,11 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
     checkAudioBackend();
   }, []);
 
-  // ── Event listeners: playback-tick + track-ended ──────────────────
+  // ── Event listeners: playback-tick + track-ended + device-lost ────
   useEffect(() => {
     let unlistenTick: UnlistenFn | undefined;
     let unlistenEnded: UnlistenFn | undefined;
+    let unlistenDeviceLost: UnlistenFn | undefined;
 
     const setup = async () => {
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
@@ -129,6 +130,16 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
         useStore.getState().setProgress(0);
         if (onEndedRef.current) onEndedRef.current();
       });
+
+      // Device-lost: the Rust broadcast thread detected the audio device
+      // disappeared while playing. Pause the UI and show a recoverable
+      // error instead of advancing to the next track (which would also fail).
+      unlistenDeviceLost = await TauriAPI.onEvent<null>('device-lost', () => {
+        console.warn('[Audio] Device lost during playback');
+        useStore.getState().setPlaying(false);
+        setAudioBackendError('Audio device disconnected. Reconnect and press play to resume.');
+        toast.showWarning('Audio device disconnected');
+      });
     };
 
     setup();
@@ -136,13 +147,27 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
     return () => {
       unlistenTick?.();
       unlistenEnded?.();
+      unlistenDeviceLost?.();
     };
   }, []);
 
   // ── loadTrack ─────────────────────────────────────────────────────
   const loadTrack = useCallback(async (track: Track) => {
+    // Self-healing: if we have a stale error from a previous device disconnect,
+    // check if a device is available again before giving up.
     if (audioBackendError) {
-      throw new Error('Audio system unavailable. Please restart the application.');
+      try {
+        const available = await TauriAPI.isAudioDeviceAvailable();
+        if (available) {
+          log.info('[Audio] Device reappeared — clearing stale backend error');
+          setAudioBackendError(null);
+          // Fall through to normal load path
+        } else {
+          throw new Error('Audio device still unavailable. Please reconnect and try again.');
+        }
+      } catch (checkErr) {
+        throw new Error('Audio system unavailable. Please reconnect your audio device.');
+      }
     }
 
     let attempt = 0;
@@ -188,7 +213,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
 
   // ── play ──────────────────────────────────────────────────────────
   const play = useCallback(async () => {
-    if (audioBackendError || isRecoveringRef.current) return;
+    if (isRecoveringRef.current) return;
 
     isTogglingRef.current = true;
     try {
@@ -197,6 +222,12 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
         toast.showError('No audio device found. Please connect headphones or speakers.');
         setAudioBackendError('No audio device available');
         return;
+      }
+
+      // Self-healing: device is back — clear any previous error so we can proceed.
+      if (audioBackendError) {
+        log.info('[Audio] Device available again — clearing backend error on play');
+        setAudioBackendError(null);
       }
 
       const deviceChanged = await TauriAPI.hasAudioDeviceChanged();

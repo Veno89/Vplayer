@@ -77,6 +77,15 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Debounce the search query so the expensive filter/sort useMemo doesn't
+  // re-run on every keystroke. The input stays snappy; filtering follows after
+  // a short pause (150 ms).
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 150);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   // New dialogs for context menu
   const [showPlaylistPicker, setShowPlaylistPicker] = useState<Track | null>(null); // track to add
   const [showRatingDialog, setShowRatingDialog] = useState<Track | null>(null); // track for rating
@@ -174,20 +183,40 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   const displayTracks = useMemo(() => {
     let result = [...playlists.playlistTracks]; // Clone for sorting
 
-    // 1. Filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter((track: Track) => {
-        const searchableText = [
-          track.title,
-          track.artist,
-          track.album,
-          track.genre
-        ].filter(Boolean).join(' ').toLowerCase();
+    // 1. Filter (uses debounced query so we don't re-run on every keystroke)
+    if (debouncedSearch.trim()) {
+      const query = debouncedSearch.toLowerCase();
+      const queryWords = query.split(/\s+/).filter(Boolean);
 
-        // Word-based substring match: every word in the query must appear in the searchable text
-        const queryWords = query.split(/\s+/).filter(Boolean);
-        return queryWords.every(word => searchableText.includes(word));
+      result = result.filter((track: Track) => {
+        const fields = [track.title, track.artist, track.album, track.genre].filter(Boolean);
+        const searchableText = fields.join(' ').toLowerCase();
+
+        return queryWords.every(word => {
+          // 1. Exact substring match (existing behavior)
+          if (searchableText.includes(word)) return true;
+
+          // 2. Abbreviated / initial-letter match:
+          //    Each character in the query word must match the start of a
+          //    successive word-boundary in the searchable fields.
+          //    e.g. "jbwm" matches "Just Be What Moves"
+          //    Only activates for query words of 2+ chars that are all letters
+          //    (avoids false positives from numbers/punctuation).
+          if (word.length >= 2 && /^[a-z]+$/.test(word)) {
+            // Extract word-boundary initials from each field individually
+            // so cross-field false positives are avoided.
+            for (const field of fields) {
+              if (!field) continue;
+              const initials = field
+                .split(/[\s\-_./]+/)
+                .map(w => w.charAt(0).toLowerCase())
+                .join('');
+              if (initials.length >= word.length && initials.includes(word)) return true;
+            }
+          }
+
+          return false;
+        });
       });
     }
 
@@ -201,15 +230,15 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
         if (sortKey === 'album') {
           const artistA = (a.artist || '').toString().toLowerCase();
           const artistB = (b.artist || '').toString().toLowerCase();
-          
+
           // First compare by artist
           if (artistA < artistB) return sortDirection === 'asc' ? -1 : 1;
           if (artistA > artistB) return sortDirection === 'asc' ? 1 : -1;
-          
+
           // If same artist, compare by album
           const albumA = (a.album || '').toString().toLowerCase();
           const albumB = (b.album || '').toString().toLowerCase();
-          
+
           if (albumA < albumB) return sortDirection === 'asc' ? -1 : 1;
           if (albumA > albumB) return sortDirection === 'asc' ? 1 : -1;
           return 0;
@@ -236,7 +265,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     }
 
     return result;
-  }, [playlists.playlistTracks, searchQuery, sortConfig]);
+  }, [playlists.playlistTracks, debouncedSearch, sortConfig]);
 
   // Use the extracted playlist actions hook
   const {
@@ -280,22 +309,15 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     const selectedTrack = displayTracks[filteredIndex];
     if (!selectedTrack) return;
 
-    // CRITICAL: Set the playback context BEFORE changing the track index
-    // This ensures activePlaybackTracks updates before useTrackLoading runs
-    // Without this, useTrackLoading would load tracks[index] from the OLD array
+    // Set the playback context BEFORE changing the track index.
+    // Both writes are synchronous Zustand mutations — useTrackLoading reads
+    // activePlaybackTracks via useStore.getState() inside its effect, so it
+    // always sees the latest value. No setTimeout needed.
     if (onActiveTracksChange) {
       onActiveTracksChange(displayTracks);
-      // Use setTimeout to ensure React state update completes before track loads
-      setTimeout(() => {
-        setCurrentTrack(filteredIndex);
-        // Start playback when user explicitly clicks a track
-        setPlaying(true);
-      }, 50);
-    } else {
-      // Fallback if no playlist context (shouldn't happen in PlaylistWindow)
-      setCurrentTrack(filteredIndex);
-      setPlaying(true);
     }
+    setCurrentTrack(filteredIndex);
+    setPlaying(true);
 
   }, [displayTracks, onActiveTracksChange, setCurrentTrack, setPlaying]);
 
@@ -608,7 +630,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
           : null}
         trackCount={displayTracks.length}
         totalTracks={playlists.playlistTracks.length}
-        searchQuery={searchQuery}
+        searchQuery={debouncedSearch}
         autoScroll={playlistAutoScroll}
         onToggleAutoScroll={() => setPlaylistAutoScroll(!playlistAutoScroll)}
         onScrollToCurrentTrack={scrollToCurrentTrack}
@@ -620,7 +642,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       <PlaylistSearchBar
         value={searchQuery}
         onChange={setSearchQuery}
-        onClear={() => setSearchQuery('')}
+        onClear={() => { setSearchQuery(''); setDebouncedSearch(''); }}
       />
 
       {/* Column Headers */}
@@ -633,7 +655,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
 
       {/* Virtualized Track List */}
       <AutoSizer className="flex-1 overflow-hidden relative">
-        {({ height, width }) => displayTracks.length === 0 && searchQuery ? (
+        {({ height, width }) => displayTracks.length === 0 && debouncedSearch ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
             <Search className="w-12 h-12 mb-3 opacity-50" />
             <p className="text-lg font-medium">No results found</p>

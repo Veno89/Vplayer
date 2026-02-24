@@ -23,10 +23,21 @@ use rodio::{Decoder, Sink, Source};
 use std::fs::File;
 use std::io::BufReader;
 use log::{info, error, warn};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
+
+/// Acquire a Mutex lock, recovering from poison if a previous holder panicked.
+///
+/// Standard `.lock().unwrap()` will propagate panics if the Mutex is poisoned
+/// (i.e. a thread panicked while holding the lock). For the audio engine this
+/// is catastrophic — the entire playback system crashes. Instead, we accept the
+/// potentially-inconsistent inner data and continue. The audio subsystem can
+/// tolerate stale state far better than a hard crash.
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 use crate::effects::{EffectsConfig, EffectsProcessor};
 use visualizer::VisualizerBuffer;
 use effects::EffectsSource;
@@ -40,6 +51,17 @@ pub use device::AudioDevice;
 /// Threshold for considering a pause "long" — after this duration, we proactively
 /// reinitialize the audio stream to prevent stale device issues.
 const LONG_PAUSE_THRESHOLD: Duration = Duration::from_secs(5 * 60); // 5 minutes
+
+/// Atomic snapshot of playback state for the broadcast thread.
+///
+/// Captured under a single sink lock so all fields are consistent with each
+/// other — no TOCTOU race between `is_playing` and `is_finished`.
+pub struct BroadcastSnapshot {
+    pub is_playing: bool,
+    pub is_finished: bool,
+    pub position: f64,
+    pub duration: f64,
+}
 
 /// Thin coordinator that owns focused sub-structs.
 ///
@@ -93,7 +115,7 @@ impl AudioPlayer {
     // ── Device queries ──────────────────────────────────────────────
 
     pub fn has_device_changed(&self) -> bool {
-        self.device.lock().unwrap().has_device_changed()
+        lock_or_recover(&self.device).has_device_changed()
     }
 
     pub fn is_device_available(&self) -> bool {
@@ -133,13 +155,13 @@ impl AudioPlayer {
             self.visualizer_buffer.clone(),
         );
 
-        let sink = self.sink.lock().unwrap();
+        let sink = lock_or_recover(&self.sink);
         sink.clear();
         sink.append(effects_source);
         sink.pause();
 
-        self.playback.lock().unwrap().reset_for_load(path, duration);
-        self.device.lock().unwrap().update_active();
+        lock_or_recover(&self.playback).reset_for_load(path, duration);
+        lock_or_recover(&self.device).update_active();
 
         Ok(())
     }
@@ -150,11 +172,11 @@ impl AudioPlayer {
         info!("Starting playback");
 
         let pause_duration = {
-            let pb = self.playback.lock().unwrap();
+            let pb = lock_or_recover(&self.playback);
             pb.pause_start.map(|s| s.elapsed()).unwrap_or(Duration::ZERO)
         };
 
-        let time_since_active = self.device.lock().unwrap().last_active.elapsed();
+        let time_since_active = lock_or_recover(&self.device).last_active.elapsed();
         let device_changed = self.has_device_changed();
         let device_available = self.is_device_available();
 
@@ -168,8 +190,8 @@ impl AudioPlayer {
         // Check if sink is empty but we think we have a track
         // This handles cases where the stream died, finished, or was dropped
         let needs_reload = {
-            let sink = self.sink.lock().unwrap();
-            let pb = self.playback.lock().unwrap();
+            let sink = lock_or_recover(&self.sink);
+            let pb = lock_or_recover(&self.playback);
             sink.empty() && pb.current_path.is_some()
         };
 
@@ -188,9 +210,9 @@ impl AudioPlayer {
             }
 
             // Get current state for recovery
-            let current_path = self.playback.lock().unwrap().current_path.clone();
+            let current_path = lock_or_recover(&self.playback).current_path.clone();
             let current_position = self.get_position();
-            let _volume = self.volume_mgr.lock().unwrap().last_volume;
+            let _volume = lock_or_recover(&self.volume_mgr).last_volume;
 
             // Reinitialize audio output
             match device::create_high_quality_output_with_device_name() {
@@ -199,13 +221,15 @@ impl AudioPlayer {
 
                     // Use connect_new
                     let new_sink = Sink::connect_new(&new_mixer);
-                    new_sink.set_volume(self.volume_mgr.lock().unwrap().effective_volume());
+                    new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
 
-                    self.device
-                        .lock()
-                        .unwrap()
+                    lock_or_recover(&self.device)
                         .replace(new_stream, new_mixer, new_device_name);
-                    *self.sink.lock().unwrap() = new_sink;
+                    *lock_or_recover(&self.sink) = new_sink;
+
+                    // Discard any preloaded track — its sink was connected to
+                    // the old mixer/stream which is now dead.
+                    self.clear_preload();
 
                     // Reload the track if there was one
                     if let Some(path) = current_path {
@@ -229,7 +253,7 @@ impl AudioPlayer {
         } else if needs_reload {
             // Sink is empty but we have a track - reload it
             info!("Sink is empty but track is loaded - attempting reload/resume");
-            let current_path = self.playback.lock().unwrap().current_path.clone();
+            let current_path = lock_or_recover(&self.playback).current_path.clone();
             let current_position = self.get_position();
             
             if let Some(path) = current_path {
@@ -248,12 +272,12 @@ impl AudioPlayer {
         }
 
         // Now actually play
-        let sink = self.sink.lock().unwrap();
+        let sink = lock_or_recover(&self.sink);
         sink.play();
 
-        self.device.lock().unwrap().update_active();
+        lock_or_recover(&self.device).update_active();
 
-        let mut pb = self.playback.lock().unwrap();
+        let mut pb = lock_or_recover(&self.playback);
         if let Some(pause_dur) = pb.mark_playing() {
             info!("Resumed from pause (paused for {:?})", pause_dur);
         } else {
@@ -265,48 +289,48 @@ impl AudioPlayer {
 
     pub fn pause(&self) -> AppResult<()> {
         info!("Pausing playback");
-        self.sink.lock().unwrap().pause();
-        self.playback.lock().unwrap().mark_paused();
+        lock_or_recover(&self.sink).pause();
+        lock_or_recover(&self.playback).mark_paused();
         Ok(())
     }
 
     pub fn stop(&self) -> AppResult<()> {
         info!("Stopping playback");
-        self.sink.lock().unwrap().stop();
-        self.playback.lock().unwrap().clear();
+        lock_or_recover(&self.sink).stop();
+        lock_or_recover(&self.playback).clear();
         Ok(())
     }
 
     // ── Volume ──────────────────────────────────────────────────────
 
     pub fn set_volume(&self, volume: f32) -> AppResult<()> {
-        let effective = self.volume_mgr.lock().unwrap().set_volume(volume);
-        self.sink.lock().unwrap().set_volume(effective);
+        let effective = lock_or_recover(&self.volume_mgr).set_volume(volume);
+        lock_or_recover(&self.sink).set_volume(effective);
         Ok(())
     }
 
     pub fn set_replaygain(&self, gain_db: f32, preamp_db: f32) -> AppResult<()> {
-        let effective = self.volume_mgr.lock().unwrap().set_replaygain(gain_db, preamp_db);
-        self.sink.lock().unwrap().set_volume(effective);
+        let effective = lock_or_recover(&self.volume_mgr).set_replaygain(gain_db, preamp_db);
+        lock_or_recover(&self.sink).set_volume(effective);
         Ok(())
     }
 
     pub fn clear_replaygain(&self) {
-        let effective = self.volume_mgr.lock().unwrap().clear_replaygain();
-        self.sink.lock().unwrap().set_volume(effective);
+        let effective = lock_or_recover(&self.volume_mgr).clear_replaygain();
+        lock_or_recover(&self.sink).set_volume(effective);
     }
 
     pub fn get_replaygain_multiplier(&self) -> f32 {
-        self.volume_mgr.lock().unwrap().replaygain_multiplier
+        lock_or_recover(&self.volume_mgr).replaygain_multiplier
     }
 
     pub fn set_balance(&self, balance: f32) -> AppResult<()> {
-        self.volume_mgr.lock().unwrap().set_balance(balance);
+        lock_or_recover(&self.volume_mgr).set_balance(balance);
         Ok(())
     }
 
     pub fn get_balance(&self) -> f32 {
-        self.volume_mgr.lock().unwrap().balance
+        lock_or_recover(&self.volume_mgr).balance
     }
 
     // ── Seeking ─────────────────────────────────────────────────────
@@ -320,7 +344,7 @@ impl AudioPlayer {
             current_pos, position
         );
 
-        let sink = self.sink.lock().unwrap();
+        let sink = lock_or_recover(&self.sink);
         let was_playing = !sink.is_paused();
         let current_volume = sink.volume();
 
@@ -328,14 +352,14 @@ impl AudioPlayer {
             Ok(_) => {
                 info!("Seek successful to {}s", position);
                 let is_paused = sink.is_paused();
-                self.playback.lock().unwrap().mark_seeked(position, is_paused);
+                lock_or_recover(&self.playback).mark_seeked(position, is_paused);
                 Ok(())
             }
             Err(e) => {
                 warn!("Direct seek failed: {:?}, attempting reload method", e);
 
-                let path = self.playback.lock().unwrap().current_path.clone();
-                let total_dur = self.playback.lock().unwrap().total_duration;
+                let path = lock_or_recover(&self.playback).current_path.clone();
+                let total_dur = lock_or_recover(&self.playback).total_duration;
 
                 if let Some(path) = path {
                     // Must drop sink lock before calling self.methods that also lock it
@@ -355,7 +379,7 @@ impl AudioPlayer {
                         self.visualizer_buffer.clone(),
                     );
 
-                    let sink = self.sink.lock().unwrap();
+                    let sink = lock_or_recover(&self.sink);
                     sink.clear();
                     sink.append(effects_source);
                     sink.set_volume(current_volume);
@@ -370,7 +394,7 @@ impl AudioPlayer {
                     }
 
                     {
-                        let mut pb = self.playback.lock().unwrap();
+                        let mut pb = lock_or_recover(&self.playback);
                         pb.total_duration = total_dur;
                         pb.mark_seeked(position, !was_playing);
                     }
@@ -393,27 +417,47 @@ impl AudioPlayer {
     // ── Position & state queries ────────────────────────────────────
 
     pub fn get_position(&self) -> f64 {
-        let sink = self.sink.lock().unwrap();
-        let pb = self.playback.lock().unwrap();
+        let sink = lock_or_recover(&self.sink);
+        let pb = lock_or_recover(&self.playback);
         pb.get_position(sink.empty(), sink.is_paused())
     }
 
     pub fn is_playing(&self) -> bool {
-        let sink = self.sink.lock().unwrap();
+        let sink = lock_or_recover(&self.sink);
         !sink.is_paused() && !sink.empty()
     }
 
     pub fn is_finished(&self) -> bool {
-        self.sink.lock().unwrap().empty()
+        lock_or_recover(&self.sink).empty()
     }
 
     #[allow(dead_code)]
     pub fn get_current_path(&self) -> Option<String> {
-        self.playback.lock().unwrap().current_path.clone()
+        lock_or_recover(&self.playback).current_path.clone()
     }
 
     pub fn get_duration(&self) -> f64 {
-        self.playback.lock().unwrap().total_duration.as_secs_f64()
+        lock_or_recover(&self.playback).total_duration.as_secs_f64()
+    }
+
+    /// Snapshot of playback state captured under a single sink lock.
+    ///
+    /// The broadcast thread previously called `is_playing()`, `is_finished()`,
+    /// `get_position()`, and `get_duration()` as four separate lock acquisitions.
+    /// Between those calls the sink state could change (e.g. track ends between
+    /// the `is_playing` and `is_finished` queries), causing missed or duplicate
+    /// `track-ended` events. This method captures everything atomically.
+    pub fn broadcast_snapshot(&self) -> BroadcastSnapshot {
+        let sink = lock_or_recover(&self.sink);
+        let pb = lock_or_recover(&self.playback);
+        let is_paused = sink.is_paused();
+        let is_empty = sink.empty();
+        BroadcastSnapshot {
+            is_playing: !is_paused && !is_empty,
+            is_finished: is_empty,
+            position: pb.get_position(is_empty, is_paused),
+            duration: pb.total_duration.as_secs_f64(),
+        }
     }
 
     // ── Output device switching ─────────────────────────────────────
@@ -435,8 +479,8 @@ impl AudioPlayer {
 
         let was_playing = self.is_playing();
         let current_position = self.get_position();
-        let current_volume = self.sink.lock().unwrap().volume();
-        let current_path = self.playback.lock().unwrap().current_path.clone();
+        let current_volume = lock_or_recover(&self.sink).volume();
+        let current_path = lock_or_recover(&self.playback).current_path.clone();
 
         let (new_stream, new_mixer, new_device_name) =
             device::create_high_quality_output_with_device_name()?;
@@ -444,11 +488,12 @@ impl AudioPlayer {
         let new_sink = Sink::connect_new(&new_mixer);
         new_sink.set_volume(current_volume);
 
-        self.device
-            .lock()
-            .unwrap()
+        lock_or_recover(&self.device)
             .replace(new_stream, new_mixer, new_device_name);
-        *self.sink.lock().unwrap() = new_sink;
+        *lock_or_recover(&self.sink) = new_sink;
+
+        // Discard stale preload — its sink was connected to the old mixer.
+        self.clear_preload();
 
         if let Some(path) = current_path {
             self.load(path)?;
@@ -475,15 +520,15 @@ impl AudioPlayer {
             .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
 
         // Reuse the existing device mixer
-        let device = self.device.lock().unwrap();
-        let new_sink = Sink::connect_new(device.mixer());
+        let device = lock_or_recover(&self.device);
+        let new_sink = Sink::connect_new(device.mixer()?);
         
-        let current_volume = self.sink.lock().unwrap().volume();
+        let current_volume = lock_or_recover(&self.sink).volume();
         new_sink.set_volume(current_volume);
         new_sink.append(source);
         new_sink.pause();
 
-        self.preload.lock().unwrap().set(new_sink, path);
+        lock_or_recover(&self.preload).set(new_sink, path);
         info!("Audio file preloaded successfully (reusing existing output)");
         Ok(())
     }
@@ -491,13 +536,19 @@ impl AudioPlayer {
     pub fn swap_to_preloaded(&self) -> AppResult<()> {
         info!("Swapping to preloaded track");
 
-        let taken = self.preload.lock().unwrap().take();
+        let taken = lock_or_recover(&self.preload).take();
         if let Some((new_sink, new_path)) = taken {
-            self.sink.lock().unwrap().stop();
-            *self.sink.lock().unwrap() = new_sink;
+            // Hold a single sink lock across stop → replace → play to prevent
+            // another thread from observing a half-swapped state.
+            {
+                let mut sink = lock_or_recover(&self.sink);
+                sink.stop();
+                *sink = new_sink;
+                sink.play();
+            }
 
             {
-                let mut pb = self.playback.lock().unwrap();
+                let mut pb = lock_or_recover(&self.playback);
                 pb.current_path = Some(new_path);
                 pb.start_time = Some(Instant::now());
                 pb.seek_offset = Duration::ZERO;
@@ -505,7 +556,6 @@ impl AudioPlayer {
                 pb.pause_start = None;
             }
 
-            self.sink.lock().unwrap().play();
             info!("Successfully swapped to preloaded track");
             Ok(())
         } else {
@@ -516,11 +566,11 @@ impl AudioPlayer {
     }
 
     pub fn clear_preload(&self) {
-        self.preload.lock().unwrap().clear();
+        lock_or_recover(&self.preload).clear();
     }
 
     pub fn has_preloaded(&self) -> bool {
-        self.preload.lock().unwrap().has_preloaded()
+        lock_or_recover(&self.preload).has_preloaded()
     }
 
     // ── Effects ─────────────────────────────────────────────────────
@@ -528,22 +578,20 @@ impl AudioPlayer {
     pub fn set_effects(&self, config: EffectsConfig) {
         // Apply tempo/speed at the Sink level (changes playback rate)
         let tempo = config.tempo.clamp(0.5, 2.0);
-        if let Ok(sink) = self.sink.lock() {
-            sink.set_speed(tempo);
-        }
-        self.effects_processor.lock().unwrap().update_config(config);
+        lock_or_recover(&self.sink).set_speed(tempo);
+        lock_or_recover(&self.effects_processor).update_config(config);
     }
 
     pub fn get_effects(&self) -> EffectsConfig {
-        self.effects_processor.lock().unwrap().get_config()
+        lock_or_recover(&self.effects_processor).get_config()
     }
 
     pub fn set_effects_enabled(&self, enabled: bool) {
-        *self.effects_enabled.lock().unwrap() = enabled;
+        *lock_or_recover(&self.effects_enabled) = enabled;
     }
 
     pub fn is_effects_enabled(&self) -> bool {
-        *self.effects_enabled.lock().unwrap()
+        *lock_or_recover(&self.effects_enabled)
     }
 
     // ── Recovery & health ───────────────────────────────────────────
@@ -556,7 +604,7 @@ impl AudioPlayer {
             return Ok(false);
         }
 
-        let current_path = self.playback.lock().unwrap().current_path.clone();
+        let current_path = lock_or_recover(&self.playback).current_path.clone();
         let current_position = self.get_position();
         let was_playing = self.is_playing();
 
@@ -565,13 +613,14 @@ impl AudioPlayer {
                 info!("Audio output recreated on device: {:?}", new_device_name);
 
                 let new_sink = Sink::connect_new(&new_mixer);
-                new_sink.set_volume(self.volume_mgr.lock().unwrap().effective_volume());
+                new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
 
-                self.device
-                    .lock()
-                    .unwrap()
+                lock_or_recover(&self.device)
                     .replace(new_stream, new_mixer, new_device_name);
-                *self.sink.lock().unwrap() = new_sink;
+                *lock_or_recover(&self.sink) = new_sink;
+
+                // Discard stale preload — its sink was connected to the old mixer.
+                self.clear_preload();
 
                 if let Some(path) = current_path {
                     info!("Reloading track after recovery: {}", path);
@@ -616,13 +665,13 @@ impl AudioPlayer {
 
     pub fn get_inactive_duration(&self) -> f64 {
         let pause_duration = {
-            let pb = self.playback.lock().unwrap();
+            let pb = lock_or_recover(&self.playback);
             pb.pause_start
                 .map(|s| s.elapsed())
                 .unwrap_or(Duration::ZERO)
         };
 
-        let time_since_active = self.device.lock().unwrap().last_active.elapsed();
+        let time_since_active = lock_or_recover(&self.device).last_active.elapsed();
         pause_duration.max(time_since_active).as_secs_f64()
     }
 
@@ -632,13 +681,13 @@ impl AudioPlayer {
         }
 
         let pause_duration = {
-            let pb = self.playback.lock().unwrap();
+            let pb = lock_or_recover(&self.playback);
             pb.pause_start
                 .map(|s| s.elapsed())
                 .unwrap_or(Duration::ZERO)
         };
 
-        let time_since_active = self.device.lock().unwrap().last_active.elapsed();
+        let time_since_active = lock_or_recover(&self.device).last_active.elapsed();
         pause_duration > LONG_PAUSE_THRESHOLD || time_since_active > LONG_PAUSE_THRESHOLD
     }
 
