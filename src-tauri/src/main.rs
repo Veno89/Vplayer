@@ -158,32 +158,35 @@ fn main() {
             // ── Position-broadcast thread (#4) ──────────────────────────
             // Emits `playback-tick` every ~100 ms while playing, and
             // `track-ended` when the sink empties after playback.
+            //
+            // Uses `broadcast_snapshot()` to capture is_playing, is_finished,
+            // position, and duration under a single lock — preventing the race
+            // where state changes between separate queries.
             let broadcast_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut was_playing = false;
                 loop {
                     std::thread::sleep(Duration::from_millis(100));
-                    
-                    let is_playing = player_for_broadcast.is_playing();
-                    let is_finished = player_for_broadcast.is_finished();
-                    
+
+                    let snap = player_for_broadcast.broadcast_snapshot();
+
                     // Emit tick while playing (position updates)
-                    if is_playing {
+                    if snap.is_playing {
                         let tick = PlaybackTick {
-                            position: player_for_broadcast.get_position(),
-                            duration: player_for_broadcast.get_duration(),
+                            position: snap.position,
+                            duration: snap.duration,
                             is_playing: true,
                             is_finished: false,
                         };
                         let _ = broadcast_handle.emit("playback-tick", tick);
                     }
-                    
+
                     // Detect track-end transition: was playing → now finished
-                    if was_playing && !is_playing && is_finished {
+                    if was_playing && !snap.is_playing && snap.is_finished {
                         let _ = broadcast_handle.emit("track-ended", ());
                     }
-                    
-                    was_playing = is_playing;
+
+                    was_playing = snap.is_playing;
                 }
             });
             
