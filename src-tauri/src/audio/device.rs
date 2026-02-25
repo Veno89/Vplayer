@@ -37,6 +37,10 @@ pub struct DeviceState {
     pub mixer: Option<Mixer>,
     pub connected_device_name: Option<String>,
     pub last_active: Instant,
+    /// Monotonically increasing counter, bumped on every device reinit.
+    /// Used by PreloadManager to detect stale preloaded sinks that were
+    /// connected to a now-dead mixer.
+    pub generation: u64,
 }
 
 impl DeviceState {
@@ -46,6 +50,7 @@ impl DeviceState {
             mixer: Some(mixer),
             connected_device_name: device_name,
             last_active: Instant::now(),
+            generation: 0,
         }
     }
 
@@ -58,6 +63,7 @@ impl DeviceState {
         self.mixer = Some(mixer);
         self.connected_device_name = device_name;
         self.last_active = Instant::now();
+        self.generation += 1;
     }
 
     pub fn has_device_changed(&self) -> bool {
