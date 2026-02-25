@@ -37,6 +37,10 @@ pub struct DeviceState {
     pub mixer: Option<Mixer>,
     pub connected_device_name: Option<String>,
     pub last_active: Instant,
+    /// Monotonically increasing counter, bumped on every device reinit.
+    /// Used by PreloadManager to detect stale preloaded sinks that were
+    /// connected to a now-dead mixer.
+    pub generation: u64,
 }
 
 impl DeviceState {
