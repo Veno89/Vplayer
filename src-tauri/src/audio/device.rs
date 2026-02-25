@@ -50,6 +50,7 @@ impl DeviceState {
             mixer: Some(mixer),
             connected_device_name: device_name,
             last_active: Instant::now(),
+            generation: 0,
         }
     }
 
@@ -62,6 +63,7 @@ impl DeviceState {
         self.mixer = Some(mixer);
         self.connected_device_name = device_name;
         self.last_active = Instant::now();
+        self.generation += 1;
     }
 
     pub fn has_device_changed(&self) -> bool {
