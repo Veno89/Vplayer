@@ -521,22 +521,25 @@ impl AudioPlayer {
 
         // Reuse the existing device mixer
         let device = lock_or_recover(&self.device);
+        let generation = device.generation;
         let new_sink = Sink::connect_new(device.mixer()?);
-        
+        drop(device); // release device lock before acquiring sink lock
+
         let current_volume = lock_or_recover(&self.sink).volume();
         new_sink.set_volume(current_volume);
         new_sink.append(source);
         new_sink.pause();
 
-        lock_or_recover(&self.preload).set(new_sink, path);
-        info!("Audio file preloaded successfully (reusing existing output)");
+        lock_or_recover(&self.preload).set(new_sink, path, generation);
+        info!("Audio file preloaded successfully (reusing existing output, gen={})", generation);
         Ok(())
     }
 
     pub fn swap_to_preloaded(&self) -> AppResult<()> {
         info!("Swapping to preloaded track");
 
-        let taken = lock_or_recover(&self.preload).take();
+        let current_gen = lock_or_recover(&self.device).generation;
+        let taken = lock_or_recover(&self.preload).take_if_current(current_gen);
         if let Some((new_sink, new_path)) = taken {
             // Hold a single sink lock across stop → replace → play to prevent
             // another thread from observing a half-swapped state.
