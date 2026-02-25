@@ -27,7 +27,7 @@ use std::time::Duration;
 use tauri::{Manager, Emitter};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::menu::{Menu, MenuItem};
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
 /// Payload emitted every ~100 ms while a track is loaded.
