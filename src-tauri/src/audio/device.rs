@@ -4,10 +4,9 @@
 //! device change detection for graceful recovery.
 
 use rodio::{DeviceTrait, OutputStream, OutputStreamBuilder};
-use rodio::cpal::traits::{HostTrait, DeviceTrait as CpalDeviceTrait};
+use rodio::cpal::traits::HostTrait;
 use rodio::mixer::Mixer;
 use log::{info, warn, error};
-use std::sync::Arc;
 use std::time::Instant;
 use serde::Serialize;
 use crate::error::{AppError, AppResult};

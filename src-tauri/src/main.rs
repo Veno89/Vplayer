@@ -172,6 +172,7 @@ fn main() {
             // `device-lost` instead so the frontend can show a reconnect
             // prompt rather than advancing to the next track.
             let broadcast_handle = app.handle().clone();
+            let condvar = player_for_broadcast.broadcast_condvar.clone();
             std::thread::spawn(move || {
                 let mut was_playing = false;
                 // ── Device-loss auto-recovery state ──────────────────
@@ -256,9 +257,21 @@ fn main() {
 
                     was_playing = snap.is_playing;
 
-                    // Adaptive sleep: fast ticks while playing, slow while idle
-                    let sleep_ms = if snap.is_playing { 100 } else { 1000 };
-                    std::thread::sleep(Duration::from_millis(sleep_ms));
+                    // Adaptive sleep: 100ms while playing for smooth UI updates.
+                    // While idle, use Condvar to block until play/load/stop wakes us,
+                    // with a 5s ceiling to catch edge cases like device hot-unplug.
+                    if snap.is_playing {
+                        std::thread::sleep(Duration::from_millis(100));
+                    } else {
+                        let (lock, cvar) = &*condvar;
+                        if let Ok(woken) = lock.lock() {
+                            let (mut woken, _) = cvar.wait_timeout(
+                                woken,
+                                Duration::from_secs(5),
+                            ).unwrap_or_else(|e| e.into_inner());
+                            *woken = false;
+                        }
+                    }
                 }
             });
             

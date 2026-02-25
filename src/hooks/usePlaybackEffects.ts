@@ -17,25 +17,21 @@ interface PlaybackEffectsParams {
  * This hook now only handles:
  *  - Set initial volume on mount
  *  - Translate store `playing` intent → audio.play() / audio.pause()
- *  - A-B repeat looping
- *  - Save position periodically
+ *  - A-B repeat looping (via interval, not React effect on progress)
+ *  - Save position periodically (via interval, not React effect on progress)
  *  - Increment play count when a track starts playing
  */
 export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsParams): void {
   const prevPlayingRef = useRef<boolean | null>(null);
   const lastIncrementedTrackIdRef = useRef<string | null>(null);
-  const lastPositionSaveTimeRef = useRef<number>(0);
 
-  // Store selectors
+  // Store selectors — only subscribe to what triggers effects
   const playing = useStore(s => s.playing);
   const setPlaying = useStore(s => s.setPlaying);
   const currentTrack = useStore(s => s.currentTrack);
-  const abRepeat = useStore(s => s.abRepeat);
   const volume = useStore(s => s.volume);
-  const progress = useStore(s => s.progress);
 
   // ── Set initial volume on mount ───────────────────────────────────
-  // Uses the store volume if already set, otherwise falls back to defaultVolume setting
   useEffect(() => {
     const initialVolume = volume > 0 ? volume : (useStore.getState().defaultVolume / 100);
     audio.changeVolume(initialVolume).catch(err =>
@@ -44,24 +40,38 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── A-B repeat looping + periodic position save ───────────────────
+  // Runs on a 100ms interval instead of a React effect on `progress`.
+  // Previously this effect fired 10 times/sec (every playback-tick)
+  // even though it only needed to act once/sec for position saving.
+  // The interval reads progress from the store directly.
   useEffect(() => {
-    // Save position at most once per second (debounced) — only if rememberTrackPosition is on
-    const now = Date.now();
-    const rememberPosition = useStore.getState().rememberTrackPosition;
-    if (rememberPosition && progress > 0 && now - lastPositionSaveTimeRef.current >= 1000) {
-      lastPositionSaveTimeRef.current = now;
-      useStore.getState().setLastPosition(progress);
-    }
+    let lastPositionSaveTime = 0;
 
-    // A-B repeat loop
-    if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
-      if (progress >= abRepeat.pointB) {
-        audio.seek(abRepeat.pointA).catch(err => {
-          console.error('Failed to seek for A-B repeat:', err);
-        });
+    const intervalId = setInterval(() => {
+      const state = useStore.getState();
+      const { progress, abRepeat, rememberTrackPosition } = state;
+
+      // Save position at most once per second
+      if (rememberTrackPosition && progress > 0) {
+        const now = Date.now();
+        if (now - lastPositionSaveTime >= 1000) {
+          lastPositionSaveTime = now;
+          state.setLastPosition(progress);
+        }
       }
-    }
-  }, [progress, abRepeat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+      // A-B repeat loop
+      if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
+        if (progress >= abRepeat.pointB) {
+          audio.seek(abRepeat.pointA).catch(err => {
+            console.error('Failed to seek for A-B repeat:', err);
+          });
+        }
+      }
+    }, 100);
+
+    return () => clearInterval(intervalId);
+  }, [audio]); // Only depends on the audio service identity
 
   // ── Translate store `playing` → audio.play() / audio.pause() ──────
   // Supports fadeOnPause: ramp volume smoothly instead of abrupt stop/start

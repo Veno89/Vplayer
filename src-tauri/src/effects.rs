@@ -443,36 +443,45 @@ impl BassBoost {
 }
 
 /// Soft Clipper / Limiter
-/// Prevents harsh digital clipping by rounding off peaks
+/// Prevents harsh digital clipping by rounding off peaks.
+///
+/// Only engages when the signal exceeds the threshold, so
+/// normal-level audio passes through untouched (no CPU cost).
 pub struct SoftClipper;
 
 impl SoftClipper {
+    /// Soft-clip the signal. Below threshold it's a pass-through;
+    /// above threshold it applies a smooth saturation curve.
+    #[allow(dead_code)]
     pub fn process(input: f32) -> f32 {
-        // Simple cubic soft clipper
-        // f(x) = x - x^3/3 for -1.5 < x < 1.5
-        let threshold = 1.0;
-        if input > threshold {
-            let x = input - threshold;
-            threshold + (1.0 - (-x).exp()) * 0.5 // Soft knee
-            // Alternatively, use tanh for standard saturation:
-            // input.tanh()
-        } else if input < -threshold {
-            let x = input + threshold;
-            -threshold - (1.0 - (x).exp()) * 0.5
+        const THRESHOLD: f32 = 0.9;
+        if input > THRESHOLD {
+            let x = input - THRESHOLD;
+            THRESHOLD + (1.0 - (-x).exp()) * (1.0 - THRESHOLD)
+        } else if input < -THRESHOLD {
+            let x = input + THRESHOLD;
+            -THRESHOLD - (1.0 - x.exp()) * (1.0 - THRESHOLD)
         } else {
             input
         }
     }
-    
-    // Standard tanh saturation (smoother, analog-like)
+
+    /// Safety limiter: only applies tanh saturation when the signal
+    /// might clip. For normal-level signals this is a no-op.
+    #[inline]
     pub fn saturate(input: f32) -> f32 {
-        // Boost slightly to allow saturation effect
-        (input * 1.0).tanh()
+        if input.abs() > 0.9 {
+            input.tanh()
+        } else {
+            input
+        }
     }
 }
 
 /**
  * Audio effects processor chain
+ *
+ * Processing order: EQ → Bass Boost → Echo → Reverb → Balance → Limiter
  */
 pub struct EffectsProcessor {
     config: EffectsConfig,
@@ -481,6 +490,13 @@ pub struct EffectsProcessor {
     bass_boost: BassBoost,
     equalizer: Equalizer,
     sample_rate: u32,
+    /// Number of audio channels (set from the source on first sample batch).
+    channels: u16,
+    /// Current sample index within a frame, used to track L/R channel position.
+    channel_counter: u16,
+    /// Stereo balance: -1.0 = full left, 0.0 = center, 1.0 = full right.
+    /// Attenuation is applied per-channel using constant-power panning.
+    balance: f32,
 }
 
 impl EffectsProcessor {
@@ -492,14 +508,17 @@ impl EffectsProcessor {
             equalizer: Equalizer::new(sample_rate),
             config,
             sample_rate,
+            channels: 2,
+            channel_counter: 0,
+            balance: 0.0,
         }
     }
-    
+
     pub fn set_sample_rate(&mut self, new_sample_rate: u32) {
         if new_sample_rate != self.sample_rate {
             log::info!("Updating effects processor sample rate: {} -> {}", self.sample_rate, new_sample_rate);
             self.sample_rate = new_sample_rate;
-            
+
             // Reinitialize/Resize effects
             self.reverb.resize(new_sample_rate);
             self.echo = Echo::new(new_sample_rate, self.config.echo_delay, self.config.echo_feedback);
@@ -508,7 +527,18 @@ impl EffectsProcessor {
             self.equalizer.update_gains(&self.config.eq_bands);
         }
     }
-    
+
+    /// Set the channel count (called once from EffectsSource when the source is known).
+    pub fn set_channels(&mut self, channels: u16) {
+        self.channels = channels;
+        self.channel_counter = 0;
+    }
+
+    /// Set stereo balance. Called from AudioPlayer::set_balance.
+    pub fn set_balance(&mut self, balance: f32) {
+        self.balance = balance.clamp(-1.0, 1.0);
+    }
+
     pub fn update_config(&mut self, config: EffectsConfig) {
         self.reverb.set_room_size(config.reverb_room_size);
         self.echo.set_delay(self.sample_rate, config.echo_delay);
@@ -521,10 +551,10 @@ impl EffectsProcessor {
     pub fn get_config(&self) -> EffectsConfig {
         self.config.clone()
     }
-    
+
     pub fn process(&mut self, input: f32) -> f32 {
         let mut output = input;
-        
+
         // 1. Equalizer
         output = self.equalizer.process(output);
 
@@ -532,25 +562,44 @@ impl EffectsProcessor {
         if self.config.bass_boost > 0.0 {
             output = self.bass_boost.process(output);
         }
-        
+
         // 3. Echo
         if self.config.echo_mix > 0.0 {
             let echo_wet = self.echo.process(output);
             output = output * (1.0 - self.config.echo_mix) + echo_wet * self.config.echo_mix;
         }
-        
+
         // 4. Reverb
         if self.config.reverb_mix > 0.0 {
             let reverb_wet = self.reverb.process(output);
             output = output * (1.0 - self.config.reverb_mix) + reverb_wet * self.config.reverb_mix;
         }
-        
-        // 5. Soft Clipper (Safety Limiter)
-        // Use tanh saturation for analog-style limiting
+
+        // 5. Stereo balance (only for stereo sources)
+        if self.balance != 0.0 && self.channels == 2 {
+            let ch = self.channel_counter;
+            self.channel_counter = (self.channel_counter + 1) % self.channels;
+
+            if ch == 0 {
+                // Left channel: attenuate when balance > 0 (panned right)
+                if self.balance > 0.0 {
+                    output *= 1.0 - self.balance;
+                }
+            } else {
+                // Right channel: attenuate when balance < 0 (panned left)
+                if self.balance < 0.0 {
+                    output *= 1.0 + self.balance;
+                }
+            }
+        } else {
+            // Still advance counter even if balance is center
+            self.channel_counter = (self.channel_counter + 1) % self.channels.max(1);
+        }
+
+        // 6. Soft Clipper (Safety Limiter) — only engages above threshold
         SoftClipper::saturate(output)
     }
-    
-    #[allow(dead_code)]
+
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
         for sample in buffer.iter_mut() {
             *sample = self.process(*sample);
@@ -572,14 +621,15 @@ mod tests {
 
     #[test]
     fn test_soft_clipper() {
-        // Linear region
-        assert!((SoftClipper::saturate(0.5) - 0.462).abs() < 0.01);
-        
+        // Below threshold: pass-through (no tanh applied)
+        let quiet = SoftClipper::saturate(0.5);
+        assert!((quiet - 0.5).abs() < 0.001, "Below-threshold signal should pass through unchanged");
+
         // Limiting region
         let loud = SoftClipper::saturate(2.0); // tanh(2.0) ≈ 0.964
         assert!(loud < 1.0);
         assert!(loud > 0.9);
-        
+
         // Extreme input
         let very_loud = SoftClipper::saturate(10.0);
         assert!(very_loud <= 1.0);

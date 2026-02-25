@@ -1,9 +1,16 @@
 //! Audio effects processing module
 //!
-//! This module wraps audio sources with effects processing (EQ, etc.)
+//! This module wraps audio sources with effects processing (EQ, balance, etc.)
 //! and feeds samples to the visualizer buffer.
+//!
+//! # Batched Processing
+//!
+//! Instead of acquiring the effects Mutex for every single sample (88,200
+//! lock attempts/sec at 44.1kHz stereo), we collect samples into a local
+//! chunk buffer and process the entire chunk under a single lock acquisition.
+//! This dramatically reduces lock contention on the audio hot path.
 
-use rodio::{Source};
+use rodio::Source;
 use rodio::source::SeekError;
 use rodio::cpal::FromSample;
 use std::sync::{Arc, Mutex};
@@ -11,7 +18,13 @@ use std::time::Duration;
 use crate::effects::EffectsProcessor;
 use super::visualizer::VisualizerBuffer;
 
-/// EffectsSource wraps a Source and applies audio effects (EQ, etc.) to each sample
+/// Number of samples to batch before acquiring the effects processor lock.
+/// 512 samples ≈ 11.6ms at 44.1kHz — low enough latency for real-time,
+/// high enough to amortize the lock overhead.
+const BATCH_SIZE: usize = 512;
+
+/// EffectsSource wraps a Source and applies audio effects (EQ, balance, etc.)
+/// to batches of samples, then feeds them to the visualizer buffer.
 pub struct EffectsSource<I>
 where
     I: Source,
@@ -20,7 +33,11 @@ where
     input: I,
     processor: Arc<Mutex<EffectsProcessor>>,
     visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
-    sample_rate_initialized: bool,
+    initialized: bool,
+    /// Pre-processed sample buffer (filled from input, then processed in batch)
+    batch: Vec<f32>,
+    /// Read cursor into `batch` — when it reaches `batch.len()`, we refill.
+    batch_pos: usize,
 }
 
 impl<I> EffectsSource<I>
@@ -37,8 +54,45 @@ where
             input,
             processor,
             visualizer_buffer,
-            sample_rate_initialized: false,
+            initialized: false,
+            batch: Vec::with_capacity(BATCH_SIZE),
+            batch_pos: 0,
         }
+    }
+
+    /// Fill the batch buffer from the input source, then process the
+    /// entire batch under a single effects-processor lock.
+    fn refill_batch(&mut self) -> bool {
+        self.batch.clear();
+        self.batch_pos = 0;
+
+        // Collect up to BATCH_SIZE raw samples
+        for _ in 0..BATCH_SIZE {
+            match self.input.next() {
+                Some(sample) => self.batch.push(f32::from_sample_(sample)),
+                None => break,
+            }
+        }
+
+        if self.batch.is_empty() {
+            return false;
+        }
+
+        // Process the entire batch under one lock acquisition
+        if let Ok(mut proc) = self.processor.try_lock() {
+            proc.process_buffer(&mut self.batch);
+        }
+        // If lock unavailable (contention), batch passes through unprocessed.
+        // This prevents audio dropouts when EQ is being adjusted.
+
+        // Push processed samples to the visualizer (also batched)
+        if let Ok(mut buffer) = self.visualizer_buffer.try_lock() {
+            for &sample in &self.batch {
+                buffer.push(sample);
+            }
+        }
+
+        true
     }
 }
 
@@ -50,44 +104,32 @@ where
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        // Initialize effects processor with actual source sample rate on first sample
-        if !self.sample_rate_initialized {
-            let source_sample_rate = self.input.sample_rate();
+        // One-time initialization: tell the processor about sample rate and channels
+        if !self.initialized {
+            let sr = self.input.sample_rate();
+            let ch = self.input.channels();
             if let Ok(mut processor) = self.processor.lock() {
-                processor.set_sample_rate(source_sample_rate);
+                processor.set_sample_rate(sr);
+                processor.set_channels(ch);
             }
-            self.sample_rate_initialized = true;
-        }
-        
-        let sample = self.input.next();
-        
-        if sample.is_none() {
-            // Log once when source finishes to avoid spamming
-            // We can't easily dedup here without more state, but normally this returns None forever once done.
-            log::debug!("EffectsSource input returned None - track finished or decode error");
+            self.initialized = true;
         }
 
-        sample.map(|sample| {
-            // Convert sample to f32 first
-            let sample_f32: f32 = f32::from_sample_(sample);
-            
-            // Try to process through effects, but don't block or panic if lock unavailable
-            let processed = match self.processor.try_lock() {
-                Ok(mut processor) => processor.process(sample_f32),
-                Err(_) => {
-                    // Lock unavailable (contention) - pass through unprocessed
-                    // This prevents audio dropouts when EQ is being adjusted
-                    sample_f32
-                }
-            };
-            
-            // Send sample to visualizer buffer (don't block if lock fails)
-            if let Ok(mut buffer) = self.visualizer_buffer.try_lock() {
-                buffer.push(processed);
-            }
-            
-            processed
-        })
+        // Serve from the current batch if available
+        if self.batch_pos < self.batch.len() {
+            let sample = self.batch[self.batch_pos];
+            self.batch_pos += 1;
+            return Some(sample);
+        }
+
+        // Batch exhausted — refill
+        if self.refill_batch() {
+            let sample = self.batch[self.batch_pos];
+            self.batch_pos += 1;
+            Some(sample)
+        } else {
+            None
+        }
     }
 }
 
@@ -113,6 +155,9 @@ where
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+        // Invalidate the batch on seek so we don't serve stale samples
+        self.batch.clear();
+        self.batch_pos = 0;
         self.input.try_seek(pos)
     }
 }
@@ -126,4 +171,3 @@ where
         log::info!("EffectsSource dropped - track finished or removed from sink");
     }
 }
-

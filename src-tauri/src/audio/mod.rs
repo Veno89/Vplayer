@@ -7,7 +7,7 @@
 //! - device: Device detection, DeviceState, SendOutputStream
 //! - effects: EQ and effects processing
 //! - visualizer: Audio visualization buffer
-//! 
+//!
 //! # Thread Safety
 //! All public methods are thread-safe (Send + Sync).
 //! AudioPlayer is designed to be held in an Arc<AudioPlayer> or Tauri state.
@@ -23,7 +23,7 @@ use rodio::{Decoder, Sink, Source};
 use std::fs::File;
 use std::io::BufReader;
 use log::{info, error, warn};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Condvar};
 use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
@@ -84,6 +84,9 @@ pub struct AudioPlayer {
     effects_processor: Arc<Mutex<EffectsProcessor>>,
     effects_enabled: Mutex<bool>,
     visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
+    /// Condvar signalled when playback state changes (play/load/stop).
+    /// The broadcast thread waits on this instead of polling during idle.
+    pub broadcast_condvar: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl AudioPlayer {
@@ -91,10 +94,10 @@ impl AudioPlayer {
         info!("Initializing audio player with high-quality settings");
 
         let (stream, mixer, device_name) = device::create_high_quality_output_with_device_name()?;
-        
+
         // Use Sink::connect_new to attach to our manual mixer
         let sink = Sink::connect_new(&mixer);
-        
+
         let visualizer_buffer = Arc::new(Mutex::new(VisualizerBuffer::new(4096)));
 
         info!("Audio player initialized successfully on device: {:?}", device_name);
@@ -109,7 +112,17 @@ impl AudioPlayer {
             )),
             effects_enabled: Mutex::new(true),
             visualizer_buffer,
+            broadcast_condvar: Arc::new((Mutex::new(false), Condvar::new())),
         })
+    }
+
+    /// Wake the broadcast thread so it re-checks state immediately.
+    fn notify_broadcast(&self) {
+        let (lock, cvar) = &*self.broadcast_condvar;
+        if let Ok(mut woken) = lock.lock() {
+            *woken = true;
+            cvar.notify_one();
+        }
     }
 
     // ── Device queries ──────────────────────────────────────────────
@@ -162,6 +175,7 @@ impl AudioPlayer {
 
         lock_or_recover(&self.playback).reset_for_load(path, duration);
         lock_or_recover(&self.device).update_active();
+        self.notify_broadcast();
 
         Ok(())
     }
@@ -209,45 +223,21 @@ impl AudioPlayer {
                 );
             }
 
-            // Get current state for recovery
             let current_path = lock_or_recover(&self.playback).current_path.clone();
             let current_position = self.get_position();
-            let _volume = lock_or_recover(&self.volume_mgr).last_volume;
 
-            // Reinitialize audio output
-            match device::create_high_quality_output_with_device_name() {
-                Ok((new_stream, new_mixer, new_device_name)) => {
-                    info!("Audio stream reinitialized on device: {:?}", new_device_name);
+            self.reinit_device()?;
 
-                    // Use connect_new
-                    let new_sink = Sink::connect_new(&new_mixer);
-                    new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
-
-                    lock_or_recover(&self.device)
-                        .replace(new_stream, new_mixer, new_device_name);
-                    *lock_or_recover(&self.sink) = new_sink;
-
-                    // Discard any preloaded track — its sink was connected to
-                    // the old mixer/stream which is now dead.
-                    self.clear_preload();
-
-                    // Reload the track if there was one
-                    if let Some(path) = current_path {
-                        info!("Reloading track after audio reinit: {}", path);
-                        if let Err(e) = self.load(path) {
-                            error!("Failed to reload track after reinit: {}", e);
-                            return Err(e);
-                        }
-                        if current_position > 0.5 {
-                            if let Err(e) = self.seek(current_position) {
-                                warn!("Failed to restore position after reinit: {}", e);
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to reinitialize audio: {}", e);
+            if let Some(path) = current_path {
+                info!("Reloading track after audio reinit: {}", path);
+                if let Err(e) = self.load(path) {
+                    error!("Failed to reload track after reinit: {}", e);
                     return Err(e);
+                }
+                if current_position > 0.5 {
+                    if let Err(e) = self.seek(current_position) {
+                        warn!("Failed to restore position after reinit: {}", e);
+                    }
                 }
             }
         } else if needs_reload {
@@ -255,7 +245,7 @@ impl AudioPlayer {
             info!("Sink is empty but track is loaded - attempting reload/resume");
             let current_path = lock_or_recover(&self.playback).current_path.clone();
             let current_position = self.get_position();
-            
+
             if let Some(path) = current_path {
                 info!("Reloading track for resume: {}", path);
                 if let Err(e) = self.load(path) {
@@ -284,6 +274,7 @@ impl AudioPlayer {
             info!("Started fresh playback");
         }
 
+        self.notify_broadcast();
         Ok(())
     }
 
@@ -291,6 +282,7 @@ impl AudioPlayer {
         info!("Pausing playback");
         lock_or_recover(&self.sink).pause();
         lock_or_recover(&self.playback).mark_paused();
+        self.notify_broadcast();
         Ok(())
     }
 
@@ -298,6 +290,7 @@ impl AudioPlayer {
         info!("Stopping playback");
         lock_or_recover(&self.sink).stop();
         lock_or_recover(&self.playback).clear();
+        self.notify_broadcast();
         Ok(())
     }
 
@@ -326,6 +319,10 @@ impl AudioPlayer {
 
     pub fn set_balance(&self, balance: f32) -> AppResult<()> {
         lock_or_recover(&self.volume_mgr).set_balance(balance);
+        // Apply balance to the effects processor so it processes L/R channels
+        if let Ok(mut proc) = self.effects_processor.lock() {
+            proc.set_balance(balance);
+        }
         Ok(())
     }
 
@@ -367,11 +364,26 @@ impl AudioPlayer {
 
                     info!("Reloading file for backward seek: {}", path);
 
-                    let file = File::open(&path)
-                        .map_err(|e| AppError::NotFound(format!("Failed to open file: {}", e)))?;
+                    let file = match File::open(&path) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            error!("Seek fallback: failed to reopen file: {}", e);
+                            // Clear playback state to prevent the broadcast thread
+                            // from seeing "empty sink + path = finished" and
+                            // emitting a spurious track-ended event.
+                            lock_or_recover(&self.playback).clear();
+                            return Err(AppError::NotFound(format!("Failed to open file: {}", e)));
+                        }
+                    };
 
-                    let source = Decoder::new(BufReader::new(file))
-                        .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
+                    let source = match Decoder::new(BufReader::new(file)) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("Seek fallback: failed to decode file: {}", e);
+                            lock_or_recover(&self.playback).clear();
+                            return Err(AppError::Decode(format!("Failed to decode audio: {}", e)));
+                        }
+                    };
 
                     let effects_source = EffectsSource::new(
                         source,
@@ -441,12 +453,6 @@ impl AudioPlayer {
     }
 
     /// Snapshot of playback state captured under a single sink lock.
-    ///
-    /// The broadcast thread previously called `is_playing()`, `is_finished()`,
-    /// `get_position()`, and `get_duration()` as four separate lock acquisitions.
-    /// Between those calls the sink state could change (e.g. track ends between
-    /// the `is_playing` and `is_finished` queries), causing missed or duplicate
-    /// `track-ended` events. This method captures everything atomically.
     pub fn broadcast_snapshot(&self) -> BroadcastSnapshot {
         let sink = lock_or_recover(&self.sink);
         let pb = lock_or_recover(&self.playback);
@@ -458,6 +464,32 @@ impl AudioPlayer {
             position: pb.get_position(is_empty, is_paused),
             duration: pb.total_duration.as_secs_f64(),
         }
+    }
+
+    // ── Device reinitialization (shared by play, recover, set_output_device) ──
+
+    /// Recreate the audio output stream and sink. Discards any stale preload.
+    ///
+    /// Does NOT reload the current track — callers handle that because they
+    /// each need different seek/resume behaviour.
+    fn reinit_device(&self) -> AppResult<()> {
+        let (new_stream, new_mixer, new_device_name) =
+            device::create_high_quality_output_with_device_name()?;
+
+        info!("Audio stream reinitialized on device: {:?}", new_device_name);
+
+        let new_sink = Sink::connect_new(&new_mixer);
+        new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
+
+        lock_or_recover(&self.device)
+            .replace(new_stream, new_mixer, new_device_name);
+        *lock_or_recover(&self.sink) = new_sink;
+
+        // Discard any preloaded track — its sink was connected to
+        // the old mixer/stream which is now dead.
+        self.clear_preload();
+
+        Ok(())
     }
 
     // ── Output device switching ─────────────────────────────────────
@@ -479,21 +511,9 @@ impl AudioPlayer {
 
         let was_playing = self.is_playing();
         let current_position = self.get_position();
-        let current_volume = lock_or_recover(&self.sink).volume();
         let current_path = lock_or_recover(&self.playback).current_path.clone();
 
-        let (new_stream, new_mixer, new_device_name) =
-            device::create_high_quality_output_with_device_name()?;
-
-        let new_sink = Sink::connect_new(&new_mixer);
-        new_sink.set_volume(current_volume);
-
-        lock_or_recover(&self.device)
-            .replace(new_stream, new_mixer, new_device_name);
-        *lock_or_recover(&self.sink) = new_sink;
-
-        // Discard stale preload — its sink was connected to the old mixer.
-        self.clear_preload();
+        self.reinit_device()?;
 
         if let Some(path) = current_path {
             self.load(path)?;
@@ -519,6 +539,16 @@ impl AudioPlayer {
         let source = Decoder::new(BufReader::new(file))
             .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
 
+        let duration = source.total_duration().unwrap_or(Duration::ZERO);
+
+        // Wrap in EffectsSource so preloaded tracks get EQ/visualizer
+        // processing — same pipeline as load().
+        let effects_source = EffectsSource::new(
+            source,
+            self.effects_processor.clone(),
+            self.visualizer_buffer.clone(),
+        );
+
         // Reuse the existing device mixer
         let device = lock_or_recover(&self.device);
         let generation = device.generation;
@@ -527,10 +557,10 @@ impl AudioPlayer {
 
         let current_volume = lock_or_recover(&self.sink).volume();
         new_sink.set_volume(current_volume);
-        new_sink.append(source);
+        new_sink.append(effects_source);
         new_sink.pause();
 
-        lock_or_recover(&self.preload).set(new_sink, path, generation);
+        lock_or_recover(&self.preload).set(new_sink, path, duration, generation);
         info!("Audio file preloaded successfully (reusing existing output, gen={})", generation);
         Ok(())
     }
@@ -540,7 +570,7 @@ impl AudioPlayer {
 
         let current_gen = lock_or_recover(&self.device).generation;
         let taken = lock_or_recover(&self.preload).take_if_current(current_gen);
-        if let Some((new_sink, new_path)) = taken {
+        if let Some((new_sink, new_path, new_duration)) = taken {
             // Hold a single sink lock across stop → replace → play to prevent
             // another thread from observing a half-swapped state.
             {
@@ -550,15 +580,22 @@ impl AudioPlayer {
                 sink.play();
             }
 
+            // Clear visualizer buffer for the new track
+            if let Ok(mut buffer) = self.visualizer_buffer.lock() {
+                buffer.clear();
+            }
+
             {
                 let mut pb = lock_or_recover(&self.playback);
                 pb.current_path = Some(new_path);
+                pb.total_duration = new_duration;
                 pb.start_time = Some(Instant::now());
                 pb.seek_offset = Duration::ZERO;
                 pb.paused_duration = Duration::ZERO;
                 pb.pause_start = None;
             }
 
+            self.notify_broadcast();
             info!("Successfully swapped to preloaded track");
             Ok(())
         } else {
@@ -611,20 +648,8 @@ impl AudioPlayer {
         let current_position = self.get_position();
         let was_playing = self.is_playing();
 
-        match device::create_high_quality_output_with_device_name() {
-            Ok((new_stream, new_mixer, new_device_name)) => {
-                info!("Audio output recreated on device: {:?}", new_device_name);
-
-                let new_sink = Sink::connect_new(&new_mixer);
-                new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
-
-                lock_or_recover(&self.device)
-                    .replace(new_stream, new_mixer, new_device_name);
-                *lock_or_recover(&self.sink) = new_sink;
-
-                // Discard stale preload — its sink was connected to the old mixer.
-                self.clear_preload();
-
+        match self.reinit_device() {
+            Ok(()) => {
                 if let Some(path) = current_path {
                     info!("Reloading track after recovery: {}", path);
                     if let Err(e) = self.load(path) {
