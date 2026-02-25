@@ -94,6 +94,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     let unlistenTick: UnlistenFn | undefined;
     let unlistenEnded: UnlistenFn | undefined;
     let unlistenDeviceLost: UnlistenFn | undefined;
+    let unlistenDeviceRecovered: UnlistenFn | undefined;
 
     const setup = async () => {
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
@@ -140,8 +141,17 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         console.warn('[Audio] Device lost during playback');
         if (onDeviceLostRef.current) onDeviceLostRef.current();
         useStore.getState().setPlaying(false);
-        setAudioBackendError('Audio device disconnected. Reconnect and press play to resume.');
+        setAudioBackendError('Audio device disconnected. Waiting for reconnect...');
         toast.showWarning('Audio device disconnected');
+      });
+
+      // Device-recovered: the Rust broadcast thread detected the audio device
+      // reappeared and successfully resumed playback. Sync the UI back.
+      unlistenDeviceRecovered = await TauriAPI.onEvent<null>('device-recovered', () => {
+        log.info('[Audio] Device recovered — playback auto-resumed');
+        setAudioBackendError(null);
+        useStore.getState().setPlaying(true);
+        toast.showSuccess('Audio device reconnected');
       });
     };
 
@@ -151,6 +161,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
       unlistenTick?.();
       unlistenEnded?.();
       unlistenDeviceLost?.();
+      unlistenDeviceRecovered?.();
     };
   }, []);
 
