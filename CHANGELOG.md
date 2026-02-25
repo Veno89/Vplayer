@@ -3,6 +3,19 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.21] - 2026-02-25
+
+### Dead Code Cleanup & Gapless Playback Fix
+- **Gapless preload wired up**: The gapless playback effect in `usePlayer.ts` was a no-op — it logged "preloading" but never called the Rust backend. Now calls `TauriAPI.preloadTrack()` to actually preload the next track 5 seconds before the current one ends, and `TauriAPI.swapToPreloaded()` in `useTrackLoading` for instant track switches.
+- **Removed dead `preloadAudioRef`**: Unused `HTMLAudioElement` ref in `usePlayer.ts` — leftover from a browser-based preload approach. Removed.
+- **Removed dead TauriAPI methods**: `getPosition()` and `isFinished()` were polling-era APIs superseded by event-driven `playback-tick` / `track-ended` events (v0.9.12). `updateTrackRating()` was deprecated and only delegated to `setTrackRating()`. All three removed.
+- **Wired `audio.stop()`**: The stop shortcut (`Escape`) was manually calling `pause() + seek(0)` despite a proper `stop()` method existing in `useAudio`. Now uses `audio.stop()` directly.
+- **Eliminated duplicate `formatTime`**: Both `PlayerWindow` and `MiniPlayerWindow` defined inline `formatTime()` functions identical to `formatDuration()` from `utils/formatters.ts`. Replaced with the shared utility.
+- **Trimmed CrossfadeAPI surface**: Removed `startFadeIn`, `getFadeOutMultiplier`, `getFadeInMultiplier` from the public `CrossfadeAPI` interface — none were called externally. `getFadeOutMultiplier` kept as internal helper for `startCrossfade`. Also removed dead `FadeInParams` interface.
+
+### Documentation
+- Updated README: React 18 → 19, `.jsx` references → `.tsx`, gapless playback description corrected, version bumped to 0.9.21.
+
 ## [0.9.20] - 2026-02-13
 
 ### Audio Reliability

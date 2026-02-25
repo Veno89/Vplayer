@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Maximize2, X, Volume2, VolumeX } from 'lucide-react';
+import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
 import { useStore } from '../store/useStore';
 import { usePlayerContext } from '../context/PlayerProvider';
@@ -24,13 +25,6 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
   const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
   const currentTrackData = currentTrack !== null ? tracks[currentTrack] : null;
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
-
-  const formatTime = (seconds: number) => {
-    if (!seconds || seconds < 0) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   return (
     <div className="flex flex-col bg-slate-900/95 backdrop-blur-sm text-white rounded-lg shadow-2xl border border-slate-700 overflow-hidden">
@@ -99,8 +93,8 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
             />
           </div>
           <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-            <span>{formatTime(progress)}</span>
-            <span>{formatTime(duration)}</span>
+            <span>{formatDuration(progress)}</span>
+            <span>{formatDuration(duration)}</span>
           </div>
         </div>
 

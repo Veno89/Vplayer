@@ -10,12 +10,6 @@ export interface CrossfadeParams {
   onComplete: () => void;
 }
 
-export interface FadeInParams {
-  setVolume: (vol: number) => void;
-  targetVolume: number;
-  onComplete?: () => void;
-}
-
 export interface CrossfadeAPI {
   enabled: boolean;
   duration: number;
@@ -23,10 +17,7 @@ export interface CrossfadeAPI {
   setDuration: (ms: number) => void;
   shouldCrossfade: (currentProgress: number, trackDuration: number) => boolean;
   startCrossfade: (params: CrossfadeParams) => void;
-  startFadeIn: (params: FadeInParams) => (() => void) | undefined;
   cancelCrossfade: (setVolume: (vol: number) => void) => void;
-  getFadeOutMultiplier: (elapsedMs: number) => number;
-  getFadeInMultiplier: (elapsedMs: number) => number;
   readonly isFading: boolean;
 }
 
@@ -87,16 +78,6 @@ export function useCrossfade(): CrossfadeAPI {
   }, [duration]);
 
   /**
-   * Calculate the fade-in volume multiplier for the next track
-   * Inverse of fade-out for smooth crossover
-   */
-  const getFadeInMultiplier = useCallback((elapsedMs: number): number => {
-    const progress = Math.min(1, elapsedMs / duration);
-    // Use ease-in curve: starts slow, speeds up
-    return Math.sin(progress * Math.PI * 0.5);
-  }, [duration]);
-
-  /**
    * Start the crossfade transition
    * 
    * @param {Object} params - Crossfade parameters
@@ -153,47 +134,6 @@ export function useCrossfade(): CrossfadeAPI {
   }, [enabled, duration, getFadeOutMultiplier]);
 
   /**
-   * Start fade-in for the new track (called after track switch)
-   * 
-   * @param {Object} params - Fade-in parameters
-   * @param {Function} params.setVolume - Function to set audio volume
-   * @param {number} params.targetVolume - Target volume to reach
-   * @param {Function} params.onComplete - Called when fade-in completes
-   */
-  const startFadeIn = useCallback(({ setVolume, targetVolume, onComplete }: FadeInParams): (() => void) | undefined => {
-    if (!enabled) {
-      setVolume(targetVolume);
-      if (onComplete) onComplete();
-      return;
-    }
-
-    log.info('[Crossfade] Starting fade-in to volume:', targetVolume);
-    const startTime = Date.now();
-    const fadeInDuration = duration * 0.5; // Fade in takes half the duration
-    const FADE_INTERVAL_MS = 50;
-
-    // Start at 0 volume
-    setVolume(0);
-
-    const fadeInInterval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / fadeInDuration);
-      const fadeMultiplier = Math.sin(progress * Math.PI * 0.5); // Ease-in
-      
-      setVolume(targetVolume * fadeMultiplier);
-
-      if (progress >= 1) {
-        clearInterval(fadeInInterval);
-        setVolume(targetVolume);
-        log.info('[Crossfade] Fade-in complete');
-        if (onComplete) onComplete();
-      }
-    }, FADE_INTERVAL_MS);
-
-    return () => clearInterval(fadeInInterval);
-  }, [enabled, duration]);
-
-  /**
    * Cancel any active crossfade and restore volume
    */
   const cancelCrossfade = useCallback((setVolume: (vol: number) => void) => {
@@ -234,10 +174,7 @@ export function useCrossfade(): CrossfadeAPI {
     setDuration: setDurationMs,
     shouldCrossfade,
     startCrossfade,
-    startFadeIn,
     cancelCrossfade,
-    getFadeOutMultiplier,
-    getFadeInMultiplier,
     get isFading() { return isFadingRef.current; },
   };
 }

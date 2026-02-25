@@ -63,7 +63,7 @@ const VPlayerInner = () => {
     volumeUp: () => handleVolumeChange(Math.min(1, volume + effectiveVolumeStep)),
     volumeDown: () => handleVolumeChange(Math.max(0, volume - effectiveVolumeStep)),
     mute: handleToggleMute,
-    stop: () => { audio.pause(); audio.seek(0); setPlaying(false); },
+    stop: () => { audio.stop().catch(() => {}); setPlaying(false); },
     toggleShuffle: () => setShuffle(s => !s),
     toggleRepeat: () => {
       const r = useStore.getState().repeatMode;

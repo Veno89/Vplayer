@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { SEEK_THRESHOLD_SECONDS } from '../utils/constants';
+import { TauriAPI } from '../services/TauriAPI';
 import { log } from '../utils/logger';
 import type {
     Track,
@@ -50,7 +51,6 @@ export function usePlayer({
     } = player;
 
     const nextTrackPreloadedRef = useRef<boolean>(false);
-    const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
     const crossfadeStartedRef = useRef<boolean>(false);
     const crossfadeInProgressRef = useRef<boolean>(false);
     const previousVolumeRef = useRef<number>(0.7);
@@ -192,9 +192,13 @@ export function usePlayer({
 
             if (nextIdx !== null && nextIdx !== currentTrack) {
                 const nextTrack = tracks[nextIdx];
-                if (nextTrack) {
+                if (nextTrack?.path) {
                     log.info(`[Gapless] Preloading next track: ${nextTrack.title || nextTrack.name}`);
                     nextTrackPreloadedRef.current = true;
+                    TauriAPI.preloadTrack(nextTrack.path).catch(err => {
+                        console.warn('[Gapless] Preload failed:', err);
+                        nextTrackPreloadedRef.current = false;
+                    });
                 }
             }
         }
@@ -202,7 +206,7 @@ export function usePlayer({
         if (progress < 1) {
             nextTrackPreloadedRef.current = false;
         }
-    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, getNextTrackIndex]);
+    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, getNextTrackIndex, storeGetter]);
 
     /**
      * Skip to the next track.
