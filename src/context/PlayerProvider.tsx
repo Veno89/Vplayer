@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
 import { useAudio } from '../hooks/useAudio';
 import { usePlayer as usePlayerHook } from '../hooks/usePlayer';
@@ -103,6 +104,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const duration = useStore(s => s.duration);
   const playing = useStore(s => s.playing);
 
+  // Ref to crossfade API — used in onEnded to cancel any active fade.
+  // Must be a ref because useCrossfade() is called *after* useAudio().
+  const crossfadeRef = useRef<CrossfadeAPI | null>(null);
+
   // ── Library (provides tracks + management) ────────────────────────
   const library = useLibrary();
   const { tracks, removeTrack } = library;
@@ -116,7 +121,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // ── Audio engine ──────────────────────────────────────────────────
   const audio = useAudio({
     initialVolume: volume,
+    onDeviceLost: () => {
+      // Cancel any active crossfade — the device is gone, continuing the
+      // fade would just spam errors and leave volume stuck low.
+      if (crossfadeRef.current?.isFading) {
+        crossfadeRef.current.cancelCrossfade((vol: number) => {
+          useStore.getState().setVolume(vol);
+          TauriAPI.setVolume(vol).catch(() => {}); // device is gone, ignore errors
+        });
+      }
+    },
     onEnded: () => {
+      // Cancel any active crossfade first — if the track ended mid-fade
+      // (shorter than expected, decode error, etc.), the fade interval would
+      // keep running and leave volume stuck low.
+      if (crossfadeRef.current?.isFading) {
+        crossfadeRef.current.cancelCrossfade((vol: number) => {
+          useStore.getState().setVolume(vol);
+          TauriAPI.setVolume(vol).catch(err =>
+            console.error('[onEnded] Failed to restore volume after crossfade cancel:', err)
+          );
+        });
+      }
+
       // Read fresh state from store to avoid stale closures
       const state = useStore.getState();
       const pbTracks = state.activePlaybackTracks?.length > 0 ? state.activePlaybackTracks : tracks;
@@ -151,6 +178,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // ── Crossfade ─────────────────────────────────────────────────────
   const crossfade = useCrossfade();
+  crossfadeRef.current = crossfade;
 
   // ── Player actions (next/prev/seek/volume) ────────────────────────
   const storeGetterRef = useRef(() => useStore.getState());

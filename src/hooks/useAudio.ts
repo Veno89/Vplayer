@@ -45,7 +45,7 @@ interface PlaybackTickPayload {
  * **Zustand store** is the single source of truth for:
  *  - `playing`, `progress`, `duration`, `volume`
  */
-export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHookParams): AudioService {
+export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 1.0 }: AudioHookParams): AudioService {
   const [isLoading, setIsLoading] = useState(false);
   const [audioBackendError, setAudioBackendError] = useState<string | null>(null);
 
@@ -56,8 +56,10 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
 
   // Refs for callbacks – avoids stale closures in event listeners
   const onEndedRef = useRef(onEnded);
+  const onDeviceLostRef = useRef(onDeviceLost);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+  useEffect(() => { onDeviceLostRef.current = onDeviceLost; }, [onDeviceLost]);
   useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
 
   // Error handling
@@ -136,6 +138,7 @@ export function useAudio({ onEnded, onTimeUpdate, initialVolume = 1.0 }: AudioHo
       // error instead of advancing to the next track (which would also fail).
       unlistenDeviceLost = await TauriAPI.onEvent<null>('device-lost', () => {
         console.warn('[Audio] Device lost during playback');
+        if (onDeviceLostRef.current) onDeviceLostRef.current();
         useStore.getState().setPlaying(false);
         setAudioBackendError('Audio device disconnected. Reconnect and press play to resume.');
         toast.showWarning('Audio device disconnected');

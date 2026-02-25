@@ -99,6 +99,7 @@ export interface AudioService {
 
 export interface AudioHookParams {
     onEnded?: () => void;
+    onDeviceLost?: () => void;
     onTimeUpdate?: (time: number) => void;
     initialVolume?: number;
 }
