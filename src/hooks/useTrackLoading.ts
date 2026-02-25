@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
+import { TauriAPI } from '../services/TauriAPI';
 import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
 import { confirm as nativeConfirm } from '@tauri-apps/plugin-dialog';
@@ -90,8 +91,27 @@ export function useTrackLoading({
       console.log(`[useTrackLoading] loading: ${track.name} (ID: ${track.id})`);
 
       try {
-        // 4. Perform the async load (with timeouts now enforced by useAudio)
-        await audio.loadTrack(track);
+        // 4. Try to swap to preloaded track (gapless) before falling back to full load
+        let usedPreload = false;
+        try {
+          const hasPreloaded = await TauriAPI.hasPreloaded();
+          if (hasPreloaded) {
+            await TauriAPI.swapToPreloaded();
+            usedPreload = true;
+            // Still need to update duration in store
+            const realDuration = await TauriAPI.getDuration().catch(() => 0);
+            const dur = realDuration > 0 ? realDuration : track.duration || 0;
+            useStore.getState().setDuration(dur);
+            useStore.getState().setProgress(0);
+          }
+        } catch {
+          // Preload swap failed, fall back to normal load
+          usedPreload = false;
+        }
+
+        if (!usedPreload) {
+          await audio.loadTrack(track);
+        }
 
         // 5. CAUTION: The world may have changed while we were awaiting audio.loadTrack.
         // Check if the store's currentTrack pointer has moved.

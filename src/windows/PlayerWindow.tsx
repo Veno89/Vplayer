@@ -48,14 +48,6 @@ export function PlayerWindow() {
     setLocalVolume(volume * 100);
   }, [volume]);
 
-  // Format time for display
-  const formatTime = (seconds: number | undefined | null) => {
-    if (!seconds || seconds < 0) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   // Calculate percent from mouse event
   const getPercentFromEvent = useCallback((e: React.MouseEvent | MouseEvent) => {
     if (!progressBarRef.current) return 0;
@@ -222,7 +214,7 @@ export function PlayerWindow() {
           onMouseDown={isDisabled ? undefined : handleProgressMouseDown}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
-          title={`${formatTime(progress)} / ${formatTime(duration)}`}
+          title={`${formatDuration(progress)} / ${formatDuration(duration)}`}
         >
           {/* A-B Repeat region highlight */}
           {abRepeat?.pointA !== null && abRepeat?.pointB !== null && duration > 0 && (
@@ -240,7 +232,7 @@ export function PlayerWindow() {
             <div 
               className="absolute top-0 bottom-0 w-0.5 bg-green-500 pointer-events-none z-10"
               style={{ left: `${(abRepeat.pointA / duration) * 100}%` }}
-              title={`Point A: ${formatTime(abRepeat.pointA)}`}
+              title={`Point A: ${formatDuration(abRepeat.pointA)}`}
             />
           )}
           
@@ -249,7 +241,7 @@ export function PlayerWindow() {
             <div 
               className="absolute top-0 bottom-0 w-0.5 bg-green-500 pointer-events-none z-10"
               style={{ left: `${(abRepeat.pointB / duration) * 100}%` }}
-              title={`Point B: ${formatTime(abRepeat.pointB)}`}
+              title={`Point B: ${formatDuration(abRepeat.pointB)}`}
             />
           )}
           
@@ -275,14 +267,14 @@ export function PlayerWindow() {
           )}
         </div>
         <div className="flex justify-between text-xs text-slate-400 mt-1">
-          <span>{formatTime(progress)}</span>
+          <span>{formatDuration(progress)}</span>
           {/* Show hover time when hovering */}
           {hoverPercent !== null && duration > 0 && (
             <span className="text-cyan-400">
-              {formatTime((hoverPercent / 100) * duration)}
+              {formatDuration((hoverPercent / 100) * duration)}
             </span>
           )}
-          <span>{formatTime(duration)}</span>
+          <span>{formatDuration(duration)}</span>
         </div>
       </div>
 
@@ -428,10 +420,10 @@ export function PlayerWindow() {
                 ? 'bg-green-700 text-white' 
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             } ${isDisabled ? 'opacity-30 cursor-not-allowed' : ''}`}
-            title={abRepeat?.pointA !== null ? `Point A: ${formatTime(abRepeat.pointA)} (click to clear)` : 'Set loop start point (A)'}
+            title={abRepeat?.pointA !== null ? `Point A: ${formatDuration(abRepeat.pointA)} (click to clear)` : 'Set loop start point (A)'}
           >
             <CornerDownRight className="w-3 h-3" />
-            A {abRepeat?.pointA !== null && `(${formatTime(abRepeat.pointA)})`}
+            A {abRepeat?.pointA !== null && `(${formatDuration(abRepeat.pointA)})`}
           </button>
           
           <button
@@ -449,10 +441,10 @@ export function PlayerWindow() {
                 ? 'bg-green-700 text-white' 
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             } ${isDisabled || abRepeat?.pointA === null ? 'opacity-30 cursor-not-allowed' : ''}`}
-            title={abRepeat?.pointB !== null ? `Point B: ${formatTime(abRepeat.pointB)} (click to clear)` : 'Set loop end point (B)'}
+            title={abRepeat?.pointB !== null ? `Point B: ${formatDuration(abRepeat.pointB)} (click to clear)` : 'Set loop end point (B)'}
           >
             <CornerDownLeft className="w-3 h-3" />
-            B {abRepeat?.pointB !== null && `(${formatTime(abRepeat.pointB)})`}
+            B {abRepeat?.pointB !== null && `(${formatDuration(abRepeat.pointB)})`}
           </button>
           
           {abRepeat?.enabled && (

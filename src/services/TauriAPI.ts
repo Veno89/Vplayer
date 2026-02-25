@@ -141,16 +141,8 @@ class TauriAPIService {
         return this._invoke('seek_to', { position });
     }
 
-    async getPosition(): Promise<number> {
-        return this._invoke('get_position');
-    }
-
     async isPlaying(): Promise<boolean> {
         return this._invoke('is_playing');
-    }
-
-    async isFinished(): Promise<boolean> {
-        return this._invoke('is_finished');
     }
 
     async getDuration(): Promise<number> {
@@ -237,13 +229,6 @@ class TauriAPIService {
 
     async removeFolder(folderId: string, folderPath: string): Promise<void> {
         return this._invoke('remove_folder', { folderId, folderPath });
-    }
-
-    /**
-     * @deprecated Use setTrackRating instead - update_track_rating command does not exist
-     */
-    async updateTrackRating(trackId: string, rating: number): Promise<void> {
-        return this.setTrackRating(trackId, rating);
     }
 
     async incrementPlayCount(trackId: string): Promise<void> {

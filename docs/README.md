@@ -3,7 +3,7 @@
 [![Download Latest](https://img.shields.io/github/v/release/Veno89/Vplayer?label=Download&style=for-the-badge)](https://github.com/Veno89/Vplayer/releases/latest)
 [![GitHub Release Date](https://img.shields.io/github/release-date/Veno89/Vplayer?style=flat-square)](https://github.com/Veno89/Vplayer/releases)
 
-**Desktop Music Player** built with Tauri 2 (Rust) + React 18 • Fast, lightweight, customizable
+**Desktop Music Player** built with Tauri 2 (Rust) + React 19 • Fast, lightweight, customizable
 
 ---
 
@@ -36,7 +36,7 @@ npm run tauri:dev
 | Audio engine | Rodio + Symphonia | rodio 0.21, symphonia 0.5 |
 | Metadata / tags | Lofty | 0.18 |
 | Database | SQLite (rusqlite) | 0.30 (bundled) |
-| UI framework | React | 18.2 |
+| UI framework | React | 19.x |
 | State management | Zustand (sliced, persisted) | 5.x |
 | Styling | Tailwind CSS | 3.x |
 | Build tooling | Vite | 7.x |
@@ -66,7 +66,7 @@ src/
 ├── context/             # React context (PlayerProvider.tsx)
 ├── types/               # Shared TypeScript interfaces
 ├── utils/               # Helpers (formatters, constants, colorSchemes, logger)
-└── windowRegistry.jsx   # Declarative window ID → component mapping
+└── windowRegistry.tsx   # Declarative window ID → component mapping
 
 src-tauri/src/
 ├── main.rs              # App setup, command registration, global shortcuts, tray
@@ -105,7 +105,7 @@ src-tauri/src/
 
 ### Audio Playback
 - **Formats**: MP3, FLAC, OGG, WAV, AAC, Opus, M4A (via Symphonia)
-- **Gapless Playback**: Seamless track transitions with preloading
+- **Gapless Playback**: Seamless track transitions via Rust preload/swap pipeline
 - **Crossfade**: Smooth volume fades between tracks (configurable duration)
 - **ReplayGain**: Volume normalization using EBU R128 standard
 - **10-band EQ**: 9 presets + custom settings, real-time processing
@@ -193,7 +193,7 @@ Create rules-based playlists:
 
 1. **All IPC goes through `TauriAPI.ts`** — never call `invoke()` directly from components.
 2. **Granular Zustand selectors** — always `useStore(s => s.field)`, never `useStore()`.
-3. **Hooks and services are TypeScript** (`.ts` / `.tsx`). Components and windows are `.jsx` (gradual migration).
+3. **All source files are TypeScript** (`.ts` / `.tsx`).
 4. **Windows are self-sufficient** — each reads its own state from `useStore` / `usePlayerContext`. No prop drilling.
 5. **`useToast()` and `useUpdater()`** are Zustand singletons — safe to call from anywhere.
 
@@ -353,7 +353,7 @@ conn.execute("INSERT INTO tracks (path) VALUES (?1)", params![path])?;
 
 ### TypeScript / React
 - Functional components with hooks
-- Hooks and services are `.ts`; components are `.jsx` (gradual migration to `.tsx`)
+- All source files use `.ts` / `.tsx`
 - Extract business logic to custom hooks — keep components focused on rendering
 - Use granular Zustand selectors, never destructure the entire store
 
@@ -385,4 +385,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.20 | **Updated**: February 2026
+**Version**: 0.9.21 | **Updated**: February 2026
