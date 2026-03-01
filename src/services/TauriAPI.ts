@@ -6,6 +6,10 @@ import { Track, Playlist, PlaylistTrack, TrackFilter } from '../types';
 // ========== API-specific types ==========
 
 /** Matches Rust EffectsConfig struct */
+export type EffectId = 'equalizer' | 'bass_boost' | 'echo' | 'reverb';
+
+export const DEFAULT_EFFECT_ORDER: EffectId[] = ['equalizer', 'bass_boost', 'echo', 'reverb'];
+
 export interface AudioEffectsConfig {
     tempo: number;
     reverb_mix: number;
@@ -15,6 +19,8 @@ export interface AudioEffectsConfig {
     echo_feedback: number;
     echo_mix: number;
     eq_bands: number[];
+    /** Processing chain order. Soft clipper always runs last. */
+    effect_order?: EffectId[];
 }
 
 /** Matches Rust TagUpdate struct */
@@ -317,6 +323,10 @@ class TauriAPIService {
 
     async setBeatSensitivity(sensitivity: number): Promise<void> {
         return this._invoke('set_beat_sensitivity', { sensitivity });
+    }
+
+    async getTrackWaveform(path: string, numBars?: number): Promise<number[]> {
+        return this._invoke('get_track_waveform', { path, numBars: numBars ?? 200 });
     }
 
     // ========== Tag Editor Commands ==========

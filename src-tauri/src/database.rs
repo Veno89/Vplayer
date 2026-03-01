@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +77,14 @@ impl Database {
                 year INTEGER,
                 track_number INTEGER,
                 disc_number INTEGER
+            )",
+            [],
+        )?;
+        
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS track_album_art (
+                track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                data BLOB NOT NULL
             )",
             [],
         )?;
@@ -201,6 +209,29 @@ impl Database {
             Self::migrate_add_column(conn, "tracks", "track_number", "INTEGER", 6)?;
             Self::migrate_add_column(conn, "tracks", "disc_number", "INTEGER", 6)?;
             info!("Migration v6 complete: genre, year, track_number, disc_number columns");
+        }
+        
+        // Migration v7: Move album_art to a separate table to keep the tracks
+        // table lean. Large BLOB data in the main table bloats the SQLite page
+        // cache and slows index scans.
+        if current_version < 7 {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS track_album_art (
+                    track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                    data BLOB NOT NULL
+                )",
+                [],
+            )?;
+            // Copy existing album art data to the new table
+            conn.execute(
+                "INSERT OR IGNORE INTO track_album_art (track_id, data)
+                 SELECT id, album_art FROM tracks WHERE album_art IS NOT NULL",
+                [],
+            )?;
+            // Null out the old column to reclaim page space on next VACUUM.
+            // (SQLite < 3.35 doesn't support DROP COLUMN, so we just clear it.)
+            conn.execute("UPDATE tracks SET album_art = NULL WHERE album_art IS NOT NULL", [])?;
+            info!("Migration v7 complete: album art moved to track_album_art table");
         }
         
         // Update stored schema version
@@ -909,11 +940,11 @@ impl Database {
         Ok(())
     }
     
-    // Album art operations
+    // Album art operations (stored in separate track_album_art table)
     pub fn get_album_art(&self, track_id: &str) -> Result<Option<Vec<u8>>> {
         let conn = self.conn();
         let result: Result<Option<Vec<u8>>> = conn.query_row(
-            "SELECT album_art FROM tracks WHERE id = ?1",
+            "SELECT data FROM track_album_art WHERE track_id = ?1",
             params![track_id],
             |row| row.get(0),
         );
@@ -923,8 +954,9 @@ impl Database {
     pub fn set_album_art(&self, track_id: &str, art_data: &[u8]) -> Result<()> {
         let conn = self.conn();
         conn.execute(
-            "UPDATE tracks SET album_art = ?1 WHERE id = ?2",
-            params![art_data, track_id],
+            "INSERT INTO track_album_art (track_id, data) VALUES (?1, ?2)
+             ON CONFLICT(track_id) DO UPDATE SET data = excluded.data",
+            params![track_id, art_data],
         )?;
         Ok(())
     }
@@ -932,7 +964,7 @@ impl Database {
     pub fn has_album_art(&self, track_id: &str) -> bool {
         let conn = self.conn();
         let result: Result<i32> = conn.query_row(
-            "SELECT 1 FROM tracks WHERE id = ?1 AND album_art IS NOT NULL",
+            "SELECT 1 FROM track_album_art WHERE track_id = ?1",
             params![track_id],
             |row| row.get(0),
         );

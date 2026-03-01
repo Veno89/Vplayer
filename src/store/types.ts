@@ -104,6 +104,10 @@ export interface EqBand {
     value: number;
 }
 
+export type EffectId = 'equalizer' | 'bass_boost' | 'echo' | 'reverb';
+
+export const DEFAULT_EFFECT_ORDER: EffectId[] = ['equalizer', 'bass_boost', 'echo', 'reverb'];
+
 // =============================================================================
 // Keyboard Shortcut Types
 // =============================================================================
@@ -351,6 +355,9 @@ export interface SettingsSliceState {
     // EQ Settings
     eqBands: EqBand[];
 
+    // Effects chain order
+    effectOrder: EffectId[];
+
     // Crossfade Settings
     crossfadeEnabled: boolean;
     crossfadeDuration: number;
@@ -405,6 +412,7 @@ export interface SettingsSliceActions {
     setTitleBarFormat: (format: string) => void;
     setCacheSizeLimit: (limit: number) => void;
     setEqBands: (bands: EqBand[]) => void;
+    setEffectOrder: (order: EffectId[]) => void;
     setCrossfadeEnabled: (enabled: boolean) => void;
     setCrossfadeDuration: (duration: number) => void;
     setKeyboardShortcuts: (shortcuts: KeyboardShortcut[] | null) => void;

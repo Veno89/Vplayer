@@ -5,6 +5,7 @@ import { AlbumArt } from '../components/AlbumArt';
 import { useStore } from '../store/useStore';
 import { usePlayerContext } from '../context/PlayerProvider';
 import { useCurrentColors } from '../hooks/useStoreHooks';
+import { WaveformSeekbar } from '../components/WaveformSeekbar';
 
 export function PlayerWindow() {
   // ── Store state ───────────────────────────────────────────────────
@@ -216,6 +217,12 @@ export function PlayerWindow() {
           onMouseLeave={handleProgressMouseLeave}
           title={`${formatDuration(progress)} / ${formatDuration(duration)}`}
         >
+          {/* Waveform visualization */}
+          <WaveformSeekbar
+            trackPath={currentTrackData?.path}
+            progressPercent={progressPercent}
+            accentHex={currentColors.accentHex ?? '#22d3ee'}
+          />
           {/* A-B Repeat region highlight */}
           {abRepeat?.pointA !== null && abRepeat?.pointB !== null && duration > 0 && (
             <div 

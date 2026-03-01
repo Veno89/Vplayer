@@ -1,48 +1,27 @@
-import { createContext, useContext, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { TauriAPI } from '../services/TauriAPI';
-import { useStore } from '../store/useStore';
-import { useAudio } from '../hooks/useAudio';
-import { usePlayer as usePlayerHook } from '../hooks/usePlayer';
-import { useTrackLoading } from '../hooks/useTrackLoading';
-import { useCrossfade } from '../hooks/useCrossfade';
-import { useToast } from '../hooks/useToast';
-import { useLibrary } from '../hooks/useLibrary';
-import { usePlaybackEffects } from '../hooks/usePlaybackEffects';
-import { useStartupRestore } from '../hooks/useStartupRestore';
+import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react';
+import { AudioEngineProvider, useAudioEngine } from './AudioEngineContext';
+import { EffectsProvider, useEffectsContext } from './EffectsContext';
+import { PlaybackProvider, usePlaybackContext, type LibraryContextValue } from './PlaybackContext';
 import type { AudioService, Track } from '../types';
 import type { CrossfadeAPI } from '../hooks/useCrossfade';
 import type { ToastAPI } from '../hooks/useToast';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PlayerContext type definition
+// Re-export focused hooks for consumers that only need a specific domain
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Library data & actions exposed via context. */
-export interface LibraryContextValue {
-  tracks: Track[];
-  libraryFolders: { id: string; path: string; name: string; dateAdded: number }[];
-  isScanning: boolean;
-  scanProgress: number;
-  scanCurrent: number;
-  scanTotal: number;
-  scanCurrentFile: string;
-  searchQuery: string;
-  sortBy: string;
-  sortOrder: string;
-  advancedFilters: Record<string, any>;
-  filteredTracks: Track[];
-  setSearchQuery: (query: string) => void;
-  setSortBy: (sort: string) => void;
-  setSortOrder: (order: string) => void;
-  setAdvancedFilters: React.Dispatch<React.SetStateAction<any>>;
-  addFolder: () => Promise<any>;
-  removeFolder: (id: string, path: string) => Promise<void>;
-  refreshFolders: () => Promise<number>;
-  removeTrack: (id: string) => Promise<void>;
-  refreshTracks: () => Promise<void>;
-}
+export { useAudioEngine } from './AudioEngineContext';
+export { useEffectsContext } from './EffectsContext';
+export { usePlaybackContext } from './PlaybackContext';
 
-/** Complete typed context value. */
+// Re-export LibraryContextValue from its canonical location
+export type { LibraryContextValue } from './PlaybackContext';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared type definitions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Complete typed context value (backward-compat aggregate). */
 export interface PlayerContextValue {
   // Audio engine state (not in Zustand)
   audioIsLoading: boolean;
@@ -74,188 +53,41 @@ export interface PlayerContextValue {
   toast: ToastAPI;
 }
 
-/**
- * PlayerContext — single source of truth for audio playback.
- *
- * Encapsulates: useAudio, usePlayer, useTrackLoading, useCrossfade, useLibrary.
- * All player-related state lives in the Zustand store; this context
- * exposes *actions* and *derived values* that depend on the audio engine.
- *
- * Windows read scalar state (playing, progress, volume, etc.) directly
- * from `useStore(s => s.playing)` — they do NOT receive them as props.
- * They use `usePlayerContext()` only for actions and audio-engine state.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Combined PlayerContext (backward compat for existing consumers)
+// ─────────────────────────────────────────────────────────────────────────────
+
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
-export function PlayerProvider({ children }: { children: ReactNode }) {
-  const toast = useToast();
-
-  // ── Store selectors (only what orchestration needs) ───────────────
-  const currentTrack = useStore(s => s.currentTrack);
-  const setCurrentTrack = useStore(s => s.setCurrentTrack);
-  const setPlaying = useStore(s => s.setPlaying);
-  const volume = useStore(s => s.volume);
-  const setVolume = useStore(s => s.setVolume);
-  const shuffle = useStore(s => s.shuffle);
-  const repeatMode = useStore(s => s.repeatMode);
-  const setLoadingTrackIndex = useStore(s => s.setLoadingTrackIndex);
-  const activePlaybackTracks = useStore(s => s.activePlaybackTracks);
-  const progress = useStore(s => s.progress);
-  const duration = useStore(s => s.duration);
-  const playing = useStore(s => s.playing);
-
-  // Ref to crossfade API — used in onEnded to cancel any active fade.
-  // Must be a ref because useCrossfade() is called *after* useAudio().
-  const crossfadeRef = useRef<CrossfadeAPI | null>(null);
-
-  // ── Library (provides tracks + management) ────────────────────────
-  const library = useLibrary();
-  const { tracks, removeTrack } = library;
-
-  // ── Derived: playback track list ──────────────────────────────────
-  const playbackTracks = activePlaybackTracks?.length > 0 ? activePlaybackTracks : tracks;
-
-  // playerHookRef needed because playerHook is a hook instance, not store state
-  const playerHookRef = useRef<any>(null);
-
-  // ── Audio engine ──────────────────────────────────────────────────
-  const audio = useAudio({
-    initialVolume: volume,
-    onDeviceLost: () => {
-      // Cancel any active crossfade — the device is gone, continuing the
-      // fade would just spam errors and leave volume stuck low.
-      if (crossfadeRef.current?.isFading) {
-        crossfadeRef.current.cancelCrossfade((vol: number) => {
-          useStore.getState().setVolume(vol);
-          TauriAPI.setVolume(vol).catch(() => {}); // device is gone, ignore errors
-        });
-      }
-    },
-    onEnded: () => {
-      // Cancel any active crossfade first — if the track ended mid-fade
-      // (shorter than expected, decode error, etc.), the fade interval would
-      // keep running and leave volume stuck low.
-      if (crossfadeRef.current?.isFading) {
-        crossfadeRef.current.cancelCrossfade((vol: number) => {
-          useStore.getState().setVolume(vol);
-          TauriAPI.setVolume(vol).catch(err =>
-            console.error('[onEnded] Failed to restore volume after crossfade cancel:', err)
-          );
-        });
-      }
-
-      // Read fresh state from store to avoid stale closures
-      const state = useStore.getState();
-      const pbTracks = state.activePlaybackTracks?.length > 0 ? state.activePlaybackTracks : tracks;
-      const currentRepeatMode = state.repeatMode;
-      const currentTrackIdx = state.currentTrack;
-
-      // ── Stop After Current Track ──────────────────────────────────
-      if (state.stopAfterCurrent) {
-        useStore.getState().setPlaying(false);
-        // Auto-reset the flag so it's a one-shot toggle
-        useStore.getState().setStopAfterCurrent(false);
-        return;
-      }
-
-      if (!pbTracks?.length) {
-        // No tracks available — stop playback
-        useStore.getState().setPlaying(false);
-      } else if (currentRepeatMode === 'one') {
-        audio.seek(0);
-        audio.play().catch(err => {
-          console.error('Failed to replay:', err);
-          toast.showError('Failed to replay track');
-        });
-      } else if (currentRepeatMode === 'all' || (currentTrackIdx ?? 0) < (pbTracks.length) - 1) {
-        playerHookRef.current?.handleNextTrack();
-      } else {
-        // End of playlist, no repeat — stop playback
-        useStore.getState().setPlaying(false);
-      }
-    },
-  });
-
-  // ── Crossfade ─────────────────────────────────────────────────────
-  const crossfade = useCrossfade();
-  crossfadeRef.current = crossfade;
-
-  // ── Player actions (next/prev/seek/volume) ────────────────────────
-  const storeGetterRef = useRef(() => useStore.getState());
-
-  const playerHook = usePlayerHook({
-    audio,
-    player: { currentTrack, setCurrentTrack, shuffle, repeatMode, progress, duration, volume, setVolume },
-    tracks: playbackTracks,
-    toast,
-    crossfade,
-    storeGetter: storeGetterRef.current,
-  });
-
-  // Keep playerHookRef in sync for onEnded closure
-  useEffect(() => { playerHookRef.current = playerHook; }, [playerHook]);
-
-  // ── Track loading ─────────────────────────────────────────────────
-  const trackLoading = useTrackLoading({
-    audio,
-    tracks: playbackTracks,
-    currentTrack,
-    playing,
-    setLoadingTrackIndex,
-    progress,
-    toast,
-    removeTrack,
-    setCurrentTrack,
-    handleNextTrack: playerHook.handleNextTrack,
-  });
-
-  // ── Extracted side-effect hooks ───────────────────────────────────
-  usePlaybackEffects({ audio, toast, tracks });
-  useStartupRestore(tracks, trackLoading);
-
-  // ── Context value ─────────────────────────────────────────────────
-  // NOTE: Scalar playback state (playing, progress, volume, etc.) is NOT here.
-  // Windows read those directly from useStore. This context provides:
-  //   1) Audio-engine state not in the store (isLoading, audioBackendError)
-  //   2) Actions that need the audio engine (next, prev, seek, togglePlay …)
-  //   3) Derived values (playbackTracks)
-  //   4) Library data & actions
-  //   5) Crossfade service
-  //   6) Toast service
-
-  const togglePlayCb = useCallback(() => setPlaying((p: boolean) => !p), [setPlaying]);
+/**
+ * Bridge component that sits inside all 3 providers and aggregates their
+ * values into the legacy PlayerContext. Existing consumers keep working
+ * without changes.
+ */
+function PlayerContextBridge({ children }: { children: ReactNode }) {
+  const { audio, audioIsLoading, audioBackendError } = useAudioEngine();
+  const { crossfade } = useEffectsContext();
+  const {
+    handleNextTrack, handlePrevTrack, handleSeek,
+    handleVolumeChange, handleVolumeUp, handleVolumeDown,
+    handleToggleMute, togglePlay, playbackTracks, library, toast,
+  } = usePlaybackContext();
 
   const value = useMemo<PlayerContextValue>(() => ({
-    // Audio engine state (not in Zustand)
-    audioIsLoading: audio.isLoading,
-    audioBackendError: audio.audioBackendError,
-
-    // Player actions
-    handleNextTrack: playerHook.handleNextTrack,
-    handlePrevTrack: playerHook.handlePrevTrack,
-    handleSeek: playerHook.handleSeek,
-    handleVolumeChange: playerHook.handleVolumeChange,
-    handleVolumeUp: playerHook.handleVolumeUp,
-    handleVolumeDown: playerHook.handleVolumeDown,
-    handleToggleMute: playerHook.handleToggleMute,
-    togglePlay: togglePlayCb,
-
-    // Low-level audio access (needed by shortcuts, MiniPlayer, etc.)
-    audio,
-
-    // Crossfade
+    audio, audioIsLoading, audioBackendError,
+    handleNextTrack, handlePrevTrack, handleSeek,
+    handleVolumeChange, handleVolumeUp, handleVolumeDown,
+    handleToggleMute, togglePlay,
     crossfade,
-
-    // Derived
     playbackTracks,
-
-    // Library (so windows can access tracks, folders, scanning, etc.)
     library,
-
-    // Toast (shared instance)
     toast,
   }), [
-    audio, playerHook, crossfade, playbackTracks, library, toast, togglePlayCb,
+    audio, audioIsLoading, audioBackendError,
+    handleNextTrack, handlePrevTrack, handleSeek,
+    handleVolumeChange, handleVolumeUp, handleVolumeDown,
+    handleToggleMute, togglePlay,
+    crossfade, playbackTracks, library, toast,
   ]);
 
   return (
@@ -265,6 +97,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PlayerProvider — thin composition root
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Composes three focused providers into the unified player context:
+ *
+ *   AudioEngineProvider  — useAudio + device events
+ *   EffectsProvider      — crossfade
+ *   PlaybackProvider     — player actions + library + track loading + side-effects
+ *
+ * Cross-provider communication uses ref bridges (crossfadeRef, playerHookRef,
+ * tracksRef) created here and passed as props.
+ */
+export function PlayerProvider({ children }: { children: ReactNode }) {
+  const crossfadeRef = useRef<CrossfadeAPI | null>(null);
+  const playerHookRef = useRef<{ handleNextTrack: () => void } | null>(null);
+  const tracksRef = useRef<Track[]>([]);
+
+  return (
+    <AudioEngineProvider
+      crossfadeRef={crossfadeRef}
+      playerHookRef={playerHookRef}
+      tracksRef={tracksRef}
+    >
+      <EffectsProvider crossfadeRef={crossfadeRef}>
+        <PlaybackProvider playerHookRef={playerHookRef} tracksRef={tracksRef}>
+          <PlayerContextBridge>
+            {children}
+          </PlayerContextBridge>
+        </PlaybackProvider>
+      </EffectsProvider>
+    </AudioEngineProvider>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backward-compatible hook
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Use the player context in any descendant component.
  *
@@ -272,11 +144,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
  * prefer `useStore(s => s.playing)` directly — it's more granular and
  * avoids unnecessary re-renders.
  *
- * Use this hook for:
- * - Actions: `handleNextTrack`, `handleSeek`, `togglePlay`, …
- * - Audio-engine state: `audioIsLoading`, `audioBackendError`
- * - Library data: `library.tracks`, `library.libraryFolders`, …
- * - Crossfade: `crossfade.enabled`, `crossfade.toggleEnabled`, …
+ * For focused access, prefer the domain-specific hooks:
+ * - `useAudioEngine()` — audio engine state
+ * - `useEffectsContext()` — crossfade
+ * - `usePlaybackContext()` — player actions, library, toast
  */
 export function usePlayerContext(): PlayerContextValue {
   const context = useContext(PlayerContext);

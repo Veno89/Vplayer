@@ -67,7 +67,7 @@ use commands::{
     // Effects commands
     set_audio_effects, get_audio_effects, set_effects_enabled, is_effects_enabled,
     // Visualizer commands
-    get_visualizer_data, set_visualizer_mode, set_beat_sensitivity,
+    get_visualizer_data, set_visualizer_mode, set_beat_sensitivity, get_track_waveform,
     // Lyrics commands
     load_lyrics, get_lyric_at_time,
     // ReplayGain commands
@@ -172,6 +172,7 @@ fn main() {
             // `device-lost` instead so the frontend can show a reconnect
             // prompt rather than advancing to the next track.
             let broadcast_handle = app.handle().clone();
+            let broadcast_wake = player_for_broadcast.broadcast_wake();
             std::thread::spawn(move || {
                 let mut was_playing = false;
                 // ── Device-loss auto-recovery state ──────────────────
@@ -256,9 +257,15 @@ fn main() {
 
                     was_playing = snap.is_playing;
 
-                    // Adaptive sleep: fast ticks while playing, slow while idle
-                    let sleep_ms = if snap.is_playing { 100 } else { 1000 };
-                    std::thread::sleep(Duration::from_millis(sleep_ms));
+                    // Adaptive sleep: fast ticks while playing, condvar-wait while idle
+                    if snap.is_playing {
+                        std::thread::sleep(Duration::from_millis(100));
+                    } else {
+                        // Block until play/load wakes us or a 30 s timeout fires
+                        // (timeout is a safety net for edge cases like external
+                        // device reconnection that bypasses our signal path).
+                        broadcast_wake.wait_idle(Duration::from_secs(30));
+                    }
                 }
             });
             
@@ -451,6 +458,7 @@ fn main() {
             get_visualizer_data,
             set_visualizer_mode,
             set_beat_sensitivity,
+            get_track_waveform,
             clear_album_art_cache,
             get_cache_size,
             get_database_size,

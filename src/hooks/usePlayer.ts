@@ -176,18 +176,25 @@ export function usePlayer({
         }
     }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, getNextTrackIndex]);
 
-    // Pre-load next track for gapless playback (when crossfade disabled and gapless enabled)
+    // Pre-load next track for gapless playback.
+    // Also activates when crossfade is enabled — the preloaded sink will be
+    // used for an instant track switch at the crossfade midpoint, combining
+    // smooth volume fading with zero-gap preloading.
     useEffect(() => {
         if (!tracks?.length || currentTrack === null || !duration) return;
-        if (crossfade?.enabled) return;
 
         // Check if gapless playback is enabled in settings
         const gaplessEnabled = storeGetter ? storeGetter().gaplessPlayback : true;
         if (!gaplessEnabled) return;
 
+        // Preload lead-time: ensure the track is decoded before either the
+        // crossfade window opens or the gapless swap point.
+        const crossfadeSecs = crossfade?.enabled ? (crossfade.duration / 1000) : 0;
+        const preloadLeadTime = Math.max(5, crossfadeSecs + 2);
+
         const timeRemaining = duration - progress;
 
-        if (timeRemaining <= 5 && timeRemaining > 0 && !nextTrackPreloadedRef.current) {
+        if (timeRemaining <= preloadLeadTime && timeRemaining > 0 && !nextTrackPreloadedRef.current) {
             const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
 
             if (nextIdx !== null && nextIdx !== currentTrack) {

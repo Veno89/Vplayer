@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { TauriAPI } from '../services/TauriAPI';
 import type { AudioService, ToastService, Track } from '../types';
@@ -24,7 +24,6 @@ interface PlaybackEffectsParams {
 export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsParams): void {
   const prevPlayingRef = useRef<boolean | null>(null);
   const lastIncrementedTrackIdRef = useRef<string | null>(null);
-  const lastPositionSaveTimeRef = useRef<number>(0);
 
   // Store selectors
   const playing = useStore(s => s.playing);
@@ -32,7 +31,6 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   const currentTrack = useStore(s => s.currentTrack);
   const abRepeat = useStore(s => s.abRepeat);
   const volume = useStore(s => s.volume);
-  const progress = useStore(s => s.progress);
 
   // ── Set initial volume on mount ───────────────────────────────────
   // Uses the store volume if already set, otherwise falls back to defaultVolume setting
@@ -44,24 +42,35 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── A-B repeat looping + periodic position save ───────────────────
-  useEffect(() => {
-    // Save position at most once per second (debounced) — only if rememberTrackPosition is on
-    const now = Date.now();
-    const rememberPosition = useStore.getState().rememberTrackPosition;
-    if (rememberPosition && progress > 0 && now - lastPositionSaveTimeRef.current >= 1000) {
-      lastPositionSaveTimeRef.current = now;
-      useStore.getState().setLastPosition(progress);
+  // Uses an interval (1 Hz) instead of reacting to every progress tick (~10 Hz).
+  // This avoids 10 React effect runs/sec when only 1/sec of work is needed.
+  const abRepeatRef = useRef(abRepeat);
+  abRepeatRef.current = abRepeat;
+
+  const positionSaveAndABRepeat = useCallback(() => {
+    const state = useStore.getState();
+    const currentProgress = state.progress;
+
+    // Save position at most once per second — only if rememberTrackPosition is on
+    if (state.rememberTrackPosition && currentProgress > 0) {
+      state.setLastPosition(currentProgress);
     }
 
     // A-B repeat loop
-    if (abRepeat?.enabled && abRepeat?.pointA !== null && abRepeat?.pointB !== null) {
-      if (progress >= abRepeat.pointB) {
-        audio.seek(abRepeat.pointA).catch(err => {
+    const ab = abRepeatRef.current;
+    if (ab?.enabled && ab?.pointA !== null && ab?.pointB !== null) {
+      if (currentProgress >= ab.pointB) {
+        audio.seek(ab.pointA).catch(err => {
           console.error('Failed to seek for A-B repeat:', err);
         });
       }
     }
-  }, [progress, abRepeat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [audio]);
+
+  useEffect(() => {
+    const id = setInterval(positionSaveAndABRepeat, 1000);
+    return () => clearInterval(id);
+  }, [positionSaveAndABRepeat]);
 
   // ── Translate store `playing` → audio.play() / audio.pause() ──────
   // Supports fadeOnPause: ramp volume smoothly instead of abrupt stop/start

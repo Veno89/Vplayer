@@ -3,6 +3,38 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [0.9.22] - 2026-03-01
+
+### Audio Engine Reliability (P0 — Critical Fixes)
+- **Preload EffectsSource wrapper**: Preloaded tracks now go through the full DSP pipeline (EQ, reverb, echo, bass boost) — previously they bypassed effects entirely, causing audible timbre jumps on track transitions.
+- **Balance applied to output**: Stereo balance (`AtomicU32`-backed, lock-free) is now applied in the `EffectsSource::process()` hot path. Previously the balance setting had no effect on audio output.
+- **Lock-free visualizer buffer**: Replaced `Mutex<Vec<f32>>` with a lock-free `AtomicRingBuffer` for the visualizer data path, eliminating potential UI stalls when the audio thread holds the lock.
+
+### Audio Engine Quality (P1 — High Priority)
+- **Batch effects processing**: DSP effects now process frames in batches of 512 samples instead of per-sample, reducing function-call overhead significantly.
+- **`swap_to_preloaded` preserves duration**: Swapping to a preloaded track now carries over the decoded duration, preventing the progress bar from showing 0:00 until the first playback tick.
+- **Seek fallback state cleanup**: Failed seeks no longer orphan the player in a "seeking" state — errors now properly reset to the previous playing/paused state.
+- **SoftClipper no-op multiply removed**: The soft clipper was multiplying by `1.0` for signals below threshold. Now uses a fast-path branch skip.
+- **Extracted `reinit_device()`**: Device reinitialization logic extracted from the monolithic `play()` method into a dedicated, testable function.
+
+### Architecture Improvements (P2)
+- **`usePlaybackEffects` off progress dep**: Removed `progress` from the dependency array of the gapless preload effect — was causing the effect to re-fire every 200ms on every playback tick.
+- **Album art separate table**: Album art moved from inline `BLOB` in the tracks table to a dedicated `album_art` table (DB migration v7), reducing track query payload for art-less queries.
+- **Device-change detection by ID**: `has_device_changed()` now checks if the connected device still exists in `host.output_devices()` enumeration, instead of comparing against the OS default device.
+- **Split PlayerProvider**: Decomposed the monolithic `PlayerProvider` into three focused contexts — `AudioEngineContext`, `EffectsContext`, `PlaybackContext` — with a thin backward-compatible bridge. All 16 consumers still use `usePlayerContext()` unchanged.
+- **Condvar for idle broadcast thread**: Broadcast thread now uses `Condvar::wait_timeout(30s)` when idle instead of `thread::sleep(1s)`, waking instantly when `play()` or `load()` is called.
+
+### New Features (P3)
+- **Hybrid crossfade + gapless**: Crossfade and gapless preload are no longer mutually exclusive. Preload lead-time is now dynamic: `max(5s, crossfadeDuration + 2s)` so the next track is ready before the crossfade window opens.
+- **Configurable effects chain**: DSP effect processing order is now user-configurable via `effectOrder` setting. Effects are applied in the specified sequence with the soft clipper always running last.
+- **Waveform seekbar**: New `WaveformSeekbar` component renders a 200-bar waveform visualization behind the progress bar. Peaks are computed by the Rust backend (`get_track_waveform` command) and cached per-track. Played portion uses the accent color, unplayed portion is muted.
+
+### Code Organization
+- New files: `AudioEngineContext.tsx`, `EffectsContext.tsx`, `PlaybackContext.tsx`, `WaveformSeekbar.tsx`
+- New Rust command: `get_track_waveform` in `commands/visualizer.rs`
+- New types: `EffectId` enum (Rust + TypeScript), `BroadcastWake` struct, `AtomicRingBuffer`
+
+
 ## [0.9.21] - 2026-02-25
 
 ### Dead Code Cleanup & Gapless Playback Fix

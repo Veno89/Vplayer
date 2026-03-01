@@ -7,11 +7,19 @@ use rodio::{Source};
 use rodio::source::SeekError;
 use rodio::cpal::FromSample;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use crate::effects::EffectsProcessor;
 use super::visualizer::VisualizerBuffer;
 
 /// EffectsSource wraps a Source and applies audio effects (EQ, etc.) to each sample
+///
+/// Uses batched processing: reads up to BATCH_SIZE samples from the input,
+/// acquires the effects lock once, processes the whole batch, then yields
+/// samples one at a time from the internal buffer. This reduces lock
+/// acquisitions from ~88,200/sec to ~172/sec at 44.1kHz stereo.
+const BATCH_SIZE: usize = 512;
+
 pub struct EffectsSource<I>
 where
     I: Source,
@@ -19,8 +27,17 @@ where
 {
     input: I,
     processor: Arc<Mutex<EffectsProcessor>>,
-    visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
+    visualizer_buffer: Arc<VisualizerBuffer>,
+    /// Shared atomic balance value (f32 stored as u32 bits).
+    /// -1.0 = full left, 0.0 = center, 1.0 = full right.
+    balance: Arc<AtomicU32>,
     sample_rate_initialized: bool,
+    /// Tracks interleaved channel position (0 = left, 1 = right, etc.)
+    channel_index: u16,
+    /// Internal buffer for batched processing
+    batch_buf: Vec<f32>,
+    /// Read position within batch_buf
+    batch_pos: usize,
 }
 
 impl<I> EffectsSource<I>
@@ -31,13 +48,18 @@ where
     pub fn new(
         input: I,
         processor: Arc<Mutex<EffectsProcessor>>,
-        visualizer_buffer: Arc<Mutex<VisualizerBuffer>>,
+        visualizer_buffer: Arc<VisualizerBuffer>,
+        balance: Arc<AtomicU32>,
     ) -> Self {
         Self {
             input,
             processor,
             visualizer_buffer,
+            balance,
             sample_rate_initialized: false,
+            channel_index: 0,
+            batch_buf: Vec::with_capacity(BATCH_SIZE),
+            batch_pos: 0,
         }
     }
 }
@@ -58,36 +80,64 @@ where
             }
             self.sample_rate_initialized = true;
         }
-        
-        let sample = self.input.next();
-        
-        if sample.is_none() {
-            // Log once when source finishes to avoid spamming
-            // We can't easily dedup here without more state, but normally this returns None forever once done.
-            log::debug!("EffectsSource input returned None - track finished or decode error");
+
+        // If the batch buffer is exhausted, refill it
+        if self.batch_pos >= self.batch_buf.len() {
+            self.batch_buf.clear();
+            self.batch_pos = 0;
+
+            // Read up to BATCH_SIZE raw samples from input
+            for _ in 0..BATCH_SIZE {
+                match self.input.next() {
+                    Some(s) => self.batch_buf.push(f32::from_sample_(s)),
+                    None => break,
+                }
+            }
+
+            if self.batch_buf.is_empty() {
+                log::debug!("EffectsSource input returned None - track finished or decode error");
+                return None;
+            }
+
+            // Acquire effects lock once for the whole batch
+            match self.processor.try_lock() {
+                Ok(mut processor) => {
+                    for s in self.batch_buf.iter_mut() {
+                        *s = processor.process(*s);
+                    }
+                }
+                Err(_) => {
+                    // Lock contention — pass batch through unprocessed
+                    // to avoid audio dropouts during EQ adjustment
+                }
+            }
         }
 
-        sample.map(|sample| {
-            // Convert sample to f32 first
-            let sample_f32: f32 = f32::from_sample_(sample);
-            
-            // Try to process through effects, but don't block or panic if lock unavailable
-            let processed = match self.processor.try_lock() {
-                Ok(mut processor) => processor.process(sample_f32),
-                Err(_) => {
-                    // Lock unavailable (contention) - pass through unprocessed
-                    // This prevents audio dropouts when EQ is being adjusted
-                    sample_f32
-                }
+        // Yield the next sample from the batch
+        let processed = self.batch_buf[self.batch_pos];
+        self.batch_pos += 1;
+
+        // Apply stereo balance (lock-free atomic read)
+        let channels = self.input.channels();
+        let balanced = if channels >= 2 {
+            let balance = f32::from_bits(self.balance.load(Ordering::Relaxed));
+            let gain = if self.channel_index == 0 {
+                if balance > 0.0 { 1.0 - balance } else { 1.0 }
+            } else if self.channel_index == 1 {
+                if balance < 0.0 { 1.0 + balance } else { 1.0 }
+            } else {
+                1.0
             };
-            
-            // Send sample to visualizer buffer (don't block if lock fails)
-            if let Ok(mut buffer) = self.visualizer_buffer.try_lock() {
-                buffer.push(processed);
-            }
-            
+            self.channel_index = (self.channel_index + 1) % channels;
+            processed * gain
+        } else {
             processed
-        })
+        };
+
+        // Send sample to visualizer buffer (lock-free)
+        self.visualizer_buffer.push(balanced);
+
+        Some(balanced)
     }
 }
 

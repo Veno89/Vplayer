@@ -113,19 +113,25 @@ describe('usePlaybackEffects', () => {
   // Position save (reads from store progress, not audio.progress)
   // -------------------------------------------------------------------------
   it('should save last position every 5 seconds', () => {
+    vi.useFakeTimers();
     storeMock.progress = 10; // 10 % 5 === 0, so it should trigger
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
     );
 
+    // Advance past the 1-second interval tick
+    act(() => { vi.advanceTimersByTime(1100); });
+
     expect(storeMock.setLastPosition).toHaveBeenCalledWith(10);
+    vi.useRealTimers();
   });
 
   // -------------------------------------------------------------------------
   // A-B Repeat (reads from store progress, not audio.progress)
   // -------------------------------------------------------------------------
   it('should seek to point A when progress passes point B', () => {
+    vi.useFakeTimers();
     storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
     storeMock.progress = 31; // past point B
 
@@ -133,7 +139,11 @@ describe('usePlaybackEffects', () => {
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
     );
 
+    // Advance past the 1-second interval tick
+    act(() => { vi.advanceTimersByTime(1100); });
+
     expect(audioMock.seek).toHaveBeenCalledWith(10);
+    vi.useRealTimers();
   });
 
   it('should not seek when A-B repeat is disabled', () => {

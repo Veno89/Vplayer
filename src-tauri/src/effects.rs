@@ -11,7 +11,27 @@ use std::f32::consts::PI;
  * - Bass boost (Low-shelf)
  * - Echo/delay (Feedback delay)
  * - Soft Clipper (Limiter)
+ *
+ * The processing order is configurable via `effect_order`.
  */
+
+/// Identifies a single effect in the processing chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EffectId {
+    Equalizer,
+    BassBoost,
+    Echo,
+    Reverb,
+}
+
+/// Default effect chain order.
+pub const DEFAULT_EFFECT_ORDER: [EffectId; 4] = [
+    EffectId::Equalizer,
+    EffectId::BassBoost,
+    EffectId::Echo,
+    EffectId::Reverb,
+];
 
 /// Audio effects configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +45,13 @@ pub struct EffectsConfig {
     pub echo_feedback: f32,    // Echo feedback (0.0 to 0.9)
     pub echo_mix: f32,         // Echo wet/dry mix (0.0 to 1.0)
     pub eq_bands: [f32; 10],   // 10-band EQ gains in dB (-12.0 to +12.0)
+    /// Processing chain order. Soft clipper always runs last.
+    #[serde(default = "default_effect_order")]
+    pub effect_order: Vec<EffectId>,
+}
+
+fn default_effect_order() -> Vec<EffectId> {
+    DEFAULT_EFFECT_ORDER.to_vec()
 }
 
 impl Default for EffectsConfig {
@@ -38,6 +65,7 @@ impl Default for EffectsConfig {
             echo_feedback: 0.3,
             echo_mix: 0.0,
             eq_bands: [0.0; 10],
+            effect_order: DEFAULT_EFFECT_ORDER.to_vec(),
         }
     }
 }
@@ -466,8 +494,13 @@ impl SoftClipper {
     
     // Standard tanh saturation (smoother, analog-like)
     pub fn saturate(input: f32) -> f32 {
-        // Boost slightly to allow saturation effect
-        (input * 1.0).tanh()
+        // Only apply limiter when signal might clip; for normal
+        // levels tanh(x) ≈ x, so skip the expensive transcendental.
+        if input.abs() > 0.9 {
+            input.tanh()
+        } else {
+            input
+        }
     }
 }
 
@@ -524,29 +557,36 @@ impl EffectsProcessor {
     
     pub fn process(&mut self, input: f32) -> f32 {
         let mut output = input;
-        
-        // 1. Equalizer
-        output = self.equalizer.process(output);
 
-        // 2. Bass boost
-        if self.config.bass_boost > 0.0 {
-            output = self.bass_boost.process(output);
+        // Walk the user-defined effect order
+        for effect in &self.config.effect_order {
+            match effect {
+                EffectId::Equalizer => {
+                    output = self.equalizer.process(output);
+                }
+                EffectId::BassBoost => {
+                    if self.config.bass_boost > 0.0 {
+                        output = self.bass_boost.process(output);
+                    }
+                }
+                EffectId::Echo => {
+                    if self.config.echo_mix > 0.0 {
+                        let echo_wet = self.echo.process(output);
+                        output = output * (1.0 - self.config.echo_mix)
+                            + echo_wet * self.config.echo_mix;
+                    }
+                }
+                EffectId::Reverb => {
+                    if self.config.reverb_mix > 0.0 {
+                        let reverb_wet = self.reverb.process(output);
+                        output = output * (1.0 - self.config.reverb_mix)
+                            + reverb_wet * self.config.reverb_mix;
+                    }
+                }
+            }
         }
-        
-        // 3. Echo
-        if self.config.echo_mix > 0.0 {
-            let echo_wet = self.echo.process(output);
-            output = output * (1.0 - self.config.echo_mix) + echo_wet * self.config.echo_mix;
-        }
-        
-        // 4. Reverb
-        if self.config.reverb_mix > 0.0 {
-            let reverb_wet = self.reverb.process(output);
-            output = output * (1.0 - self.config.reverb_mix) + reverb_wet * self.config.reverb_mix;
-        }
-        
-        // 5. Soft Clipper (Safety Limiter)
-        // Use tanh saturation for analog-style limiting
+
+        // Soft Clipper always runs last (safety limiter)
         SoftClipper::saturate(output)
     }
     

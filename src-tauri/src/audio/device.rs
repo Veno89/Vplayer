@@ -3,7 +3,7 @@
 //! This module handles audio device enumeration, selection, and
 //! device change detection for graceful recovery.
 
-use rodio::{DeviceTrait, OutputStream, OutputStreamBuilder};
+use rodio::{OutputStream, OutputStreamBuilder};
 use rodio::cpal::traits::{HostTrait, DeviceTrait as CpalDeviceTrait};
 use rodio::mixer::Mixer;
 use log::{info, warn, error};
@@ -124,27 +124,31 @@ pub fn create_high_quality_output_with_device_name() -> AppResult<(OutputStream,
     }
 }
 
-/// Check if the default audio device has changed
+/// Check if the connected audio device has disappeared.
+///
+/// Instead of comparing against the OS default (which can change without the
+/// connected device going away), we check whether the device we originally
+/// connected to is still present in the system enumeration.
 pub fn has_device_changed(connected_device_name: &Option<String>) -> bool {
+    let name = match connected_device_name {
+        Some(n) => n,
+        // If we don't know what we connected to, assume it hasn't changed
+        None => return false,
+    };
+
     let host = rodio::cpal::default_host();
-    
-    // Get current default device name
-    let current_default = host.default_output_device()
-        .and_then(|d| d.name().ok());
-    
-    // If we don't know what we connected to, assume it hasn't changed
-    if connected_device_name.is_none() {
-        return false;
+
+    // Check if our connected device still exists in the output device list
+    let still_present = host
+        .output_devices()
+        .map(|devices| devices.filter_map(|d| d.name().ok()).any(|n| n == *name))
+        .unwrap_or(false);
+
+    if !still_present {
+        info!("Connected audio device disappeared: {:?}", name);
     }
-    
-    // Check if device changed
-    let changed = current_default != *connected_device_name;
-    
-    if changed {
-        info!("Audio device changed: {:?} -> {:?}", connected_device_name, current_default);
-    }
-    
-    changed
+
+    !still_present
 }
 
 /// Check if there's any audio device available

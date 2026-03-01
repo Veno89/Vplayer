@@ -30,6 +30,7 @@ export function useEqualizer(): EqualizerAPI {
   const syncWithBackend = useCallback(async (bands: EqBand[]) => {
     try {
       const eqGains = convertBandsToBackend(bands);
+      const effectOrder = useStore.getState().effectOrder;
       await TauriAPI.setAudioEffects({
         tempo: 1.0,
         reverb_mix: 0.0,
@@ -39,6 +40,7 @@ export function useEqualizer(): EqualizerAPI {
         echo_feedback: 0.3,
         echo_mix: 0.0,
         eq_bands: eqGains,
+        effect_order: effectOrder,
       });
     } catch (err) {
       console.error('Failed to sync EQ with backend:', err);

@@ -63,7 +63,7 @@ src/
 ├── store/               # Zustand state management
 │   └── slices/          # Store slices (playerSlice, uiSlice, settingsSlice, musicBrainzSlice)
 ├── services/            # External service wrappers (TauriAPI, ErrorHandler, MusicBrainzAPI)
-├── context/             # React context (PlayerProvider.tsx)
+├── context/             # React context (PlayerProvider, AudioEngine, Effects, Playback)
 ├── types/               # Shared TypeScript interfaces
 ├── utils/               # Helpers (formatters, constants, colorSchemes, logger)
 └── windowRegistry.tsx   # Declarative window ID → component mapping
@@ -111,7 +111,8 @@ src-tauri/src/
 - **10-band EQ**: 9 presets + custom settings, real-time processing
 - **A-B Repeat**: Loop a section of a track
 - **Stereo Balance**: Left/right balance control
-- **Audio Effects**: Reverb, echo, bass boost (Rust DSP pipeline)
+- **Audio Effects**: Reverb, echo, bass boost with configurable chain order (Rust DSP pipeline)
+- **Waveform Seekbar**: Visual waveform display behind the progress bar, computed by Rust backend
 
 ### Library Management
 - **Auto-scanning**: Add folders, auto-imports new files
@@ -296,7 +297,7 @@ npm run tauri:build     # Production build
 - **Query caching**: 5-minute TTL cache for `get_all_tracks`
 - **Incremental scanning**: Only processes new or modified files (mtime comparison)
 - **Event debouncing**: Batch file system changes via `notify` crate
-- **Schema migrations**: Versioned, idempotent migrations (v1–v5)
+- **Schema migrations**: Versioned, idempotent migrations (v1–v7)
 
 ---
 
@@ -385,4 +386,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.21 | **Updated**: February 2026
+**Version**: 0.9.22 | **Updated**: March 2026
