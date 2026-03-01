@@ -1,4 +1,7 @@
 import { Track } from '../types';
+import type { EffectId } from '../types/audioEffects';
+import { DEFAULT_EFFECT_ORDER as CANONICAL_EFFECT_ORDER } from '../types/audioEffects';
+export type { EffectId } from '../types/audioEffects';
 
 // =============================================================================
 // Shared / Primitive Types
@@ -104,9 +107,7 @@ export interface EqBand {
     value: number;
 }
 
-export type EffectId = 'equalizer' | 'bass_boost' | 'echo' | 'reverb';
-
-export const DEFAULT_EFFECT_ORDER: EffectId[] = ['equalizer', 'bass_boost', 'echo', 'reverb'];
+export const DEFAULT_EFFECT_ORDER = CANONICAL_EFFECT_ORDER;
 
 // =============================================================================
 // Keyboard Shortcut Types

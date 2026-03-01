@@ -70,7 +70,13 @@ src/
 
 src-tauri/src/
 ├── main.rs              # App setup, command registration, global shortcuts, tray
-├── database.rs          # SQLite schema, migrations, queries, caching
+├── database.rs          # Database facade, shared types, tests
+├── database_schema.rs   # SQLite schema + migrations + index creation
+├── database_tracks.rs   # Track repository queries/mutations
+├── database_playlist.rs # Playlist repository queries/mutations
+├── database_folders.rs  # Folder repository queries/mutations
+├── database_album_art.rs# Album art repository queries/mutations
+├── database_failed_tracks.rs # Failed-track repository queries/mutations
 ├── scanner.rs           # Filesystem scanning & metadata extraction (lofty)
 ├── error.rs             # Typed error system (AppError enum)
 ├── effects.rs           # DSP: 10-band EQ, reverb, echo, bass boost
@@ -294,7 +300,7 @@ npm run tauri:build     # Production build
 
 ### Backend
 - **Database indexes**: On artist, album, rating, play_count, last_played, date_added
-- **Query caching**: 5-minute TTL cache for `get_all_tracks`
+- **`get_all_tracks` cache investigation**: no backend TTL query cache currently; relies on SQLite WAL/indexing, with further caching considered as a future enhancement
 - **Incremental scanning**: Only processes new or modified files (mtime comparison)
 - **Event debouncing**: Batch file system changes via `notify` crate
 - **Schema migrations**: Versioned, idempotent migrations (v1–v7)
@@ -386,4 +392,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.22 | **Updated**: March 2026
+**Version**: 0.9.23 | **Updated**: March 2026

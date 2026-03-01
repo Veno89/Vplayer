@@ -7,7 +7,7 @@
  * - Persist function picks all state keys from SETTINGS_DEFAULTS
  * - Generic `updateSetting(key, value)` for new code
  */
-import type { AppStore, SettingsSlice, SettingsSliceState, EffectId } from '../types';
+import { DEFAULT_EFFECT_ORDER, type AppStore, type SettingsSlice, type SettingsSliceState } from '../types';
 
 type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
 
@@ -71,7 +71,7 @@ export const SETTINGS_DEFAULTS: SettingsSliceState = {
   ],
 
   // Effects chain order
-  effectOrder: ['equalizer', 'bass_boost', 'echo', 'reverb'] as EffectId[],
+  effectOrder: [...DEFAULT_EFFECT_ORDER],
 
   // Crossfade Settings
   crossfadeEnabled: false,

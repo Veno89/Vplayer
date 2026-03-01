@@ -174,7 +174,10 @@ pub fn store_replaygain(
     track_path: &str,
     data: &ReplayGainData,
 ) -> Result<(), String> {
-    let conn = conn.lock().unwrap();
+    let conn = conn.lock().unwrap_or_else(|poisoned| {
+        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
+        poisoned.into_inner()
+    });
     
     conn.execute(
         "UPDATE tracks SET track_gain = ?, track_peak = ?, loudness = ? WHERE path = ?",
@@ -192,7 +195,10 @@ pub fn get_replaygain(
     conn: &Mutex<Connection>,
     track_path: &str,
 ) -> Result<Option<ReplayGainData>, String> {
-    let conn = conn.lock().unwrap();
+    let conn = conn.lock().unwrap_or_else(|poisoned| {
+        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
+        poisoned.into_inner()
+    });
     
     let mut stmt = conn
         .prepare("SELECT track_gain, track_peak, loudness FROM tracks WHERE path = ?")

@@ -28,31 +28,28 @@ pub fn validate_path(path: &str) -> AppResult<PathBuf> {
     Ok(p)
 }
 
-/// Validate and sanitize a playlist name
+/// Validate a playlist name.
 ///
+/// - Trims surrounding whitespace
 /// - Checks for empty name
-/// - Enforces maximum length
-/// - Removes invalid characters
+/// - Enforces maximum length (by character count)
+/// - Rejects control characters
 pub fn validate_playlist_name(name: &str) -> AppResult<String> {
-    if name.is_empty() {
+    let trimmed = name.trim();
+
+    if trimmed.is_empty() {
         return Err(AppError::Validation("Playlist name cannot be empty".to_string()));
     }
-    
-    if name.len() > 255 {
+
+    if trimmed.chars().count() > 255 {
         return Err(AppError::Validation("Playlist name too long (max 255 characters)".to_string()));
     }
-    
-    // Remove invalid characters (keep alphanumeric, spaces, hyphens, underscores)
-    let sanitized: String = name
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
-        .collect();
-    
-    if sanitized.is_empty() {
-        return Err(AppError::Validation("Playlist name contains only invalid characters".to_string()));
+
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(AppError::Validation("Playlist name contains invalid control characters".to_string()));
     }
-    
-    Ok(sanitized)
+
+    Ok(trimmed.to_string())
 }
 
 /// Validate track rating
@@ -83,6 +80,9 @@ mod tests {
     fn test_validate_playlist_name_valid() {
         assert_eq!(validate_playlist_name("My Playlist").unwrap(), "My Playlist");
         assert_eq!(validate_playlist_name("Test-123").unwrap(), "Test-123");
+        assert_eq!(validate_playlist_name("Café Vibes").unwrap(), "Café Vibes");
+        assert_eq!(validate_playlist_name("日本の音楽").unwrap(), "日本の音楽");
+        assert_eq!(validate_playlist_name("  Chill / Focus  ").unwrap(), "Chill / Focus");
     }
 
     #[test]
@@ -91,8 +91,8 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_playlist_name_sanitize() {
-        assert_eq!(validate_playlist_name("Test@#$Playlist").unwrap(), "TestPlaylist");
+    fn test_validate_playlist_name_rejects_control_chars() {
+        assert!(validate_playlist_name("Bad\nName").is_err());
     }
 
     #[test]

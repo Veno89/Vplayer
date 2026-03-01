@@ -49,6 +49,9 @@ pub fn get_balance(state: tauri::State<AppState>) -> f32 {
 
 #[tauri::command]
 pub fn seek_to(position: f64, state: tauri::State<AppState>) -> Result<(), String> {
+    if position.is_nan() || position < 0.0 {
+        return Err("Seek position must be a non-negative number".to_string());
+    }
     state.player.seek(position).map_err(|e| e.into())
 }
 
@@ -110,12 +113,17 @@ pub fn get_audio_devices() -> Result<Vec<AudioDevice>, String> {
 
 #[tauri::command]
 pub fn set_audio_device(device_name: String, state: tauri::State<AppState>) -> Result<(), String> {
+    if device_name.trim().is_empty() {
+        return Err("Device name cannot be empty".to_string());
+    }
     state.player.set_output_device(&device_name).map_err(|e| e.into())
 }
 
 // Gapless playback commands
 #[tauri::command]
 pub fn preload_track(path: String, state: tauri::State<AppState>) -> Result<(), String> {
+    // Mirror load_track validation to avoid preloading invalid/malicious paths.
+    validation::validate_path(&path).map_err(|e| e.to_string())?;
     state.player.preload(path).map_err(|e| e.into())
 }
 

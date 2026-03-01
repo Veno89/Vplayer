@@ -83,15 +83,30 @@ const useUpdaterStore = create<UpdaterAPI>((set, get) => ({
       const update = await check();
       if (!update) throw new Error('No update available');
 
+      let downloadedBytes = 0;
+      let totalBytes = 0;
+
       await update.downloadAndInstall((event) => {
         switch (event.event) {
-          case 'Started':
+          case 'Started': {
+            downloadedBytes = 0;
+            totalBytes = (event.data as any)?.contentLength ?? 0;
             set({ downloadProgress: 0 });
             break;
+          }
           case 'Progress': {
-            const total = (event.data as any).contentLength ?? 1;
-            const progress = event.data.chunkLength / total * 100;
-            set({ downloadProgress: Math.round(progress) });
+            const chunkLength = (event.data as any)?.chunkLength ?? 0;
+            const eventTotal = (event.data as any)?.contentLength ?? 0;
+
+            downloadedBytes += chunkLength;
+            if (eventTotal > 0) {
+              totalBytes = eventTotal;
+            }
+
+            if (totalBytes > 0) {
+              const progress = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100));
+              set({ downloadProgress: progress });
+            }
             break;
           }
           case 'Finished':

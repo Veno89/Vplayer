@@ -52,7 +52,37 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     setLoadingTrackIndex: (index) => set({ loadingTrackIndex: index }),
     setVolume: (volume) => set({ volume }),
 
-    setActivePlaybackTracks: (tracks) => set({ activePlaybackTracks: tracks }),
+    setActivePlaybackTracks: (tracks) =>
+        set((state) => {
+            if (state.currentTrack === null || state.currentTrack === undefined) {
+                return { activePlaybackTracks: tracks };
+            }
+
+            const previousTrack = state.activePlaybackTracks[state.currentTrack];
+            const currentTrackId = previousTrack?.id ?? state.lastTrackId;
+
+            if (!currentTrackId) {
+                const fallbackIndex = state.currentTrack < tracks.length ? state.currentTrack : null;
+                return {
+                    activePlaybackTracks: tracks,
+                    currentTrack: fallbackIndex,
+                };
+            }
+
+            const remappedIndex = tracks.findIndex(track => track.id === currentTrackId);
+            if (remappedIndex !== -1) {
+                return {
+                    activePlaybackTracks: tracks,
+                    currentTrack: remappedIndex,
+                };
+            }
+
+            const fallbackIndex = state.currentTrack < tracks.length ? state.currentTrack : null;
+            return {
+                activePlaybackTracks: tracks,
+                currentTrack: fallbackIndex,
+            };
+        }),
 
     // === Restore Actions ===
     setLastTrackId: (id: string | null) => set({ lastTrackId: id }),

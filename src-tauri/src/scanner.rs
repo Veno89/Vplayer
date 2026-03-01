@@ -7,6 +7,7 @@ use log::{info, warn, error};
 use lofty::TaggedFileExt;
 use tauri::{Window, Emitter};
 use crate::database::Database;
+use crate::time_utils::now_millis;
 
 /// Standard SELECT column list for Track::from_row.
 /// Every query that uses Track::from_row MUST select exactly these columns in this order.
@@ -234,7 +235,6 @@ impl Scanner {
     
     pub fn extract_track_info(path: &Path) -> Result<Track, String> {
         use lofty::{Probe, Accessor, AudioFile};
-        use std::time::{SystemTime, UNIX_EPOCH};
         
         let tagged_file = Probe::open(path)
             .map_err(|e| e.to_string())?
@@ -262,10 +262,7 @@ impl Scanner {
         let path_str = path.to_string_lossy().to_string();
         let id = format!("track_{}", path_str.replace(['/', '\\'], "_"));
         
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = now_millis();
         
         Ok(Track {
             id,
@@ -305,5 +302,71 @@ impl Scanner {
         }
         
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::Arc;
+
+    fn temp_scan_dir(test_name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "vplayer_scanner_test_{}_{}",
+            test_name,
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn collect_audio_files_filters_by_supported_extensions_case_insensitive() {
+        let dir = temp_scan_dir("extensions");
+        fs::create_dir_all(&dir).expect("create temp scan dir failed");
+
+        let mp3 = dir.join("song1.MP3");
+        let flac = dir.join("song2.flac");
+        let txt = dir.join("notes.txt");
+        let no_ext = dir.join("README");
+
+        fs::write(&mp3, b"dummy").expect("write mp3 placeholder failed");
+        fs::write(&flac, b"dummy").expect("write flac placeholder failed");
+        fs::write(&txt, b"dummy").expect("write txt placeholder failed");
+        fs::write(&no_ext, b"dummy").expect("write no-ext placeholder failed");
+
+        let mut files = Scanner::collect_audio_files(&dir.to_string_lossy());
+        files.sort();
+
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|p| p == &mp3));
+        assert!(files.iter().any(|p| p == &flac));
+
+        let _ = fs::remove_file(mp3);
+        let _ = fs::remove_file(flac);
+        let _ = fs::remove_file(txt);
+        let _ = fs::remove_file(no_ext);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn scan_directory_respects_pre_cancel_flag() {
+        let dir = temp_scan_dir("cancel");
+        fs::create_dir_all(&dir).expect("create temp scan dir failed");
+        let candidate = dir.join("will-not-scan.mp3");
+        fs::write(&candidate, b"dummy").expect("write candidate file failed");
+
+        let cancel_flag = Arc::new(AtomicBool::new(true));
+        let tracks = Scanner::scan_directory(
+            &dir.to_string_lossy(),
+            None,
+            Some(cancel_flag),
+            None,
+        )
+        .expect("scan_directory should return Ok when pre-cancelled");
+
+        assert!(tracks.is_empty());
+
+        let _ = fs::remove_file(candidate);
+        let _ = fs::remove_dir_all(dir);
     }
 }

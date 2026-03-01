@@ -7,6 +7,12 @@
 mod audio;
 mod scanner;
 mod database;
+mod database_album_art;
+mod database_failed_tracks;
+mod database_folders;
+mod database_playlist;
+mod database_schema;
+mod database_tracks;
 mod error;
 mod watcher;
 mod playlist_io;
@@ -14,9 +20,11 @@ mod smart_playlists;
 mod validation;
 mod lyrics;
 mod replaygain;
+mod tag_service;
 mod effects;
 mod visualizer;
 mod commands;
+mod time_utils;
 
 use audio::AudioPlayer;
 use database::Database;
@@ -38,6 +46,7 @@ struct PlaybackTick {
     duration: f64,
     is_playing: bool,
     is_finished: bool,
+    is_paused: bool,
 }
 
 // Re-export commands for use in invoke_handler
@@ -53,7 +62,7 @@ use commands::{
     scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, remove_duplicate_folders, increment_play_count,
-    get_recently_played, get_most_played, get_album_art, extract_and_cache_album_art,
+    get_recently_played, get_most_played, get_album_art, get_album_art_batch, extract_and_cache_album_art,
     update_track_tags, show_in_folder, reset_play_count, write_text_file,
     // Playlist commands
     create_playlist, get_all_playlists, delete_playlist, rename_playlist,
@@ -233,6 +242,7 @@ fn main() {
                             duration: snap.duration,
                             is_playing: true,
                             is_finished: false,
+                            is_paused: false,
                         };
                         let _ = broadcast_handle.emit("playback-tick", tick);
                     } else {
@@ -240,7 +250,7 @@ fn main() {
                     }
 
                     // Detect track-end transition: was playing → now finished
-                    if was_playing && !snap.is_playing && snap.is_finished {
+                    if was_playing && !snap.is_playing && snap.is_finished && !snap.is_paused {
                         // Guard: if the device disappeared, the sink empties but
                         // the track didn't truly finish — it was interrupted.
                         if player_for_broadcast.is_device_available() {
@@ -424,6 +434,7 @@ fn main() {
             remove_track,
             remove_duplicate_folders,
             get_album_art,
+            get_album_art_batch,
             extract_and_cache_album_art,
             update_track_tags,
             show_in_folder,

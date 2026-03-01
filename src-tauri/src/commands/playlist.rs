@@ -94,13 +94,16 @@ pub fn export_playlist(playlist_id: String, output_path: String, state: tauri::S
 #[tauri::command]
 pub fn import_playlist(playlist_name: String, input_path: String, state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     info!("Importing playlist from {} as {}", input_path, playlist_name);
+
+    let validated_name = crate::validation::validate_playlist_name(&playlist_name)
+        .map_err(|e| e.to_string())?;
     
     // Import M3U file
     let tracks = PlaylistIO::import_m3u(&input_path)
         .map_err(|e| format!("Failed to import playlist: {}", e))?;
     
     // Create playlist in database
-    let playlist_id = state.db.create_playlist(&playlist_name)
+    let playlist_id = state.db.create_playlist(&validated_name)
         .map_err(|e| format!("Failed to create playlist: {}", e))?;
     
     let mut imported_track_ids = Vec::new();

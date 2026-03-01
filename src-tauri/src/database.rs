@@ -1,12 +1,8 @@
-use rusqlite::{Connection, Result, params, ToSql};
+use rusqlite::Connection;
 use serde::Deserialize;
-use log::{info, warn};
-use crate::scanner::Track;
+use log::warn;
 use std::path::Path;
 use std::sync::Mutex;
-
-/// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 7;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +31,7 @@ impl Database {
     /// A poisoned Mutex means a thread panicked while holding the lock, but the
     /// underlying SQLite `Connection` is almost certainly still valid, so we recover
     /// the inner value and log a warning instead of crashing the whole application.
-    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|poisoned| {
             warn!("Database mutex was poisoned — recovering inner connection");
             poisoned.into_inner()
@@ -43,932 +39,232 @@ impl Database {
     }
 }
 
-impl Database {
-    pub fn new(db_path: &Path) -> Result<Self> {
-        info!("Initializing database at {:?}", db_path);
-        let conn = Connection::open(db_path)?;
-        
-        // Enable WAL mode for better concurrent read performance,
-        // NORMAL synchronous for durability with WAL, and foreign key enforcement.
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;"
-        )?;
-        
-        // Create core tables (includes all columns for fresh installs)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS tracks (
-                id TEXT PRIMARY KEY,
-                path TEXT NOT NULL,
-                name TEXT NOT NULL,
-                title TEXT,
-                artist TEXT,
-                album TEXT,
-                duration REAL NOT NULL,
-                date_added INTEGER NOT NULL,
-                play_count INTEGER DEFAULT 0,
-                last_played INTEGER DEFAULT 0,
-                rating INTEGER DEFAULT 0,
-                file_modified INTEGER DEFAULT 0,
-                album_art BLOB,
-                track_gain REAL,
-                track_peak REAL,
-                loudness REAL,
-                genre TEXT,
-                year INTEGER,
-                track_number INTEGER,
-                disc_number INTEGER
-            )",
-            [],
-        )?;
-        
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS track_album_art (
-                track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-                data BLOB NOT NULL
-            )",
-            [],
-        )?;
-        
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS folders (
-                id TEXT PRIMARY KEY,
-                path TEXT NOT NULL,
-                name TEXT NOT NULL,
-                date_added INTEGER NOT NULL
-            )",
-            [],
-        )?;
-        
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS playlists (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            )",
-            [],
-        )?;
-        
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS playlist_tracks (
-                playlist_id TEXT NOT NULL,
-                track_id TEXT NOT NULL,
-                position INTEGER NOT NULL,
-                FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
-                FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
-                PRIMARY KEY (playlist_id, track_id)
-            )",
-            [],
-        )?;
-        
-        // Table for failed track paths (to skip on future scans)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS failed_tracks (
-                path TEXT PRIMARY KEY,
-                error TEXT NOT NULL,
-                failed_at INTEGER NOT NULL
-            )",
-            [],
-        )?;
-        
-        // Initialize smart playlists table
-        crate::smart_playlists::create_smart_playlist_table(&conn)?;
-        
-        // Run versioned migrations for existing databases
-        Self::run_migrations(&conn)?;
-        
-        // Create indexes for common queries
-        Self::create_indexes(&conn);
-        
-        info!("Database initialized successfully");
-        Ok(Self { 
-            conn: Mutex::new(conn),
-        })
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::Track;
+    use crate::time_utils::now_millis;
+    use std::sync::Arc;
+    use std::thread;
+    use std::path::PathBuf;
+
+    fn temp_db_path(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("vplayer_db_test_{}_{}.db", test_name, uuid::Uuid::new_v4()))
     }
-    
-    /// Run versioned database migrations.
-    /// Each migration is idempotent — ALTER TABLE ADD COLUMN is a no-op 
-    /// if the column already exists (fresh installs include all columns).
-    fn run_migrations(conn: &Connection) -> Result<()> {
-        // Create schema_version table if it doesn't exist
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_version (
-                version INTEGER NOT NULL
-            )",
-            [],
-        )?;
-        
-        // Get current version (0 if table is empty = legacy database)
-        let current_version: i32 = conn
-            .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| row.get(0))
-            .unwrap_or(0);
-        
-        if current_version >= SCHEMA_VERSION {
-            info!("Database schema is up to date (v{})", current_version);
-            return Ok(());
-        }
-        
-        info!("Migrating database from v{} to v{}", current_version, SCHEMA_VERSION);
-        
-        // Migration v1: Add play_count and last_played columns
-        if current_version < 1 {
-            Self::migrate_add_column(conn, "tracks", "play_count", "INTEGER DEFAULT 0", 1)?;
-            Self::migrate_add_column(conn, "tracks", "last_played", "INTEGER DEFAULT 0", 1)?;
-            info!("Migration v1 complete: play_count, last_played columns");
-        }
-        
-        // Migration v2: Add rating column
-        if current_version < 2 {
-            Self::migrate_add_column(conn, "tracks", "rating", "INTEGER DEFAULT 0", 2)?;
-            info!("Migration v2 complete: rating column");
-        }
-        
-        // Migration v3: Add file_modified column for incremental scanning
-        if current_version < 3 {
-            Self::migrate_add_column(conn, "tracks", "file_modified", "INTEGER DEFAULT 0", 3)?;
-            info!("Migration v3 complete: file_modified column");
-        }
-        
-        // Migration v4: Add album_art BLOB column
-        if current_version < 4 {
-            Self::migrate_add_column(conn, "tracks", "album_art", "BLOB", 4)?;
-            info!("Migration v4 complete: album_art column");
-        }
-        
-        // Migration v5: Add ReplayGain columns
-        if current_version < 5 {
-            Self::migrate_add_column(conn, "tracks", "track_gain", "REAL", 5)?;
-            Self::migrate_add_column(conn, "tracks", "track_peak", "REAL", 5)?;
-            Self::migrate_add_column(conn, "tracks", "loudness", "REAL", 5)?;
-            info!("Migration v5 complete: track_gain, track_peak, loudness columns");
-        }
-        
-        // Migration v6: Add genre, year, track_number, disc_number columns
-        if current_version < 6 {
-            Self::migrate_add_column(conn, "tracks", "genre", "TEXT", 6)?;
-            Self::migrate_add_column(conn, "tracks", "year", "INTEGER", 6)?;
-            Self::migrate_add_column(conn, "tracks", "track_number", "INTEGER", 6)?;
-            Self::migrate_add_column(conn, "tracks", "disc_number", "INTEGER", 6)?;
-            info!("Migration v6 complete: genre, year, track_number, disc_number columns");
-        }
-        
-        // Migration v7: Move album_art to a separate table to keep the tracks
-        // table lean. Large BLOB data in the main table bloats the SQLite page
-        // cache and slows index scans.
-        if current_version < 7 {
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS track_album_art (
-                    track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-                    data BLOB NOT NULL
-                )",
-                [],
-            )?;
-            // Copy existing album art data to the new table
-            conn.execute(
-                "INSERT OR IGNORE INTO track_album_art (track_id, data)
-                 SELECT id, album_art FROM tracks WHERE album_art IS NOT NULL",
-                [],
-            )?;
-            // Null out the old column to reclaim page space on next VACUUM.
-            // (SQLite < 3.35 doesn't support DROP COLUMN, so we just clear it.)
-            conn.execute("UPDATE tracks SET album_art = NULL WHERE album_art IS NOT NULL", [])?;
-            info!("Migration v7 complete: album art moved to track_album_art table");
-        }
-        
-        // Update stored schema version
-        conn.execute("DELETE FROM schema_version", [])?;
-        conn.execute(
-            "INSERT INTO schema_version (version) VALUES (?1)",
-            params![SCHEMA_VERSION],
-        )?;
-        
-        info!("Database migration complete — now at v{}", SCHEMA_VERSION);
-        Ok(())
+
+    fn cleanup_db_files(path: &Path) {
+        let _ = std::fs::remove_file(path);
+        let wal = PathBuf::from(format!("{}-wal", path.to_string_lossy()));
+        let shm = PathBuf::from(format!("{}-shm", path.to_string_lossy()));
+        let _ = std::fs::remove_file(wal);
+        let _ = std::fs::remove_file(shm);
     }
-    
-    /// Safely add a column to a table. Logs and continues if the column already exists.
-    fn migrate_add_column(
-        conn: &Connection,
-        table: &str,
-        column: &str,
-        col_type: &str,
-        _version: i32,
-    ) -> Result<()> {
-        let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, col_type);
-        match conn.execute(&sql, []) {
-            Ok(_) => {
-                info!("  Added column {}.{}", table, column);
-                Ok(())
-            }
-            Err(e) => {
-                // SQLite returns "duplicate column name" if column already exists
-                let msg = e.to_string();
-                if msg.contains("duplicate column") {
-                    info!("  Column {}.{} already exists, skipping", table, column);
-                    Ok(())
-                } else {
-                    warn!("  Failed to add column {}.{}: {}", table, column, msg);
-                    Err(e)
-                }
-            }
+
+    fn sample_track(id: &str, path: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            path: path.to_string(),
+            name: "Sample".to_string(),
+            title: Some("Sample Title".to_string()),
+            artist: Some("Sample Artist".to_string()),
+            album: Some("Sample Album".to_string()),
+            genre: Some("Rock".to_string()),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration: 180.0,
+            date_added: now_millis(),
+            rating: 0,
+            play_count: 0,
+            last_played: 0,
         }
     }
-    
-    /// Create performance indexes (idempotent via IF NOT EXISTS).
-    fn create_indexes(conn: &Connection) {
-        let indexes = [
-            ("idx_tracks_genre", "tracks(genre)"),
-            ("idx_tracks_artist", "tracks(artist)"),
-            ("idx_tracks_album", "tracks(album)"),
-            ("idx_tracks_rating", "tracks(rating)"),
-            ("idx_tracks_play_count", "tracks(play_count)"),
-            ("idx_tracks_last_played", "tracks(last_played)"),
-            ("idx_tracks_date_added", "tracks(date_added)"),
-            ("idx_playlist_tracks_playlist", "playlist_tracks(playlist_id)"),
-            ("idx_playlist_tracks_track", "playlist_tracks(track_id)"),
+
+    #[test]
+    fn add_and_remove_folder_with_tracks_is_consistent() {
+        let db_path = temp_db_path("folder_tx");
+        let db = Database::new(&db_path).expect("db init failed");
+
+        let folder_id = "folder_test_1";
+        let folder_path = "C:/Music/TestFolder";
+        let folder_name = "TestFolder";
+        let tracks = vec![
+            sample_track("track_1", "C:/Music/TestFolder/track1.mp3"),
+            sample_track("track_2", "C:/Music/TestFolder/track2.mp3"),
         ];
-        
-        for (name, definition) in &indexes {
-            let sql = format!("CREATE INDEX IF NOT EXISTS {} ON {}", name, definition);
-            if let Err(e) = conn.execute(&sql, []) {
-                warn!("Failed to create index {}: {}", name, e);
-            }
-        }
-    }
-    
-    pub fn add_track(&self, track: &Track) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
-            params![
-                track.id,
-                track.path,
-                track.name,
-                track.title,
-                track.artist,
-                track.album,
-                track.genre,
-                track.year,
-                track.track_number,
-                track.disc_number,
-                track.duration,
-                track.date_added,
-            ],
-        )?;
-        Ok(())
-    }
-    
-    pub fn get_all_tracks(&self) -> Result<Vec<Track>> {
-        info!("Fetching all tracks from database");
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            &format!("SELECT {} FROM tracks", crate::scanner::TRACK_SELECT_COLUMNS)
-        )?;
-        
-        let tracks = stmt.query_map([], Track::from_row)?
-            .collect::<Result<Vec<_>>>()?;
-        
-        Ok(tracks)
+
+        db.add_folder_with_tracks(folder_id, folder_path, folder_name, now_millis(), &tracks)
+            .expect("add_folder_with_tracks failed");
+
+        let folders = db.get_all_folders().expect("get_all_folders failed");
+        assert!(folders.iter().any(|(id, path, _, _)| id == folder_id && path == folder_path));
+
+        let all_tracks = db.get_all_tracks().expect("get_all_tracks failed");
+        assert_eq!(all_tracks.len(), 2);
+
+        db.remove_folder_with_tracks(folder_id, folder_path)
+            .expect("remove_folder_with_tracks failed");
+
+        let folders_after = db.get_all_folders().expect("get_all_folders after failed");
+        assert!(!folders_after.iter().any(|(id, _, _, _)| id == folder_id));
+
+        let tracks_after = db.get_all_tracks().expect("get_all_tracks after failed");
+        assert!(tracks_after.is_empty());
+
+        cleanup_db_files(&db_path);
     }
 
-    pub fn get_filtered_tracks(&self, filter: TrackFilter) -> Result<Vec<Track>> {
-        // Build SQL query dynamically
-        let mut sql = format!("SELECT {} FROM tracks WHERE 1=1", crate::scanner::TRACK_SELECT_COLUMNS);
-        let mut params_values: Vec<Box<dyn ToSql>> = Vec::new();
+    #[test]
+    fn delete_playlist_removes_playlist_and_memberships() {
+        let db_path = temp_db_path("playlist_delete_tx");
+        let db = Database::new(&db_path).expect("db init failed");
 
-        if let Some(query) = &filter.search_query {
-            if !query.is_empty() {
-                 sql.push_str(" AND (title LIKE ? OR artist LIKE ? OR album LIKE ?)");
-                 let pattern = format!("%{}%", query);
-                 params_values.push(Box::new(pattern.clone()));
-                 params_values.push(Box::new(pattern.clone()));
-                 params_values.push(Box::new(pattern.clone()));
-            }
-        }
+        let playlist_id = db.create_playlist("Test Playlist").expect("create_playlist failed");
+        let track = sample_track("track_pl_1", "C:/Music/Playlist/track.mp3");
+        db.add_track(&track).expect("add_track failed");
+        db.add_track_to_playlist(&playlist_id, &track.id, 0)
+            .expect("add_track_to_playlist failed");
 
-        if let Some(artist) = &filter.artist {
-            sql.push_str(" AND artist = ?");
-            params_values.push(Box::new(artist.clone()));
-        }
+        db.delete_playlist(&playlist_id).expect("delete_playlist failed");
 
-        if let Some(album) = &filter.album {
-            sql.push_str(" AND album = ?");
-            params_values.push(Box::new(album.clone()));
-        }
+        let playlists = db.get_all_playlists().expect("get_all_playlists failed");
+        assert!(!playlists.iter().any(|(id, _, _)| id == &playlist_id));
 
-        if let Some(genre) = &filter.genre {
-            sql.push_str(" AND genre = ?");
-            params_values.push(Box::new(genre.clone()));
-        }
+        let playlist_tracks = db.get_playlist_tracks(&playlist_id).expect("get_playlist_tracks failed");
+        assert!(playlist_tracks.is_empty());
 
-        // Additional filters
-        if let Some(min) = filter.play_count_min {
-            sql.push_str(" AND play_count >= ?");
-            params_values.push(Box::new(min));
-        }
-
-        if let Some(max) = filter.play_count_max {
-             sql.push_str(" AND play_count <= ?");
-             params_values.push(Box::new(max));
-        }
-
-        if let Some(min) = filter.min_rating {
-             sql.push_str(" AND rating >= ?");
-             params_values.push(Box::new(min));
-        }
-
-        if let Some(from) = filter.duration_from {
-             sql.push_str(" AND duration >= ?");
-             params_values.push(Box::new(from));
-        }
-
-        if let Some(to) = filter.duration_to {
-             sql.push_str(" AND duration <= ?");
-             params_values.push(Box::new(to));
-        }
-
-        // Folder filtering
-        if let Some(folder_id) = &filter.folder_id {
-             // We need to query the folder path first
-             // Since we need to use the connection for this query, and we're building the main query
-             // We can use a subquery or separate query. Subquery is cleaner in SQL but we are building param list dynamically.
-             // Actually, we can use a subquery in WHERE clause: AND path LIKE (SELECT path FROM folders WHERE id = ?) || '%'
-             // But concatenation in SQLite: (SELECT path FROM folders WHERE id = ?) || '%'
-             
-             sql.push_str(" AND path LIKE (SELECT path FROM folders WHERE id = ?) || '%'");
-             params_values.push(Box::new(folder_id.clone()));
-        }
-
-        // Sorting
-        if let Some(sort_by) = &filter.sort_by {
-            let col = match sort_by.as_str() {
-                "title" => "title",
-                "artist" => "artist",
-                "album" => "artist, album", // Sort by artist first, then album to keep albums grouped by artist
-                "date" => "date_added",
-                "date_added" => "date_added",
-                "rating" => "rating",
-                "duration" => "duration",
-                "play_count" => "play_count",
-                _ => "title" 
-            };
-            let dir = if filter.sort_desc { "DESC" } else { "ASC" };
-            sql.push_str(&format!(" ORDER BY {} {}", col, dir));
-        } else {
-            sql.push_str(" ORDER BY title ASC");
-        }
-
-        let conn = self.conn();
-        let mut stmt = conn.prepare(&sql)?;
-        
-        let tracks = stmt.query_map(rusqlite::params_from_iter(params_values.iter()), Track::from_row)?
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(tracks)
-    }
-    
-    // Track statistics
-    pub fn increment_play_count(&self, track_id: &str) -> Result<()> {
-        let conn = self.conn();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-        
-        conn.execute(
-            "UPDATE tracks SET play_count = play_count + 1, last_played = ?1 WHERE id = ?2",
-            params![now, track_id],
-        )?;
-        Ok(())
-    }
-    
-    #[allow(dead_code)]
-    pub fn get_play_count(&self, track_id: &str) -> Result<i32> {
-        let conn = self.conn();
-        let count: i32 = conn.query_row(
-            "SELECT play_count FROM tracks WHERE id = ?1",
-            params![track_id],
-            |row| row.get(0),
-        ).unwrap_or(0);
-        Ok(count)
-    }
-    
-    pub fn reset_play_count(&self, track_id: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "UPDATE tracks SET play_count = 0, last_played = 0 WHERE id = ?1",
-            params![track_id],
-        )?;
-        Ok(())
+        cleanup_db_files(&db_path);
     }
 
-    pub fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            &format!("{} FROM tracks WHERE last_played > 0 ORDER BY last_played DESC LIMIT ?1",
-                format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS))
-        )?;
-        
-        let tracks = stmt.query_map(params![limit], Track::from_row)?
-            .collect::<Result<Vec<_>>>()?;
-        
-        Ok(tracks)
-    }
-    
-    pub fn get_most_played(&self, limit: usize) -> Result<Vec<Track>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            &format!("{} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
-                format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS))
-        )?;
-        
-        let tracks = stmt.query_map(params![limit], Track::from_row)?
-            .collect::<Result<Vec<_>>>()?;
-        
-        Ok(tracks)
-    }
-    
-    pub fn remove_tracks_by_folder(&self, folder_path: &str) -> Result<usize> {
-        let conn = self.conn();
-        let count = conn.execute(
-            "DELETE FROM tracks WHERE path LIKE ?1",
-            params![format!("{}%", folder_path)],
-        )?;
-        Ok(count)
-    }
-    
-    pub fn add_folder(&self, folder_id: &str, folder_path: &str, folder_name: &str, date_added: i64) -> Result<()> {
-        let conn = self.conn();
+    #[test]
+    fn migrates_legacy_tracks_schema_to_latest() {
+        let db_path = temp_db_path("migration_v0");
 
-        // Check if folder with same path already exists
-        let mut stmt = conn.prepare("SELECT id FROM folders WHERE path = ?1")?;
-        let existing_id: Option<String> = stmt.query_row(params![folder_path], |row| row.get(0)).ok();
-
-        if let Some(existing_id) = existing_id {
-            // Update existing folder entry with new date_added
-            conn.execute(
-                "UPDATE folders SET date_added = ?1 WHERE id = ?2",
-                params![date_added, existing_id],
-            )?;
-        } else {
-            // Insert new folder
-            conn.execute(
-                "INSERT INTO folders (id, path, name, date_added) VALUES (?1, ?2, ?3, ?4)",
-                params![folder_id, folder_path, folder_name, date_added],
-            )?;
-        }
-
-        Ok(())
-    }
-
-    pub fn remove_duplicate_folders(&self) -> Result<usize> {
-        let conn = self.conn();
-
-        // First, count how many duplicates exist
-        let count_sql = "SELECT COUNT(*) FROM folders f WHERE EXISTS (SELECT 1 FROM folders f2 WHERE f2.path = f.path AND f2.id != f.id)";
-        let duplicate_count: i64 = conn.query_row(count_sql, [], |row| row.get(0)).unwrap_or(0);
-        info!("Found {} duplicate folder entries to remove", duplicate_count);
-
-        // Delete duplicate folders, keeping only one entry per path (the one with highest ID)
-        let sql = "
-            DELETE FROM folders
-            WHERE id IN (
-                SELECT f.id
-                FROM folders f
-                WHERE EXISTS (
-                    SELECT 1 FROM folders f2
-                    WHERE f2.path = f.path AND f2.id > f.id
-                )
+        // Simulate a legacy database with an older tracks schema.
+        {
+            let conn = Connection::open(&db_path).expect("legacy db open failed");
+            conn.execute_batch(
+                "
+                CREATE TABLE tracks (
+                    id TEXT PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    title TEXT,
+                    artist TEXT,
+                    album TEXT,
+                    duration REAL NOT NULL,
+                    date_added INTEGER NOT NULL
+                );
+                CREATE TABLE folders (
+                    id TEXT PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    date_added INTEGER NOT NULL
+                );
+                CREATE TABLE playlists (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE playlist_tracks (
+                    playlist_id TEXT NOT NULL,
+                    track_id TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    PRIMARY KEY (playlist_id, track_id)
+                );
+                CREATE TABLE failed_tracks (
+                    path TEXT PRIMARY KEY,
+                    error TEXT NOT NULL,
+                    failed_at INTEGER NOT NULL
+                );
+                ",
             )
-        ";
-
-        let affected_rows = conn.execute(sql, [])?;
-        info!("Removed {} duplicate folder entries", affected_rows);
-        Ok(affected_rows)
-    }
-
-    #[allow(dead_code)]
-    pub fn get_all_folders(&self) -> Result<Vec<(String, String, String, i64)>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, path, name, date_added FROM folders"
-        )?;
-        
-        let folders = stmt.query_map([], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>>>()?;
-        
-        Ok(folders)
-    }
-    
-    pub fn remove_folder(&self, folder_id: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "DELETE FROM folders WHERE id = ?1",
-            params![folder_id],
-        )?;
-        Ok(())
-    }
-    
-    // Playlist operations
-    pub fn create_playlist(&self, name: &str) -> Result<String> {
-        let id = format!("playlist_{}", uuid::Uuid::new_v4());
-        let created_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-        
-        let conn = self.conn();
-        conn.execute(
-            "INSERT INTO playlists (id, name, created_at) VALUES (?1, ?2, ?3)",
-            params![id, name, created_at],
-        )?;
-        Ok(id)
-    }
-    
-    pub fn get_all_playlists(&self) -> Result<Vec<(String, String, i64)>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, created_at FROM playlists ORDER BY created_at DESC"
-        )?;
-        
-        let playlists = stmt.query_map([], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>>>()?;
-        
-        Ok(playlists)
-    }
-    
-    pub fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
-        let conn = self.conn();
-        // Allow deletion of any playlist including 'library'
-        conn.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
-            params![playlist_id],
-        )?;
-        conn.execute(
-            "DELETE FROM playlists WHERE id = ?1",
-            params![playlist_id],
-        )?;
-        Ok(())
-    }
-    
-    pub fn rename_playlist(&self, playlist_id: &str, new_name: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "UPDATE playlists SET name = ?1 WHERE id = ?2",
-            params![new_name, playlist_id],
-        )?;
-        Ok(())
-    }
-    
-    pub fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str, position: i32) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-            params![playlist_id, track_id, position],
-        )?;
-        Ok(())
-    }
-    
-    /// Batch add multiple tracks to a playlist in a single transaction
-    pub fn add_tracks_to_playlist_batch(&self, playlist_id: &str, track_ids: &[String], starting_position: i32) -> Result<usize> {
-        let conn = self.conn();
-        let tx = conn.unchecked_transaction()?;
-        
-        let mut count = 0;
-        for (i, track_id) in track_ids.iter().enumerate() {
-            let position = starting_position + i as i32;
-            tx.execute(
-                "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-                params![playlist_id, track_id, position],
-            )?;
-            count += 1;
-        }
-        
-        tx.commit()?;
-        Ok(count)
-    }
-    
-    pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
-            params![playlist_id, track_id],
-        )?;
-        Ok(())
-    }
-    
-    pub fn reorder_playlist_tracks(&self, playlist_id: &str, track_positions: Vec<(String, i32)>) -> Result<()> {
-        let conn = self.conn();
-        
-        // Use a transaction for atomic updates
-        let tx = conn.unchecked_transaction()?;
-        
-        for (track_id, new_position) in track_positions {
-            tx.execute(
-                "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND track_id = ?3",
-                params![new_position, playlist_id, track_id],
-            )?;
-        }
-        
-        tx.commit()?;
-        Ok(())
-    }
-    
-    pub fn get_playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played
-             FROM tracks t
-             INNER JOIN playlist_tracks pt ON t.id = pt.track_id
-             WHERE pt.playlist_id = ?1
-             ORDER BY pt.position ASC"
-        )?;
-        
-        let tracks = stmt.query_map(params![playlist_id], Track::from_row)?
-            .collect::<Result<Vec<_>>>()?;
-        
-        Ok(tracks)
-    }
-    
-    pub fn get_playlist_track_count(&self, playlist_id: &str) -> Result<i32> {
-        let conn = self.conn();
-        let count: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
-            params![playlist_id],
-            |row| row.get(0),
-        )?;
-        Ok(count)
-    }
-    
-    // Failed tracks management
-    pub fn add_failed_track(&self, path: &str, error: &str) -> Result<()> {
-        let conn = self.conn();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        
-        conn.execute(
-            "INSERT OR REPLACE INTO failed_tracks (path, error, failed_at) VALUES (?1, ?2, ?3)",
-            params![path, error, now],
-        )?;
-        Ok(())
-    }
-    
-    pub fn is_failed_track(&self, path: &str) -> bool {
-        let conn = self.conn();
-        let result: Result<i32> = conn.query_row(
-            "SELECT 1 FROM failed_tracks WHERE path = ?1",
-            params![path],
-            |row| row.get(0),
-        );
-        result.is_ok()
-    }
-    
-    pub fn clear_failed_tracks(&self) -> Result<()> {
-        let conn = self.conn();
-        conn.execute("DELETE FROM failed_tracks", [])?;
-        Ok(())
-    }
-    
-    // Star rating for tracks
-    pub fn set_track_rating(&self, track_id: &str, rating: i32) -> Result<()> {
-        let conn = self.conn();
-        let clamped_rating = rating.max(0).min(5); // 0-5 stars
-        conn.execute(
-            "UPDATE tracks SET rating = ?1 WHERE id = ?2",
-            params![clamped_rating, track_id],
-        )?;
-        Ok(())
-    }
-    
-    // Get all track paths for validation
-    pub fn get_all_track_paths(&self) -> Result<Vec<(String, String)>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT id, path FROM tracks")?;
-        
-        let paths = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect::<Result<Vec<_>>>()?;
-        
-        Ok(paths)
-    }
-    
-    // Update track path (for relocating missing files)
-    pub fn update_track_path(&self, track_id: &str, new_path: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "UPDATE tracks SET path = ?1 WHERE id = ?2",
-            params![new_path, track_id],
-        )?;
-        Ok(())
-    }
-    
-    pub fn update_track_metadata(
-        &self,
-        track_id: &str,
-        title: &Option<String>,
-        artist: &Option<String>,
-        album: &Option<String>,
-        genre: &Option<String>,
-        year: &Option<i32>,
-        track_number: &Option<i32>,
-        disc_number: &Option<i32>,
-    ) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "UPDATE tracks SET title = ?1, artist = ?2, album = ?3, genre = ?4, year = ?5, track_number = ?6, disc_number = ?7 WHERE id = ?8",
-            params![title, artist, album, genre, year, track_number, disc_number, track_id],
-        )?;
-        Ok(())
-    }
-    
-    pub fn get_track_by_path(&self, path: &str) -> Result<Option<Track>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            &format!("SELECT {} FROM tracks WHERE path = ?1", crate::scanner::TRACK_SELECT_COLUMNS)
-        )?;
-        
-        let mut rows = stmt.query(params![path])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(Track::from_row(row)?))
-        } else {
-            Ok(None)
-        }
-    }
-    
-    // Find duplicate tracks based on metadata similarity
-    pub fn find_duplicates(&self) -> Result<Vec<Vec<Track>>> {
-        info!("Searching for duplicate tracks");
-        let conn = self.conn();
-        
-        // Step 1: SQL finds (title, artist, album) combos that appear more than once.
-        // This avoids loading the entire tracks table into memory.
-        let mut dup_keys_stmt = conn.prepare(
-            "SELECT title, artist, album
-             FROM tracks
-             WHERE title IS NOT NULL AND artist IS NOT NULL
-             GROUP BY title, artist, album
-             HAVING COUNT(*) > 1"
-        )?;
-        
-        let dup_keys: Vec<(String, String, String)> = dup_keys_stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>>>()?;
-
-        if dup_keys.is_empty() {
-            info!("Found 0 groups of duplicates");
-            return Ok(Vec::new());
+            .expect("legacy schema setup failed");
         }
 
-        // Step 2: Fetch only the tracks that belong to duplicate groups
-        let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
+        let db = Database::new(&db_path).expect("migration init failed");
+        let conn = db.conn();
 
-        let mut track_stmt = conn.prepare(
-            &format!("SELECT {} FROM tracks WHERE title = ?1 AND artist = ?2 AND album = ?3 ORDER BY duration",
-                crate::scanner::TRACK_SELECT_COLUMNS)
-        )?;
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(tracks)")
+            .expect("pragma prepare failed");
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("pragma query failed")
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("column collect failed");
 
-        for (title, artist, album) in &dup_keys {
-            let tracks: Vec<Track> = track_stmt
-                .query_map(params![title, artist, album], Track::from_row)?
-                .collect::<Result<Vec<_>>>()?;
+        for expected in [
+            "play_count",
+            "last_played",
+            "rating",
+            "file_modified",
+            "track_gain",
+            "track_peak",
+            "loudness",
+            "genre",
+            "year",
+            "track_number",
+            "disc_number",
+        ] {
+            assert!(columns.iter().any(|c| c == expected), "missing migrated column: {}", expected);
+        }
 
-            // Further refine by duration similarity (within 2 seconds)
-            // Tracks are sorted by duration, so we can group sequentially
-            let mut current_group: Vec<Track> = Vec::new();
+        let album_art_table_exists: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'track_album_art'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("sqlite_master query failed");
+        assert_eq!(album_art_table_exists, 1, "track_album_art table should exist after migration");
 
-            for track in &tracks {
-                if current_group.is_empty() {
-                    current_group.push(track.clone());
-                } else {
-                    let last = current_group.last().unwrap();
-                    if (track.duration - last.duration).abs() < 2.0 {
-                        current_group.push(track.clone());
-                    } else {
-                        if current_group.len() > 1 {
-                            duplicate_groups.push(std::mem::take(&mut current_group));
-                        } else {
-                            current_group.clear();
-                        }
-                        current_group.push(track.clone());
-                    }
+        drop(stmt);
+        drop(conn);
+        drop(db);
+        cleanup_db_files(&db_path);
+    }
+
+    #[test]
+    fn concurrent_increment_play_count_is_consistent() {
+        let db_path = temp_db_path("concurrent_play_count");
+        let db = Arc::new(Database::new(&db_path).expect("db init failed"));
+
+        let track = sample_track("track_concurrent_1", "C:/Music/Test/concurrent.mp3");
+        db.add_track(&track).expect("seed track failed");
+
+        let thread_count = 8;
+        let increments_per_thread = 200;
+        let mut handles = Vec::new();
+
+        for _ in 0..thread_count {
+            let db_cloned = Arc::clone(&db);
+            let track_id = track.id.clone();
+            handles.push(thread::spawn(move || {
+                for _ in 0..increments_per_thread {
+                    db_cloned
+                        .increment_play_count(&track_id)
+                        .expect("increment_play_count failed in thread");
                 }
-            }
-            if current_group.len() > 1 {
-                duplicate_groups.push(current_group);
-            }
+            }));
         }
-        
-        info!("Found {} groups of duplicates", duplicate_groups.len());
-        Ok(duplicate_groups)
-    }
-    
-    // Remove a track from the library
-    pub fn remove_track(&self, track_id: &str) -> Result<()> {
-        info!("Removing track: {}", track_id);
-        let conn = self.conn();
-        conn.execute(
-            "DELETE FROM tracks WHERE id = ?1",
-            params![track_id],
-        )?;
-        Ok(())
-    }
-    
-    // Get tracks for a specific folder with their modification times
-    pub fn get_folder_tracks(&self, folder_path: &str) -> Result<Vec<(String, String, i64)>> {
-        info!("Getting tracks for folder: {}", folder_path);
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, path, file_modified FROM tracks WHERE path LIKE ?1"
-        )?;
-        
-        let tracks = stmt.query_map(params![format!("{}%", folder_path)], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2).unwrap_or(0),
-            ))
-        })?
-        .collect::<Result<Vec<_>>>()?;
-        
-        Ok(tracks)
-    }
-    
-    // Update track with file modification time
-    pub fn add_track_with_mtime(&self, track: &Track, file_modified: i64) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?13)",
-            params![
-                track.id,
-                track.path,
-                track.name,
-                track.title,
-                track.artist,
-                track.album,
-                track.genre,
-                track.year,
-                track.track_number,
-                track.disc_number,
-                track.duration,
-                track.date_added,
-                file_modified,
-            ],
-        )?;
-        Ok(())
-    }
-    
-    // Album art operations (stored in separate track_album_art table)
-    pub fn get_album_art(&self, track_id: &str) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn();
-        let result: Result<Option<Vec<u8>>> = conn.query_row(
-            "SELECT data FROM track_album_art WHERE track_id = ?1",
-            params![track_id],
-            |row| row.get(0),
-        );
-        result.or(Ok(None))
-    }
-    
-    pub fn set_album_art(&self, track_id: &str, art_data: &[u8]) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT INTO track_album_art (track_id, data) VALUES (?1, ?2)
-             ON CONFLICT(track_id) DO UPDATE SET data = excluded.data",
-            params![track_id, art_data],
-        )?;
-        Ok(())
-    }
-    
-    pub fn has_album_art(&self, track_id: &str) -> bool {
-        let conn = self.conn();
-        let result: Result<i32> = conn.query_row(
-            "SELECT 1 FROM track_album_art WHERE track_id = ?1",
-            params![track_id],
-            |row| row.get(0),
-        );
-        result.is_ok()
+
+        for handle in handles {
+            handle.join().expect("worker thread panicked");
+        }
+
+        let all_tracks = db.get_all_tracks().expect("fetch tracks failed");
+        let updated = all_tracks
+            .iter()
+            .find(|t| t.id == track.id)
+            .expect("seed track missing after concurrent updates");
+
+        assert_eq!(updated.play_count, thread_count * increments_per_thread);
+
+        drop(db);
+        cleanup_db_files(&db_path);
     }
 }
+
+
 

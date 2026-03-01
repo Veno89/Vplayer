@@ -59,7 +59,7 @@ pub fn get_database_size(app: AppHandle) -> Result<u64, String> {
 /// Get performance statistics
 #[tauri::command]
 pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     
     // Get database stats
     let track_count: i32 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
@@ -115,7 +115,7 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_
 #[tauri::command]
 pub fn vacuum_database(state: tauri::State<'_, AppState>) -> Result<(), String> {
     info!("Running database vacuum to reclaim space and optimize");
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     conn.execute("VACUUM", [])
         .map_err(|e| format!("Failed to vacuum database: {}", e))?;
     info!("Database vacuum completed successfully");

@@ -289,6 +289,7 @@ pub fn delete_smart_playlist(conn: &Connection, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scanner::Track;
     
     #[test]
     fn test_smart_playlist_sql_generation() {
@@ -347,5 +348,136 @@ mod tests {
         };
         
         assert!(playlist.to_sql().is_err());
+    }
+
+    #[test]
+    fn test_smart_playlist_executes_against_tracks_table() {
+        let conn = Connection::open_in_memory().expect("in-memory db open failed");
+        conn.execute_batch(
+            "
+            CREATE TABLE tracks (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                genre TEXT,
+                year INTEGER,
+                track_number INTEGER,
+                disc_number INTEGER,
+                duration REAL NOT NULL,
+                date_added INTEGER NOT NULL,
+                rating INTEGER DEFAULT 0,
+                play_count INTEGER DEFAULT 0,
+                last_played INTEGER DEFAULT 0
+            );
+            ",
+        )
+        .expect("tracks table setup failed");
+
+        conn.execute(
+            "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, rating, play_count, last_played)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                "t1",
+                "C:/Music/rock-1.mp3",
+                "rock-1.mp3",
+                "Rock One",
+                "Band A",
+                "Album A",
+                "Rock",
+                2020,
+                1,
+                1,
+                200.0,
+                1_i64,
+                5,
+                42,
+                10_i64,
+            ],
+        )
+        .expect("insert t1 failed");
+
+        conn.execute(
+            "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, rating, play_count, last_played)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                "t2",
+                "C:/Music/pop-1.mp3",
+                "pop-1.mp3",
+                "Pop One",
+                "Artist B",
+                "Album B",
+                "Pop",
+                2019,
+                1,
+                1,
+                180.0,
+                2_i64,
+                5,
+                50,
+                10_i64,
+            ],
+        )
+        .expect("insert t2 failed");
+
+        conn.execute(
+            "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, rating, play_count, last_played)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                "t3",
+                "C:/Music/rock-2.mp3",
+                "rock-2.mp3",
+                "Rock Two",
+                "Band C",
+                "Album C",
+                "Rock",
+                2021,
+                1,
+                1,
+                240.0,
+                3_i64,
+                3,
+                99,
+                10_i64,
+            ],
+        )
+        .expect("insert t3 failed");
+
+        let playlist = SmartPlaylist {
+            id: "sp_exec".to_string(),
+            name: "Rock Rated 4+".to_string(),
+            description: "Execution test".to_string(),
+            rules: vec![
+                Rule {
+                    field: "genre".to_string(),
+                    operator: "equals".to_string(),
+                    value: "Rock".to_string(),
+                },
+                Rule {
+                    field: "rating".to_string(),
+                    operator: "greater_equal".to_string(),
+                    value: "4".to_string(),
+                },
+            ],
+            match_all: true,
+            limit: Some(10),
+            sort_by: Some("play_count".to_string()),
+            sort_desc: true,
+            live_update: true,
+            created_at: 0,
+        };
+
+        let (sql, query_params) = playlist.to_sql().expect("to_sql failed");
+        let mut stmt = conn.prepare(&sql).expect("prepare smart-playlist query failed");
+        let tracks = stmt
+            .query_map(rusqlite::params_from_iter(query_params.iter()), Track::from_row)
+            .expect("execute smart-playlist query failed")
+            .collect::<Result<Vec<_>>>()
+            .expect("collect smart-playlist results failed");
+
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].id, "t1");
     }
 }

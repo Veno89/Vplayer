@@ -7,9 +7,18 @@ interface AlbumArtProps {
   trackPath?: string;
   size?: 'small' | 'medium' | 'large' | 'xlarge';
   className?: string;
+  prefetchedDataUri?: string | null;
+  deferAutoFetch?: boolean;
 }
 
-export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }: AlbumArtProps) {
+export function AlbumArt({
+  trackId,
+  trackPath,
+  size = 'medium',
+  className = '',
+  prefetchedDataUri,
+  deferAutoFetch = false,
+}: AlbumArtProps) {
   const [artData, setArtData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -17,14 +26,29 @@ export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }
 
   useEffect(() => {
     if (!trackId || !trackPath) {
+      setArtData(null);
       setLoading(false);
       return;
     }
 
     // When auto-fetch is disabled, skip the network/IPC call entirely
     if (!autoFetch) {
+      setArtData(null);
       setLoading(false);
       setError(true);
+      return;
+    }
+
+    if (prefetchedDataUri) {
+      setArtData(prefetchedDataUri);
+      setError(false);
+      setLoading(false);
+      return;
+    }
+
+    if (deferAutoFetch) {
+      setArtData(null);
+      setLoading(true);
       return;
     }
 
@@ -59,7 +83,7 @@ export function AlbumArt({ trackId, trackPath, size = 'medium', className = '' }
     return () => {
       mounted = false;
     };
-  }, [trackId, trackPath, autoFetch]);
+  }, [trackId, trackPath, autoFetch, prefetchedDataUri, deferAutoFetch]);
 
   const sizeClasses = {
     small: 'w-12 h-12',

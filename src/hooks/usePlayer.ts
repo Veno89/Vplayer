@@ -57,6 +57,8 @@ export function usePlayer({
     const userVolumeRef = useRef<number>(volume);
     const seekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSeekTimeRef = useRef<number>(0);
+    const shuffleOrderRef = useRef<number[]>([]);
+    const shuffleSignatureRef = useRef<string>('');
 
     // Keep user volume in sync
     useEffect(() => {
@@ -73,6 +75,12 @@ export function usePlayer({
             }
         };
     }, []);
+
+    // Invalidate generated shuffle order when track list or mode changes.
+    useEffect(() => {
+        shuffleOrderRef.current = [];
+        shuffleSignatureRef.current = '';
+    }, [tracks, shuffle]);
 
     /**
      * Calculate the next track index based on playback mode.
@@ -116,10 +124,36 @@ export function usePlayer({
 
         // No queue or queue exhausted - use normal playback logic
         if (isShuffled) {
-            let nextIdx: number;
-            do {
-                nextIdx = Math.floor(Math.random() * effectiveTotalTracks);
-            } while (nextIdx === current && effectiveTotalTracks > 1);
+            if (effectiveTotalTracks <= 0) {
+                return null;
+            }
+            if (effectiveTotalTracks === 1) {
+                return 0;
+            }
+
+            const signature = currentTracks.map((track: Track) => track.id).join('|');
+            if (shuffleSignatureRef.current !== signature) {
+                shuffleOrderRef.current = [];
+                shuffleSignatureRef.current = signature;
+            }
+
+            if (shuffleOrderRef.current.length === 0) {
+                const candidates = Array.from({ length: effectiveTotalTracks }, (_, idx) => idx)
+                    .filter(idx => idx !== current);
+
+                // Fisher-Yates for a full non-repeating shuffle cycle.
+                for (let i = candidates.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+                }
+
+                shuffleOrderRef.current = candidates;
+            }
+
+            const nextIdx = shuffleOrderRef.current.shift();
+            if (nextIdx === undefined) {
+                return null;
+            }
             log.info('[getNextTrackIndex] Shuffled to:', nextIdx);
             return nextIdx;
         } else {

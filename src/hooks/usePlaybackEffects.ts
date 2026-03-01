@@ -132,6 +132,7 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
             }).catch(err => {
               console.error('Failed to pause:', err);
               toast.showError('Failed to pause');
+              setPlaying(true);
             });
           }
         }, stepTime);
@@ -139,6 +140,7 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
         audio.pause().catch(err => {
           console.error('Failed to pause:', err);
           toast.showError('Failed to pause');
+          setPlaying(true);
         });
       }
     }

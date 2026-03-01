@@ -2,13 +2,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { Track, Playlist, PlaylistTrack, TrackFilter } from '../types';
+import { DEFAULT_EFFECT_ORDER, type EffectId } from '../types/audioEffects';
 
 // ========== API-specific types ==========
 
 /** Matches Rust EffectsConfig struct */
-export type EffectId = 'equalizer' | 'bass_boost' | 'echo' | 'reverb';
-
-export const DEFAULT_EFFECT_ORDER: EffectId[] = ['equalizer', 'bass_boost', 'echo', 'reverb'];
+export type { EffectId };
+export { DEFAULT_EFFECT_ORDER };
 
 export interface AudioEffectsConfig {
     tempo: number;
@@ -147,8 +147,18 @@ class TauriAPIService {
         return this._invoke('seek_to', { position });
     }
 
+    // Backward-compatible alias used by tests/legacy code.
+    async getPosition(): Promise<number> {
+        return this._invoke('get_position');
+    }
+
     async isPlaying(): Promise<boolean> {
         return this._invoke('is_playing');
+    }
+
+    // Backward-compatible alias used by tests/legacy code.
+    async isFinished(): Promise<boolean> {
+        return this._invoke('is_finished');
     }
 
     async getDuration(): Promise<number> {
@@ -269,6 +279,15 @@ class TauriAPIService {
 
     async getAlbumArt(trackId: string): Promise<string | null> {
         return this._invoke('get_album_art', { trackId });
+    }
+
+    async getAlbumArtBatch(trackIds: string[]): Promise<Record<string, string | null>> {
+        const items = await this._invoke<Array<[string, string | null]>>('get_album_art_batch', { trackIds });
+        const byId: Record<string, string | null> = {};
+        for (const [trackId, art] of items) {
+            byId[trackId] = art;
+        }
+        return byId;
     }
 
     async extractAndCacheAlbumArt(trackId: string, trackPath: string): Promise<string | null> {
@@ -448,6 +467,11 @@ class TauriAPIService {
 
     async setTrackRating(trackId: string, rating: number): Promise<void> {
         return this._invoke('set_track_rating', { trackId, rating });
+    }
+
+    // Backward-compatible alias used by tests/legacy code.
+    async updateTrackRating(trackId: string, rating: number): Promise<void> {
+        return this.setTrackRating(trackId, rating);
     }
 
     // ========== Folder Watch Commands ==========

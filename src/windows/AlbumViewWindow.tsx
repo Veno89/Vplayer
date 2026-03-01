@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Music, Play, Disc, Grid, List as ListIcon, Search, X } from 'lucide-react';
 import { SimpleTrackList } from '../components/TrackList';
 import { formatDuration } from '../utils/formatters';
@@ -6,6 +6,7 @@ import { AlbumArt } from '../components/AlbumArt';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { usePlayerContext } from '../context/PlayerProvider';
+import { TauriAPI } from '../services/TauriAPI';
 import type { Track } from '../types';
 
 interface AlbumData {
@@ -18,6 +19,7 @@ interface AlbumData {
 }
 
 type GridSize = 'small' | 'medium' | 'large';
+const MAX_PREFETCH_ALBUM_ART = 200;
 
 export function AlbumViewWindow() {
   const { playbackTracks: tracks } = usePlayerContext();
@@ -27,6 +29,9 @@ export function AlbumViewWindow() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [gridSize, setGridSize] = useState<GridSize>('medium');
+  const [prefetchedArtByTrackId, setPrefetchedArtByTrackId] = useState<Record<string, string>>({});
+  const [isBatchPrefetching, setIsBatchPrefetching] = useState(false);
+  const autoFetchAlbumArt = useStore(s => s.autoFetchAlbumArt);
 
   // Grid size configurations
   const gridSizes: Record<GridSize, string> = {
@@ -81,6 +86,57 @@ export function AlbumViewWindow() {
     );
   }, [albumsMap, searchQuery]);
 
+  const coverTrackIdsForPrefetch = useMemo(() => {
+    const ids = Array.from(
+      new Set(
+        filteredAlbums
+          .map(album => album.coverTrackId)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    return ids.slice(0, MAX_PREFETCH_ALBUM_ART);
+  }, [filteredAlbums]);
+
+  useEffect(() => {
+    if (!autoFetchAlbumArt || coverTrackIdsForPrefetch.length === 0) {
+      setIsBatchPrefetching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsBatchPrefetching(true);
+
+    const loadBatchAlbumArt = async () => {
+      try {
+        const batch = await TauriAPI.getAlbumArtBatch(coverTrackIdsForPrefetch);
+        if (cancelled) {
+          return;
+        }
+
+        const mapped: Record<string, string> = {};
+        Object.entries(batch).forEach(([trackId, base64]) => {
+          if (base64) {
+            mapped[trackId] = `data:image/jpeg;base64,${base64}`;
+          }
+        });
+
+        setPrefetchedArtByTrackId(prev => ({ ...prev, ...mapped }));
+      } catch (err) {
+        console.error('Failed to prefetch album art batch:', err);
+      } finally {
+        if (!cancelled) {
+          setIsBatchPrefetching(false);
+        }
+      }
+    };
+
+    loadBatchAlbumArt();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoFetchAlbumArt, coverTrackIdsForPrefetch]);
+
   const handleAlbumClick = (album: AlbumData) => {
     setSelectedAlbum(album);
   };
@@ -134,6 +190,8 @@ export function AlbumViewWindow() {
               trackPath={selectedAlbum.coverTrackPath}
               size="large"
               className="w-24 h-24 rounded-lg shadow-lg"
+              prefetchedDataUri={prefetchedArtByTrackId[selectedAlbum.coverTrackId]}
+              deferAutoFetch={isBatchPrefetching}
             />
             
             <div className="flex-1">
@@ -289,6 +347,8 @@ export function AlbumViewWindow() {
                     trackPath={album.coverTrackPath}
                     size="large"
                     className="w-full h-full object-cover"
+                    prefetchedDataUri={prefetchedArtByTrackId[album.coverTrackId]}
+                    deferAutoFetch={isBatchPrefetching}
                   />
                   
                   {/* Play overlay on hover */}
@@ -345,6 +405,8 @@ export function AlbumViewWindow() {
                   trackPath={album.coverTrackPath}
                   size="small"
                   className="w-12 h-12 rounded shadow"
+                  prefetchedDataUri={prefetchedArtByTrackId[album.coverTrackId]}
+                  deferAutoFetch={isBatchPrefetching}
                 />
                 
                 <div className="flex-1 min-w-0">

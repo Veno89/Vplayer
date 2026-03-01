@@ -5,42 +5,42 @@ use crate::smart_playlists::{self, SmartPlaylist};
 
 #[tauri::command]
 pub fn create_smart_playlist(playlist: SmartPlaylist, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     smart_playlists::save_smart_playlist(&conn, &playlist)
         .map_err(|e| format!("Failed to create smart playlist: {}", e))
 }
 
 #[tauri::command]
 pub fn get_all_smart_playlists(state: tauri::State<'_, AppState>) -> Result<Vec<SmartPlaylist>, String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     smart_playlists::load_all_smart_playlists(&conn)
         .map_err(|e| format!("Failed to load smart playlists: {}", e))
 }
 
 #[tauri::command]
 pub fn get_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Result<SmartPlaylist, String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     smart_playlists::load_smart_playlist(&conn, &id)
         .map_err(|e| format!("Failed to load smart playlist: {}", e))
 }
 
 #[tauri::command]
 pub fn update_smart_playlist(playlist: SmartPlaylist, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     smart_playlists::save_smart_playlist(&conn, &playlist)
         .map_err(|e| format!("Failed to update smart playlist: {}", e))
 }
 
 #[tauri::command]
 pub fn delete_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     smart_playlists::delete_smart_playlist(&conn, &id)
         .map_err(|e| format!("Failed to delete smart playlist: {}", e))
 }
 
 #[tauri::command]
 pub fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<Track>, String> {
-    let conn = state.db.conn.lock().unwrap();
+    let conn = state.db.conn();
     
     // Load the smart playlist
     let playlist = smart_playlists::load_smart_playlist(&conn, &id)

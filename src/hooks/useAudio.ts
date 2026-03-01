@@ -100,7 +100,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
         if (isSeekingRef.current || isRecoveringRef.current) return;
 
-        const { position, duration, isPlaying } = event.payload;
+        const { position, duration } = event.payload;
         const clamped = duration > 0 ? Math.min(position, duration) : position;
 
         // Write directly to Zustand – single source of truth
@@ -109,28 +109,30 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
           useStore.getState().setDuration(duration);
         }
 
-        // SYNC FIX: Ensure UI matches Backend state
-        // Only if we aren't incorrectly suppressing it (e.g. during a toggle intent)
-        if (!isTogglingRef.current) {
-          const currentStorePlaying = useStore.getState().playing;
-          if (currentStorePlaying !== isPlaying) {
-            // Backend is the source of truth
-            console.log(`[Sync] Correcting play state: UI=${currentStorePlaying} -> Backend=${isPlaying}`);
-            useStore.getState().setPlaying(isPlaying);
-          }
-        }
-
         if (onTimeUpdateRef.current) {
           onTimeUpdateRef.current(clamped);
         }
       });
 
       unlistenEnded = await TauriAPI.onEvent<null>('track-ended', () => {
+        const state = useStore.getState();
+        // Ignore stale track-ended events emitted during pause transitions.
+        const looksLikePauseTransition =
+          !state.playing
+          && state.duration > 0
+          && state.progress < state.duration
+          && !isTogglingRef.current;
+
+        if (looksLikePauseTransition || isTogglingRef.current) {
+          log.warn('[Audio] Ignoring track-ended while not actively playing');
+          return;
+        }
+
         // Don't set playing=false here — let the onEnded callback decide.
         // If there's a next track, playing should stay true so useTrackLoading
         // auto-plays it. The onEnded handler in PlayerProvider sets playing=false
         // only when the playlist is truly exhausted (no repeat, last track).
-        useStore.getState().setProgress(0);
+        state.setProgress(0);
         if (onEndedRef.current) onEndedRef.current();
       });
 

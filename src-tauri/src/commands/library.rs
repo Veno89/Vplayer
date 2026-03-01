@@ -1,6 +1,7 @@
 // Library and scanner commands
 use crate::AppState;
 use crate::scanner::{Scanner, Track};
+use crate::time_utils::now_millis;
 use log::info;
 use tauri::{Manager, Window};
 use base64::{Engine as _, engine::general_purpose};
@@ -12,6 +13,7 @@ pub async fn scan_folder(
     state: tauri::State<'_, AppState>
 ) -> Result<Vec<Track>, String> {
     info!("Starting folder scan: {}", folder_path);
+    crate::validation::validate_path(&folder_path).map_err(|e| e.to_string())?;
 
     // Check if this folder already exists in the database — if so, do an
     // incremental scan instead of a full rescan to avoid redundant I/O.
@@ -38,11 +40,7 @@ pub async fn scan_folder(
         let tracks = Scanner::scan_directory(&folder_path_clone, Some(&window_clone), None, Some(&db))?;
 
         // Save folder info
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = now_millis();
 
         let folder_id = format!("folder_{}", uuid::Uuid::new_v4());
         let folder_name = std::path::Path::new(&folder_path_clone)
@@ -51,17 +49,10 @@ pub async fn scan_folder(
             .unwrap_or(&folder_path_clone)
             .to_string();
 
-        if let Err(e) = db.add_folder(&folder_id, &folder_path_clone, &folder_name, now) {
-            log::error!("Failed to add folder to database: {}", e);
-        }
+        db.add_folder_with_tracks(&folder_id, &folder_path_clone, &folder_name, now, &tracks)
+            .map_err(|e| format!("Failed to persist scanned folder/tracks transactionally: {}", e))?;
 
-        info!("Scan complete, adding {} tracks to database", tracks.len());
-
-        for track in &tracks {
-            if let Err(e) = db.add_track(track) {
-                 log::warn!("Failed to add track {}: {}", track.path, e);
-            }
-        }
+        info!("Scan complete, persisted {} tracks in one transaction", tracks.len());
 
         Ok(tracks)
     })
@@ -76,6 +67,7 @@ pub async fn scan_folder_incremental(
     state: tauri::State<'_, AppState>
 ) -> Result<Vec<Track>, String> {
     info!("Starting incremental folder scan: {}", folder_path);
+    crate::validation::validate_path(&folder_path).map_err(|e| e.to_string())?;
     
     let db = state.db.clone();
     let window_clone = window.clone();
@@ -129,9 +121,9 @@ pub fn get_all_folders(state: tauri::State<AppState>) -> Result<Vec<(String, Str
 
 #[tauri::command]
 pub fn remove_folder(folder_id: String, folder_path: String, state: tauri::State<AppState>) -> Result<(), String> {
-    state.db.remove_tracks_by_folder(&folder_path).map_err(|e| e.to_string())?;
-    state.db.remove_folder(&folder_id).map_err(|e| e.to_string())?;
-    Ok(())
+    state.db
+        .remove_folder_with_tracks(&folder_id, &folder_path)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -247,6 +239,26 @@ pub fn get_album_art(track_id: String, state: tauri::State<'_, AppState>) -> Res
 }
 
 #[tauri::command]
+pub fn get_album_art_batch(
+    track_ids: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    info!("Getting album art batch for {} tracks", track_ids.len());
+    let items = state
+        .db
+        .get_album_art_batch(&track_ids)
+        .map_err(|e| format!("Failed to get album art batch: {}", e))?;
+
+    Ok(items
+        .into_iter()
+        .map(|(track_id, art)| {
+            let encoded = art.map(|bytes| general_purpose::STANDARD.encode(&bytes));
+            (track_id, encoded)
+        })
+        .collect())
+}
+
+#[tauri::command]
 pub fn extract_and_cache_album_art(track_id: String, track_path: String, state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
     info!("Extracting album art for: {}", track_path);
     
@@ -284,61 +296,21 @@ pub struct TagUpdate {
 
 #[tauri::command]
 pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    use lofty::{Probe, Accessor, TagExt, ItemKey, TaggedFileExt};
-    use std::fs::OpenOptions;
+    use crate::tag_service::{apply_tags_to_file, TagUpdateInput};
     
     info!("Updating tags for: {}", track_path);
     
-    // Open file and read tags
-    let tagged_file = Probe::open(&track_path)
-        .map_err(|e| format!("Failed to open file: {}", e))?
-        .read()
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-    
-    let mut tag = tagged_file.primary_tag()
-        .or_else(|| tagged_file.first_tag())
-        .ok_or_else(|| "No tag found in file".to_string())?
-        .to_owned();
-    
-    // Update tags
-    if let Some(ref title) = tags.title {
-        tag.set_title(title.clone());
-    }
-    if let Some(ref artist) = tags.artist {
-        tag.set_artist(artist.clone());
-    }
-    if let Some(ref album) = tags.album {
-        tag.set_album(album.clone());
-    }
-    if let Some(ref year) = tags.year {
-        tag.insert_text(ItemKey::Year, year.clone());
-    }
-    if let Some(ref genre) = tags.genre {
-        tag.insert_text(ItemKey::Genre, genre.clone());
-    }
-    if let Some(ref comment) = tags.comment {
-        tag.insert_text(ItemKey::Comment, comment.clone());
-    }
-    if let Some(ref track_number) = tags.track_number {
-        if let Ok(num) = track_number.parse::<u32>() {
-            tag.set_track(num);
-        }
-    }
-    if let Some(ref disc_number) = tags.disc_number {
-        if let Ok(num) = disc_number.parse::<u32>() {
-            tag.set_disk(num);
-        }
-    }
-    
-    // Save to file
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&track_path)
-        .map_err(|e| format!("Failed to open file for writing: {}", e))?;
-    
-    tag.save_to(&mut file)
-        .map_err(|e| format!("Failed to save tags: {}", e))?;
+    let tag_update = TagUpdateInput {
+        title: tags.title.clone(),
+        artist: tags.artist.clone(),
+        album: tags.album.clone(),
+        year: tags.year.clone(),
+        genre: tags.genre.clone(),
+        comment: tags.comment.clone(),
+        track_number: tags.track_number.clone(),
+        disc_number: tags.disc_number.clone(),
+    };
+    apply_tags_to_file(&track_path, &tag_update)?;
     
     // Update database with all edited metadata fields
     let year_i32 = tags.year.as_ref().and_then(|y| y.parse::<i32>().ok());

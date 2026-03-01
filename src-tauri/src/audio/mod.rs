@@ -73,15 +73,18 @@ impl BroadcastWake {
 
     /// Wake the broadcast thread (called from play/load).
     pub fn signal(&self) {
-        *self.flag.lock().unwrap() = true;
+        *lock_or_recover(&self.flag) = true;
         self.condvar.notify_one();
     }
 
     /// Block until signaled or the timeout elapses. Consumes the flag.
     pub fn wait_idle(&self, timeout: Duration) {
-        let mut flag = self.flag.lock().unwrap();
+        let mut flag = lock_or_recover(&self.flag);
         if *flag { *flag = false; return; }
-        let (mut flag, _) = self.condvar.wait_timeout(flag, timeout).unwrap();
+        let (mut flag, _) = self
+            .condvar
+            .wait_timeout(flag, timeout)
+            .unwrap_or_else(PoisonError::into_inner);
         *flag = false;
     }
 }
@@ -93,6 +96,7 @@ impl BroadcastWake {
 pub struct BroadcastSnapshot {
     pub is_playing: bool,
     pub is_finished: bool,
+    pub is_paused: bool,
     pub position: f64,
     pub duration: f64,
 }
@@ -498,11 +502,6 @@ impl AudioPlayer {
         lock_or_recover(&self.sink).empty()
     }
 
-    #[allow(dead_code)]
-    pub fn get_current_path(&self) -> Option<String> {
-        lock_or_recover(&self.playback).current_path.clone()
-    }
-
     pub fn get_duration(&self) -> f64 {
         lock_or_recover(&self.playback).total_duration.as_secs_f64()
     }
@@ -522,6 +521,7 @@ impl AudioPlayer {
         BroadcastSnapshot {
             is_playing: !is_paused && !is_empty,
             is_finished: is_empty,
+            is_paused,
             position: pb.get_position(is_empty, is_paused),
             duration: pb.total_duration.as_secs_f64(),
         }
@@ -729,5 +729,64 @@ impl AudioPlayer {
     /// Get current audio samples for visualization
     pub fn get_visualizer_samples(&self) -> Vec<f32> {
         self.visualizer_buffer.get_samples()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BroadcastWake;
+    use std::sync::{mpsc, Arc};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn wait_idle_times_out_without_signal() {
+        let wake = BroadcastWake::new();
+        let start = Instant::now();
+        wake.wait_idle(Duration::from_millis(40));
+        let elapsed = start.elapsed();
+
+        assert!(elapsed >= Duration::from_millis(30));
+    }
+
+    #[test]
+    fn signal_wakes_waiter_before_timeout() {
+        let wake = Arc::new(BroadcastWake::new());
+        let (tx, rx) = mpsc::channel();
+
+        let wake_for_thread = Arc::clone(&wake);
+        let handle = thread::spawn(move || {
+            let start = Instant::now();
+            wake_for_thread.wait_idle(Duration::from_secs(2));
+            tx.send(start.elapsed())
+                .expect("failed to send elapsed time");
+        });
+
+        thread::sleep(Duration::from_millis(50));
+        wake.signal();
+
+        let elapsed = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("waiter thread did not wake in time");
+        handle.join().expect("waiter thread panicked");
+
+        assert!(elapsed < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn signal_flag_is_consumed_by_next_wait() {
+        let wake = BroadcastWake::new();
+
+        wake.signal();
+
+        let immediate_start = Instant::now();
+        wake.wait_idle(Duration::from_secs(1));
+        let immediate_elapsed = immediate_start.elapsed();
+        assert!(immediate_elapsed < Duration::from_millis(20));
+
+        let timeout_start = Instant::now();
+        wake.wait_idle(Duration::from_millis(40));
+        let timeout_elapsed = timeout_start.elapsed();
+        assert!(timeout_elapsed >= Duration::from_millis(30));
     }
 }

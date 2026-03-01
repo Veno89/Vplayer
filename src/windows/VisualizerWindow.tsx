@@ -75,7 +75,7 @@ export function VisualizerWindow() {
   // Draw visualizer
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !isPlaying) {
+    if (!canvas) {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
@@ -98,14 +98,36 @@ export function VisualizerWindow() {
     const height = canvas.offsetHeight;
 
     const draw = () => {
-      animationRef.current = requestAnimationFrame(draw);
+      let shouldContinueAnimating = isPlaying;
 
-      // Apply smoothing to spectrum for fluid motion (using refs updated by interval)
-      const smoothing = 0.7;
-      for (let i = 0; i < spectrumRef.current.length; i++) {
-        smoothedSpectrumRef.current[i] = 
-          smoothedSpectrumRef.current[i] * smoothing + 
-          spectrumRef.current[i] * (1 - smoothing);
+      if (isPlaying) {
+        // Apply smoothing to spectrum for fluid motion (using refs updated by interval)
+        const smoothing = 0.7;
+        for (let i = 0; i < spectrumRef.current.length; i++) {
+          smoothedSpectrumRef.current[i] =
+            smoothedSpectrumRef.current[i] * smoothing +
+            spectrumRef.current[i] * (1 - smoothing);
+        }
+      } else {
+        // Decay toward silence while paused, then stop the animation loop.
+        const decay = 0.9;
+        let hasResidualEnergy = false;
+
+        for (let i = 0; i < smoothedSpectrumRef.current.length; i++) {
+          smoothedSpectrumRef.current[i] *= decay;
+          if (smoothedSpectrumRef.current[i] > 0.001) {
+            hasResidualEnergy = true;
+          }
+        }
+
+        for (let i = 0; i < waveformRef.current.length; i++) {
+          waveformRef.current[i] *= decay;
+          if (Math.abs(waveformRef.current[i]) > 0.001) {
+            hasResidualEnergy = true;
+          }
+        }
+
+        shouldContinueAnimating = hasResidualEnergy;
       }
 
       // Clear canvas with slight fade effect for trail
@@ -118,6 +140,12 @@ export function VisualizerWindow() {
         drawWave(ctx, waveformRef.current, width, height);
       } else if (mode === 'circular') {
         drawCircular(ctx, smoothedSpectrumRef.current, width, height);
+      }
+
+      if (shouldContinueAnimating) {
+        animationRef.current = requestAnimationFrame(draw);
+      } else {
+        animationRef.current = null;
       }
     };
 

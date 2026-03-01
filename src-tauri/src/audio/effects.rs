@@ -103,6 +103,10 @@ where
             match self.processor.try_lock() {
                 Ok(mut processor) => {
                     for s in self.batch_buf.iter_mut() {
+                        if s.is_nan() {
+                            *s = 0.0;
+                            continue;
+                        }
                         *s = processor.process(*s);
                     }
                 }

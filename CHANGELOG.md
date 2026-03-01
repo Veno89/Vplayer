@@ -3,6 +3,44 @@
 All notable changes to VPlayer will be documented in this file.
 
 
+## [Unreleased]
+
+
+## [0.9.23] - 2026-03-01
+
+### Architecture & Database Decomposition
+- Split monolithic `database.rs` into focused modules: `database_schema.rs`, `database_tracks.rs`, `database_playlist.rs`, `database_folders.rs`, `database_album_art.rs`, and `database_failed_tracks.rs`.
+- Kept `Database` as a thin facade (`conn()` lock helper + shared types/tests), with each repository concern implemented in its own module.
+- Added/registered module wiring in `main.rs` for the new database decomposition layout.
+
+### Stability & Correctness (Audit P0/P1/P2 follow-through)
+- Hardened `BroadcastWake` synchronization in the audio engine by replacing panic-prone lock handling with poison-safe recovery.
+- Continued command/input validation hardening and pause-state synchronization improvements from the architecture audit roadmap.
+- Preserved transactional folder/playlist persistence semantics while moving code into focused repository modules.
+- Added `get_album_art_batch` IPC + backend batch DB query path to reduce scroll-time chatty album-art fetch patterns.
+- Wired `AlbumViewWindow` to prefetch cover art in batch and feed prefetched data into `AlbumArt`, deferring per-item fallback calls until batch lookup finishes.
+- Relaxed playlist-name validation to support Unicode names and punctuation while still rejecting control characters.
+
+### Documentation Accuracy
+- Investigated the old `get_all_tracks` cache claim and updated docs to reflect current behavior: no backend TTL query cache is active today.
+
+### Testing Improvements
+- Added migration regression test: `database::tests::migrates_legacy_tracks_schema_to_latest`.
+- Added smart playlist execution integration-style test: `smart_playlists::tests::test_smart_playlist_executes_against_tracks_table`.
+- Added scanner edge-case tests:
+  - `collect_audio_files_filters_by_supported_extensions_case_insensitive`
+  - `scan_directory_respects_pre_cancel_flag`
+- Added audio wake/state synchronization tests:
+  - `audio::tests::wait_idle_times_out_without_signal`
+  - `audio::tests::signal_wakes_waiter_before_timeout`
+  - `audio::tests::signal_flag_is_consumed_by_next_wait`
+- Added concurrent DB consistency test:
+  - `database::tests::concurrent_increment_play_count_is_consistent`
+
+### Documentation
+- Updated `docs/architecture-audit.md` roadmap to checkbox format and marked completed items (P0, P1, P2, and P3 #17) as done.
+
+
 ## [0.9.22] - 2026-03-01
 
 ### Audio Engine Reliability (P0 — Critical Fixes)
