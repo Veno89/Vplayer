@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { TauriAPI } from '../../services/TauriAPI';
 import { log } from '../../utils/logger';
 import { useErrorHandler } from '../../services/ErrorHandler';
@@ -34,24 +34,96 @@ export interface LibraryDataAPI {
  * Hook to manage raw library data (tracks and folders)
  * Handles CRUD operations and database interactions
  */
-export function useLibraryData(filterParams: Record<string, unknown> | null = null): LibraryDataAPI {
+export function useLibraryData(filterParams: TrackFilter | null = null): LibraryDataAPI {
     const toast = useToast();
     const errorHandler = useErrorHandler(toast);
 
     const [tracks, setTracks] = useState<Track[]>([]);
     const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([]);
+    const pageCacheRef = useRef<Map<string, Track[]>>(new Map());
+    const totalCacheRef = useRef<Map<string, number>>(new Map());
+
+    const getFilterKey = useCallback((params: TrackFilter | null): string => {
+        return JSON.stringify(params || {});
+    }, []);
+
+    const getPageKey = useCallback((filterKey: string, offset: number, limit: number): string => {
+        return `${filterKey}::${offset}::${limit}`;
+    }, []);
+
+    const clearPageCache = useCallback(() => {
+        pageCacheRef.current.clear();
+        totalCacheRef.current.clear();
+    }, []);
+
+    const normalizeTracks = useCallback((value: unknown): Track[] => {
+        return Array.isArray(value) ? (value as Track[]) : [];
+    }, []);
 
     const loadTracks = useCallback(async () => {
         try {
-            // Use filtered query if params exist, otherwise get all (though getFilteredTracks handles empty/default too)
-            // We favor getFilteredTracks now to support sorting/filtering at DB level
-            const params = filterParams || {};
-            const dbTracks = await TauriAPI.getFilteredTracks(params);
-            setTracks(dbTracks);
+            // Transitional M3 step: fetch in pages to avoid one monolithic IPC payload
+            // while keeping existing behavior (full filtered result in memory).
+            const params = (filterParams || {}) as TrackFilter;
+            const filterKey = getFilterKey(params);
+            const pageSize = 1000;
+            let offset = 0;
+            let total = totalCacheRef.current.get(filterKey) ?? Number.POSITIVE_INFINITY;
+            const allTracks: Track[] = [];
+            let firstPageRendered = false;
+
+            // Clear previous filtered view immediately so the UI reflects query changes.
+            setTracks([]);
+
+            while (offset < total) {
+                const pageKey = getPageKey(filterKey, offset, pageSize);
+                let pageTracks = pageCacheRef.current.get(pageKey);
+
+                if (!pageTracks) {
+                    const page = await TauriAPI.getTracksPage(offset, pageSize, params);
+                    if (!page || !Array.isArray(page.tracks)) {
+                        // Compatibility fallback during M3 transition: tests/mocks and
+                        // older backends may not provide paged response shape.
+                        log.warn('Paged track response invalid, falling back to non-paged track query');
+                        const fallbackRaw = Object.keys(params).length > 0
+                            ? await TauriAPI.getFilteredTracks(params)
+                            : await TauriAPI.getAllTracks();
+                        const fallbackTracks = normalizeTracks(fallbackRaw);
+                        setTracks(fallbackTracks);
+                        totalCacheRef.current.set(filterKey, fallbackTracks.length);
+                        return;
+                    }
+
+                    pageTracks = page.tracks;
+                    pageCacheRef.current.set(pageKey, pageTracks);
+                    const pageTotal = typeof page.total === 'number' && page.total >= 0
+                        ? page.total
+                        : offset + pageTracks.length;
+                    totalCacheRef.current.set(filterKey, pageTotal);
+                    total = pageTotal;
+
+                    // Keep cache bounded for long sessions.
+                    if (pageCacheRef.current.size > 200) {
+                        clearPageCache();
+                    }
+                }
+
+                allTracks.push(...pageTracks);
+                if (!firstPageRendered) {
+                    setTracks([...allTracks]);
+                    firstPageRendered = true;
+                }
+                offset += pageTracks.length;
+
+                // Safety break for inconsistent backend responses.
+                if (pageTracks.length === 0) break;
+            }
+
+            setTracks(allTracks);
         } catch (err) {
             errorHandler.handle(err, 'Library - Load Tracks');
         }
-    }, [errorHandler, filterParams]);
+    }, [clearPageCache, errorHandler, filterParams, getFilterKey, getPageKey, normalizeTracks]);
 
     const loadAllFolders = useCallback(async () => {
         try {
@@ -118,6 +190,7 @@ export function useLibraryData(filterParams: Record<string, unknown> | null = nu
 
             // Add to state immediately for responsiveness
             setLibraryFolders(prev => [...prev, newFolder]);
+            clearPageCache();
 
             // Return details for the scanner to use
             return { path: selected, newFolder };
@@ -125,7 +198,7 @@ export function useLibraryData(filterParams: Record<string, unknown> | null = nu
             console.error('Failed to add folder:', err);
             throw err;
         }
-    }, [libraryFolders, toast]);
+    }, [clearPageCache, libraryFolders, toast]);
 
     const removeFolder = useCallback(async (folderId: string, folderPath: string) => {
         try {
@@ -138,6 +211,7 @@ export function useLibraryData(filterParams: Record<string, unknown> | null = nu
             }
 
             await TauriAPI.removeFolder(folderId, folderPath);
+            clearPageCache();
             setLibraryFolders(prev => prev.filter(f => f.id !== folderId));
             await loadTracks(); // Reload remaining tracks (filtered)
             await loadAllFolders(); // Reload folders to stay in sync
@@ -145,17 +219,18 @@ export function useLibraryData(filterParams: Record<string, unknown> | null = nu
             console.error('Failed to remove folder:', err);
             throw err;
         }
-    }, [loadTracks, loadAllFolders]);
+    }, [clearPageCache, loadTracks, loadAllFolders]);
 
     const removeTrack = useCallback(async (trackId: string) => {
         try {
             await TauriAPI.removeTrack(trackId);
+            clearPageCache();
             setTracks(prev => prev.filter(t => t.id !== trackId));
         } catch (err) {
             console.error('Failed to remove track:', err);
             throw err;
         }
-    }, []);
+    }, [clearPageCache]);
 
     return {
         tracks,

@@ -1,6 +1,8 @@
 use serde::{Serialize, Deserialize};
 use std::f32::consts::PI;
 
+const DSP_BLOCK_PROCESSING_ENV: &str = "VPLAYER_DSP_BLOCK_PROCESSING";
+
 /**
  * Audio DSP effects module
  * 
@@ -514,6 +516,21 @@ pub struct EffectsProcessor {
     bass_boost: BassBoost,
     equalizer: Equalizer,
     sample_rate: u32,
+    block_processing_enabled: bool,
+}
+
+fn env_flag_enabled(var_name: &str, default_value: bool) -> bool {
+    match std::env::var(var_name) {
+        Ok(raw) => {
+            let normalized = raw.trim().to_ascii_lowercase();
+            match normalized.as_str() {
+                "0" | "false" | "off" | "no" => false,
+                "1" | "true" | "on" | "yes" => true,
+                _ => default_value,
+            }
+        }
+        Err(_) => default_value,
+    }
 }
 
 impl EffectsProcessor {
@@ -525,7 +542,15 @@ impl EffectsProcessor {
             equalizer: Equalizer::new(sample_rate),
             config,
             sample_rate,
+            block_processing_enabled: env_flag_enabled(DSP_BLOCK_PROCESSING_ENV, true),
         }
+    }
+
+    #[cfg(test)]
+    fn new_with_block_mode(sample_rate: u32, config: EffectsConfig, enabled: bool) -> Self {
+        let mut processor = Self::new(sample_rate, config);
+        processor.block_processing_enabled = enabled;
+        processor
     }
     
     pub fn set_sample_rate(&mut self, new_sample_rate: u32) {
@@ -589,11 +614,76 @@ impl EffectsProcessor {
         // Soft Clipper always runs last (safety limiter)
         SoftClipper::saturate(output)
     }
+
+    fn process_buffer_legacy(&mut self, buffer: &mut [f32]) {
+        for sample in buffer.iter_mut() {
+            if sample.is_nan() {
+                *sample = 0.0;
+                continue;
+            }
+            *sample = self.process(*sample);
+        }
+    }
+
+    fn process_buffer_staged(&mut self, buffer: &mut [f32]) {
+        for sample in buffer.iter_mut() {
+            if sample.is_nan() {
+                *sample = 0.0;
+            }
+        }
+
+        let effect_order = self.config.effect_order.clone();
+        let bass_boost_db = self.config.bass_boost;
+        let echo_mix = self.config.echo_mix;
+        let reverb_mix = self.config.reverb_mix;
+
+        // Process by stage to reduce branch overhead in the hot path.
+        for effect in effect_order {
+            match effect {
+                EffectId::Equalizer => {
+                    for sample in buffer.iter_mut() {
+                        *sample = self.equalizer.process(*sample);
+                    }
+                }
+                EffectId::BassBoost => {
+                    if bass_boost_db > 0.0 {
+                        for sample in buffer.iter_mut() {
+                            *sample = self.bass_boost.process(*sample);
+                        }
+                    }
+                }
+                EffectId::Echo => {
+                    if echo_mix > 0.0 {
+                        for sample in buffer.iter_mut() {
+                            let dry = *sample;
+                            let wet = self.echo.process(dry);
+                            *sample = dry * (1.0 - echo_mix) + wet * echo_mix;
+                        }
+                    }
+                }
+                EffectId::Reverb => {
+                    if reverb_mix > 0.0 {
+                        for sample in buffer.iter_mut() {
+                            let dry = *sample;
+                            let wet = self.reverb.process(dry);
+                            *sample = dry * (1.0 - reverb_mix) + wet * reverb_mix;
+                        }
+                    }
+                }
+            }
+        }
+
+        for sample in buffer.iter_mut() {
+            *sample = SoftClipper::saturate(*sample);
+        }
+    }
     
     #[allow(dead_code)]
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        for sample in buffer.iter_mut() {
-            *sample = self.process(*sample);
+        if self.block_processing_enabled {
+            self.process_buffer_staged(buffer);
+        } else {
+            self.process_buffer_legacy(buffer);
         }
     }
 }
@@ -601,6 +691,7 @@ impl EffectsProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn test_effects_config_default() {
@@ -612,8 +703,8 @@ mod tests {
 
     #[test]
     fn test_soft_clipper() {
-        // Linear region
-        assert!((SoftClipper::saturate(0.5) - 0.462).abs() < 0.01);
+        // Fast path below threshold is intentionally identity.
+        assert_eq!(SoftClipper::saturate(0.5), 0.5);
         
         // Limiting region
         let loud = SoftClipper::saturate(2.0); // tanh(2.0) ≈ 0.964
@@ -643,6 +734,118 @@ mod tests {
         
         for sample in buffer.iter() {
             assert!(sample.abs() <= 1.0);
+        }
+    }
+
+    #[test]
+    fn test_process_buffer_handles_nan() {
+        let config = EffectsConfig::default();
+        let mut processor = EffectsProcessor::new_with_block_mode(44100, config, true);
+        let mut buffer = vec![0.2, f32::NAN, -0.2];
+
+        processor.process_buffer(&mut buffer);
+
+        assert!(buffer.iter().all(|s| s.is_finite()));
+    }
+
+    #[test]
+    fn test_process_buffer_stage_equivalence() {
+        let mut config = EffectsConfig::default();
+        config.bass_boost = 4.0;
+        config.echo_mix = 0.35;
+        config.echo_feedback = 0.45;
+        config.echo_delay = 0.1;
+        config.reverb_mix = 0.3;
+        config.reverb_room_size = 0.6;
+        config.eq_bands = [1.5, -0.8, 1.0, -1.2, 0.7, 0.2, -0.4, 0.8, -0.3, 0.6];
+
+        let mut legacy = EffectsProcessor::new_with_block_mode(44100, config.clone(), false);
+        let mut staged = EffectsProcessor::new_with_block_mode(44100, config, true);
+
+        let mut input = Vec::with_capacity(4096);
+        for i in 0..4096 {
+            let x = i as f32 * 0.013;
+            input.push((x.sin() * 0.8) + (x.cos() * 0.15));
+        }
+
+        let mut legacy_out = input.clone();
+        let mut staged_out = input;
+        legacy.process_buffer(&mut legacy_out);
+        staged.process_buffer(&mut staged_out);
+
+        let max_diff = legacy_out
+            .iter()
+            .zip(staged_out.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(max_diff < 1e-5, "max diff was {}", max_diff);
+    }
+
+    #[test]
+    fn test_process_buffer_bounds_output() {
+        let config = EffectsConfig::default();
+        let mut processor = EffectsProcessor::new_with_block_mode(44100, config, true);
+        let mut buffer = vec![5.0, -7.0, 100.0, -100.0];
+
+        processor.process_buffer(&mut buffer);
+
+        for sample in buffer {
+            assert!(sample <= 1.0);
+            assert!(sample >= -1.0);
+        }
+    }
+
+    fn run_buffer_benchmark(buffer_len: usize, loops: usize, block_mode: bool) -> (f64, f32) {
+        let mut config = EffectsConfig::default();
+        config.bass_boost = 4.0;
+        config.echo_mix = 0.35;
+        config.echo_feedback = 0.45;
+        config.echo_delay = 0.1;
+        config.reverb_mix = 0.3;
+        config.reverb_room_size = 0.6;
+        config.eq_bands = [1.5, -0.8, 1.0, -1.2, 0.7, 0.2, -0.4, 0.8, -0.3, 0.6];
+
+        let mut processor = EffectsProcessor::new_with_block_mode(44100, config, block_mode);
+        let seed: Vec<f32> = (0..buffer_len)
+            .map(|i| {
+                let x = i as f32 * 0.017;
+                (x.sin() * 0.75) + (x.cos() * 0.2)
+            })
+            .collect();
+
+        let start = Instant::now();
+        let mut checksum = 0.0_f32;
+        for _ in 0..loops {
+            let mut work = seed.clone();
+            processor.process_buffer(&mut work);
+            checksum += work.iter().take(8).copied().sum::<f32>();
+        }
+        let elapsed = start.elapsed();
+        let ns_per_sample = (elapsed.as_nanos() as f64) / (buffer_len as f64 * loops as f64);
+        (ns_per_sample, checksum)
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_process_buffer_block_vs_legacy() {
+        let scenarios = [(256usize, 200usize), (512usize, 200usize), (2048usize, 120usize)];
+
+        for (buffer_len, loops) in scenarios {
+            let (legacy_ns_per_sample, legacy_checksum) = run_buffer_benchmark(buffer_len, loops, false);
+            let (block_ns_per_sample, block_checksum) = run_buffer_benchmark(buffer_len, loops, true);
+
+            assert!(legacy_checksum.is_finite());
+            assert!(block_checksum.is_finite());
+
+            println!(
+                "DSP bench buffer={} loops={} legacy_ns_per_sample={:.2} block_ns_per_sample={:.2} speedup={:.3}x",
+                buffer_len,
+                loops,
+                legacy_ns_per_sample,
+                block_ns_per_sample,
+                legacy_ns_per_sample / block_ns_per_sample,
+            );
         }
     }
 }

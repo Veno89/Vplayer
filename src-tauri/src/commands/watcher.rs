@@ -1,10 +1,11 @@
 // Folder watcher commands
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
-pub fn start_folder_watch(folder_path: String, state: tauri::State<AppState>, app_handle: AppHandle) -> Result<(), String> {
-    let mut watcher = state.watcher.lock().map_err(|e| format!("Failed to lock watcher: {}", e))?;
+pub fn start_folder_watch(folder_path: String, state: tauri::State<AppState>, app_handle: AppHandle) -> AppResult<()> {
+    let mut watcher = state.watcher.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock watcher: {}", e)))?;
     
     // Start watching if not already started
     if watcher.get_watched_paths().is_empty() {
@@ -12,25 +13,25 @@ pub fn start_folder_watch(folder_path: String, state: tauri::State<AppState>, ap
         watcher.start_watching(move |path| {
             // Emit event to frontend when file changes detected
             let _ = app_handle_clone.emit("folder-changed", path.to_string_lossy().to_string());
-        }).map_err(|e| format!("Failed to start watching: {}", e))?;
+        }).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to start watching: {}", e))))?;
     }
     
     // Add the path to watch list
-    watcher.add_path(&folder_path).map_err(|e| format!("Failed to add path: {}", e))?;
+    watcher.add_path(&folder_path).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to add path: {}", e))))?;
     
     Ok(())
 }
 
 #[tauri::command]
-pub fn stop_folder_watch(folder_path: String, state: tauri::State<AppState>) -> Result<(), String> {
-    let mut watcher = state.watcher.lock().map_err(|e| format!("Failed to lock watcher: {}", e))?;
-    watcher.remove_path(&folder_path).map_err(|e| format!("Failed to remove path: {}", e))?;
+pub fn stop_folder_watch(folder_path: String, state: tauri::State<AppState>) -> AppResult<()> {
+    let mut watcher = state.watcher.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock watcher: {}", e)))?;
+    watcher.remove_path(&folder_path).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to remove path: {}", e))))?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn get_watched_folders(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
-    let watcher = state.watcher.lock().map_err(|e| format!("Failed to lock watcher: {}", e))?;
+pub fn get_watched_folders(state: tauri::State<AppState>) -> AppResult<Vec<String>> {
+    let watcher = state.watcher.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock watcher: {}", e)))?;
     let paths = watcher.get_watched_paths()
         .iter()
         .map(|p| p.to_string_lossy().to_string())

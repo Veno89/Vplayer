@@ -5,6 +5,36 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.25] - 2026-03-02
+
+### Long-Term Plan Progress (M1/M2)
+- Migrated remaining backend command modules to typed error returns (`AppResult<T>` / `AppError`), including `library`, `audio`, `effects`, `lyrics`, `replaygain`, `visualizer`, and `watcher`.
+- Added integration coverage for library filtering behavior with `src-tauri/tests/library_filter_integration.rs`.
+- Added integration coverage for playlist reorder behavior (`src-tauri/tests/playlist_reorder_integration.rs`) and legacy migration boot path (`src-tauri/tests/migration_boot_integration.rs`).
+
+### M3 Foundation (Large Library Loading)
+- Added paged backend library query support via `get_tracks_page(offset, limit, filter)` with total-count metadata.
+- Added `TauriAPI.getTracksPage()` and typed `TracksPageResponse` contract.
+- Switched library data loading to chunked page fetches in `useLibraryData` (transitional path that preserves current behavior while avoiding a single monolithic IPC payload).
+- Added simple in-memory page caching in `useLibraryData` keyed by filter+offset+limit, with invalidation on library mutations.
+- Added first-page-first rendering in `useLibraryData` so initial results appear before the full paged hydration completes.
+- Added pagination integration coverage in `src-tauri/tests/tracks_pagination_integration.rs`.
+
+### M4 Start (Album ReplayGain)
+- Implemented functional `album` ReplayGain mode in `useReplayGain` by deriving a shared gain value from matching artist+album tracks in the active playback set.
+- Added album gain caching and automatic fallback to per-track ReplayGain when album metadata or album ReplayGain data is unavailable.
+- Added backend album ReplayGain persistence with schema v8 table `album_replaygain` and migration path.
+- Added new backend commands `get_album_replaygain` and `analyze_album_replaygain`, plus `TauriAPI` wrappers and API tests.
+- Switched frontend album mode to prefer backend album ReplayGain cache/analysis before fallback logic.
+- Added backend integration coverage in `src-tauri/tests/album_replaygain_integration.rs`.
+
+### M5 Start (DSP Block Processing)
+- Added stage-oriented block processing in `EffectsProcessor::process_buffer` (EQ/Bass/Echo/Reverb stages + final soft-clip stage).
+- Added runtime compatibility flag `VPLAYER_DSP_BLOCK_PROCESSING` (set to `0|false|off|no` to force legacy per-sample buffer path during validation).
+- Updated `EffectsSource` batch path to call the new block API directly.
+- Added DSP numerical validation tests for block-path NaN handling, bounded output, and tolerance-based equivalence against the legacy path.
+- Added an ignored DSP benchmark harness (`effects::tests::benchmark_process_buffer_block_vs_legacy`) covering representative buffer sizes for repeatable local perf sampling.
+
 
 ## [0.9.24] - 2026-03-02
 

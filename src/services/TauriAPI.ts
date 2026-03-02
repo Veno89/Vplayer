@@ -61,6 +61,15 @@ export interface SelectFolderOptions {
     defaultPath?: string;
 }
 
+/** Returned by get_tracks_page for large-library loading */
+export interface TracksPageResponse {
+    tracks: Track[];
+    total: number;
+    offset: number;
+    limit: number;
+    hasMore: boolean;
+}
+
 /**
  * Centralized Tauri API service with error handling and logging
  */
@@ -201,6 +210,24 @@ class TauriAPIService {
         return this._invoke('get_track_replaygain', { trackPath });
     }
 
+    async getAlbumReplayGain(artist: string, album: string): Promise<{
+        album_gain: number;
+        album_peak: number;
+        loudness: number;
+        track_count: number;
+    } | null> {
+        return this._invoke('get_album_replaygain', { artist, album });
+    }
+
+    async analyzeAlbumReplayGain(artist: string, album: string): Promise<{
+        album_gain: number;
+        album_peak: number;
+        loudness: number;
+        track_count: number;
+    } | null> {
+        return this._invoke('analyze_album_replaygain', { artist, album });
+    }
+
     /**
      * Set ReplayGain adjustment for current playback
      * @param {number} gainDb - ReplayGain value in dB
@@ -233,6 +260,14 @@ class TauriAPIService {
 
     async getFilteredTracks(filter: TrackFilter): Promise<Track[]> {
         return this._invoke('get_filtered_tracks', { filter });
+    }
+
+    async getTracksPage(offset: number, limit: number, filter?: TrackFilter | null): Promise<TracksPageResponse> {
+        return this._invoke('get_tracks_page', {
+            offset,
+            limit,
+            filter: filter ?? null,
+        });
     }
 
     async getAllFolders(): Promise<[string, string, string, number][]> {

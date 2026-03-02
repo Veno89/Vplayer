@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 impl Database {
     pub fn new(db_path: &Path) -> Result<Self> {
@@ -49,6 +49,20 @@ impl Database {
             "CREATE TABLE IF NOT EXISTS track_album_art (
                 track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
                 data BLOB NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS album_replaygain (
+                artist TEXT NOT NULL,
+                album TEXT NOT NULL,
+                album_gain REAL NOT NULL,
+                album_peak REAL NOT NULL,
+                loudness REAL NOT NULL,
+                track_count INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (artist, album)
             )",
             [],
         )?;
@@ -199,6 +213,24 @@ impl Database {
             // (SQLite < 3.35 doesn't support DROP COLUMN, so we just clear it.)
             conn.execute("UPDATE tracks SET album_art = NULL WHERE album_art IS NOT NULL", [])?;
             info!("Migration v7 complete: album art moved to track_album_art table");
+        }
+
+        // Migration v8: Add album-level ReplayGain cache table.
+        if current_version < 8 {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS album_replaygain (
+                    artist TEXT NOT NULL,
+                    album TEXT NOT NULL,
+                    album_gain REAL NOT NULL,
+                    album_peak REAL NOT NULL,
+                    loudness REAL NOT NULL,
+                    track_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (artist, album)
+                )",
+                [],
+            )?;
+            info!("Migration v8 complete: album_replaygain table created");
         }
 
         // Update stored schema version

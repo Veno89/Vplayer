@@ -6,6 +6,7 @@ pub mod database_playlist;
 pub mod database_schema;
 pub mod database_tracks;
 pub mod error;
+pub mod replaygain;
 pub mod scanner;
 pub mod smart_playlists;
 pub mod time_utils;

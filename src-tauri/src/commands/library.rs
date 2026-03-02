@@ -1,19 +1,30 @@
 // Library and scanner commands
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use crate::scanner::{Scanner, Track};
 use crate::time_utils::now_millis;
 use log::info;
 use tauri::{Manager, Window};
 use base64::{Engine as _, engine::general_purpose};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TracksPageResponse {
+    pub tracks: Vec<Track>,
+    pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub has_more: bool,
+}
+
 #[tauri::command]
 pub async fn scan_folder(
     folder_path: String, 
     window: Window,
     state: tauri::State<'_, AppState>
-) -> Result<Vec<Track>, String> {
+) -> AppResult<Vec<Track>> {
     info!("Starting folder scan: {}", folder_path);
-    crate::validation::validate_path(&folder_path).map_err(|e| e.to_string())?;
+    crate::validation::validate_path(&folder_path).map_err(|e| AppError::Validation(e.to_string()))?;
 
     // Check if this folder already exists in the database — if so, do an
     // incremental scan instead of a full rescan to avoid redundant I/O.
@@ -37,7 +48,8 @@ pub async fn scan_folder(
     let window_clone = window.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let tracks = Scanner::scan_directory(&folder_path_clone, Some(&window_clone), None, Some(&db))?;
+        let tracks = Scanner::scan_directory(&folder_path_clone, Some(&window_clone), None, Some(&db))
+            .map_err(AppError::Scanner)?;
 
         // Save folder info
         let now = now_millis();
@@ -50,14 +62,14 @@ pub async fn scan_folder(
             .to_string();
 
         db.add_folder_with_tracks(&folder_id, &folder_path_clone, &folder_name, now, &tracks)
-            .map_err(|e| format!("Failed to persist scanned folder/tracks transactionally: {}", e))?;
+            .map_err(|e| AppError::Database(format!("Failed to persist scanned folder/tracks transactionally: {}", e)))?;
 
         info!("Scan complete, persisted {} tracks in one transaction", tracks.len());
 
         Ok(tracks)
     })
     .await
-    .map_err(|e| format!("Scan task panicked: {}", e))?
+    .map_err(|e| AppError::InvalidState(format!("Scan task panicked: {}", e)))?
 }
 
 #[tauri::command]
@@ -65,9 +77,9 @@ pub async fn scan_folder_incremental(
     folder_path: String, 
     window: Window,
     state: tauri::State<'_, AppState>
-) -> Result<Vec<Track>, String> {
+) -> AppResult<Vec<Track>> {
     info!("Starting incremental folder scan: {}", folder_path);
-    crate::validation::validate_path(&folder_path).map_err(|e| e.to_string())?;
+    crate::validation::validate_path(&folder_path).map_err(|e| AppError::Validation(e.to_string()))?;
     
     let db = state.db.clone();
     let window_clone = window.clone();
@@ -75,8 +87,9 @@ pub async fn scan_folder_incremental(
 
     tauri::async_runtime::spawn_blocking(move || {
         // Perform incremental scan (only new/modified files)
-        let tracks = Scanner::scan_directory_incremental(&folder_path_clone, Some(&window_clone), None, &db)?;
-        
+        let tracks = Scanner::scan_directory_incremental(&folder_path_clone, Some(&window_clone), None, &db)
+            .map_err(AppError::Scanner)?;
+
         info!("Incremental scan complete, updating {} tracks in database", tracks.len());
         
         // Update tracks in database with modification times
@@ -89,62 +102,88 @@ pub async fn scan_folder_incremental(
                         .as_secs() as i64;
                     
                     db.add_track_with_mtime(track, mtime)
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| AppError::Database(e.to_string()))?;
                 } else {
-                    db.add_track(track).map_err(|e| e.to_string())?;
+                    db.add_track(track).map_err(|e| AppError::Database(e.to_string()))?;
                 }
             } else {
-                db.add_track(track).map_err(|e| e.to_string())?;
+                db.add_track(track).map_err(|e| AppError::Database(e.to_string()))?;
             }
         }
         
         Ok(tracks)
     })
     .await
-    .map_err(|e| format!("Incremental scan task panicked: {}", e))?
+    .map_err(|e| AppError::InvalidState(format!("Incremental scan task panicked: {}", e)))?
 }
 
 #[tauri::command]
-pub fn get_all_tracks(state: tauri::State<AppState>) -> Result<Vec<Track>, String> {
-    state.db.get_all_tracks().map_err(|e| e.to_string())
+pub fn get_all_tracks(state: tauri::State<AppState>) -> AppResult<Vec<Track>> {
+    state.db.get_all_tracks().map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn get_filtered_tracks(filter: crate::database::TrackFilter, state: tauri::State<AppState>) -> Result<Vec<Track>, String> {
-    state.db.get_filtered_tracks(filter).map_err(|e| e.to_string())
+pub fn get_filtered_tracks(filter: crate::database::TrackFilter, state: tauri::State<AppState>) -> AppResult<Vec<Track>> {
+    state.db.get_filtered_tracks(filter).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn get_all_folders(state: tauri::State<AppState>) -> Result<Vec<(String, String, String, i64)>, String> {
-    state.db.get_all_folders().map_err(|e| e.to_string())
+pub fn get_tracks_page(
+    offset: usize,
+    limit: usize,
+    filter: Option<crate::database::TrackFilter>,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<TracksPageResponse> {
+    let safe_limit = if limit == 0 { 200 } else { limit.min(2000) };
+    let filter = filter.unwrap_or_default();
+
+    let (tracks, total) = state
+        .db
+        .get_tracks_page(filter, offset, safe_limit)
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let has_more = offset.saturating_add(tracks.len()) < total;
+
+    Ok(TracksPageResponse {
+        tracks,
+        total,
+        offset,
+        limit: safe_limit,
+        has_more,
+    })
 }
 
 #[tauri::command]
-pub fn remove_folder(folder_id: String, folder_path: String, state: tauri::State<AppState>) -> Result<(), String> {
+pub fn get_all_folders(state: tauri::State<AppState>) -> AppResult<Vec<(String, String, String, i64)>> {
+    state.db.get_all_folders().map_err(|e| AppError::Database(e.to_string()))
+}
+
+#[tauri::command]
+pub fn remove_folder(folder_id: String, folder_path: String, state: tauri::State<AppState>) -> AppResult<()> {
     state.db
         .remove_folder_with_tracks(&folder_id, &folder_path)
-        .map_err(|e| e.to_string())
+    .map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn clear_failed_tracks(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    state.db.clear_failed_tracks().map_err(|e| e.to_string())
+pub fn clear_failed_tracks(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    state.db.clear_failed_tracks().map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn set_track_rating(track_id: String, rating: i32, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn set_track_rating(track_id: String, rating: i32, state: tauri::State<'_, AppState>) -> AppResult<()> {
     let validated_rating = crate::validation::validate_rating(rating)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AppError::Validation(e.to_string()))?;
     info!("Setting track rating: {} -> {}", track_id, validated_rating);
-    state.db.set_track_rating(&track_id, validated_rating).map_err(|e| e.to_string())
+    state.db.set_track_rating(&track_id, validated_rating).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn check_missing_files(state: tauri::State<'_, AppState>) -> Result<Vec<(String, String)>, String> {
+pub fn check_missing_files(state: tauri::State<'_, AppState>) -> AppResult<Vec<(String, String)>> {
     info!("Checking for missing files");
     use std::path::Path;
     
-    let all_paths = state.db.get_all_track_paths().map_err(|e| e.to_string())?;
+    let all_paths = state.db.get_all_track_paths().map_err(|e| AppError::Database(e.to_string()))?;
     let mut missing = Vec::new();
     
     for (track_id, path) in all_paths {
@@ -158,16 +197,16 @@ pub fn check_missing_files(state: tauri::State<'_, AppState>) -> Result<Vec<(Str
 }
 
 #[tauri::command]
-pub fn update_track_path(track_id: String, new_path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn update_track_path(track_id: String, new_path: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
     info!("Updating track path: {} -> {}", track_id, new_path);
-    state.db.update_track_path(&track_id, &new_path).map_err(|e| e.to_string())
+    state.db.update_track_path(&track_id, &new_path).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn find_duplicates(state: tauri::State<'_, AppState>, sensitivity: Option<String>) -> Result<Vec<Vec<Track>>, String> {
+pub fn find_duplicates(state: tauri::State<'_, AppState>, sensitivity: Option<String>) -> AppResult<Vec<Vec<Track>>> {
     let level = sensitivity.as_deref().unwrap_or("medium");
     info!("Finding duplicate tracks (sensitivity={})", level);
-    let mut groups = state.db.find_duplicates().map_err(|e| e.to_string())?;
+    let mut groups = state.db.find_duplicates().map_err(|e| AppError::Database(e.to_string()))?;
 
     // Filter groups based on sensitivity
     match level {
@@ -199,34 +238,34 @@ pub fn find_duplicates(state: tauri::State<'_, AppState>, sensitivity: Option<St
 }
 
 #[tauri::command]
-pub fn remove_track(track_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn remove_track(track_id: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
     info!("Removing track: {}", track_id);
-    state.db.remove_track(&track_id).map_err(|e| e.to_string())
+    state.db.remove_track(&track_id).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn remove_duplicate_folders(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+pub fn remove_duplicate_folders(state: tauri::State<'_, AppState>) -> AppResult<usize> {
     info!("Removing duplicate folders");
-    state.db.remove_duplicate_folders().map_err(|e| e.to_string())
+    state.db.remove_duplicate_folders().map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn increment_play_count(track_id: String, state: tauri::State<AppState>) -> Result<(), String> {
-    state.db.increment_play_count(&track_id).map_err(|e| e.to_string())
+pub fn increment_play_count(track_id: String, state: tauri::State<AppState>) -> AppResult<()> {
+    state.db.increment_play_count(&track_id).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn get_recently_played(limit: usize, state: tauri::State<AppState>) -> Result<Vec<Track>, String> {
-    state.db.get_recently_played(limit).map_err(|e| e.to_string())
+pub fn get_recently_played(limit: usize, state: tauri::State<AppState>) -> AppResult<Vec<Track>> {
+    state.db.get_recently_played(limit).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn get_most_played(limit: usize, state: tauri::State<AppState>) -> Result<Vec<Track>, String> {
-    state.db.get_most_played(limit).map_err(|e| e.to_string())
+pub fn get_most_played(limit: usize, state: tauri::State<AppState>) -> AppResult<Vec<Track>> {
+    state.db.get_most_played(limit).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn get_album_art(track_id: String, state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+pub fn get_album_art(track_id: String, state: tauri::State<'_, AppState>) -> AppResult<Option<String>> {
     info!("Getting album art for track: {}", track_id);
     match state.db.get_album_art(&track_id) {
         Ok(Some(art_data)) => {
@@ -234,7 +273,7 @@ pub fn get_album_art(track_id: String, state: tauri::State<'_, AppState>) -> Res
             Ok(Some(base64_data))
         },
         Ok(None) => Ok(None),
-        Err(e) => Err(format!("Failed to get album art: {}", e)),
+        Err(e) => Err(AppError::Database(format!("Failed to get album art: {}", e))),
     }
 }
 
@@ -242,12 +281,12 @@ pub fn get_album_art(track_id: String, state: tauri::State<'_, AppState>) -> Res
 pub fn get_album_art_batch(
     track_ids: Vec<String>,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<(String, Option<String>)>, String> {
+) -> AppResult<Vec<(String, Option<String>)>> {
     info!("Getting album art batch for {} tracks", track_ids.len());
     let items = state
         .db
         .get_album_art_batch(&track_ids)
-        .map_err(|e| format!("Failed to get album art batch: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get album art batch: {}", e)))?;
 
     Ok(items
         .into_iter()
@@ -259,7 +298,7 @@ pub fn get_album_art_batch(
 }
 
 #[tauri::command]
-pub fn extract_and_cache_album_art(track_id: String, track_path: String, state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+pub fn extract_and_cache_album_art(track_id: String, track_path: String, state: tauri::State<'_, AppState>) -> AppResult<Option<String>> {
     info!("Extracting album art for: {}", track_path);
     
     // Check if already cached
@@ -272,13 +311,13 @@ pub fn extract_and_cache_album_art(track_id: String, track_path: String, state: 
         Ok(Some(art_data)) => {
             // Cache in database
             state.db.set_album_art(&track_id, &art_data)
-                .map_err(|e| format!("Failed to cache album art: {}", e))?;
+                .map_err(|e| AppError::Database(format!("Failed to cache album art: {}", e)))?;
             
             let base64_data = general_purpose::STANDARD.encode(&art_data);
             Ok(Some(base64_data))
         },
         Ok(None) => Ok(None),
-        Err(e) => Err(format!("Failed to extract album art: {}", e)),
+        Err(e) => Err(AppError::Scanner(format!("Failed to extract album art: {}", e))),
     }
 }
 
@@ -295,7 +334,7 @@ pub struct TagUpdate {
 }
 
 #[tauri::command]
-pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, state: tauri::State<'_, AppState>) -> AppResult<()> {
     use crate::tag_service::{apply_tags_to_file, TagUpdateInput};
     
     info!("Updating tags for: {}", track_path);
@@ -310,7 +349,7 @@ pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, 
         track_number: tags.track_number.clone(),
         disc_number: tags.disc_number.clone(),
     };
-    apply_tags_to_file(&track_path, &tag_update)?;
+    apply_tags_to_file(&track_path, &tag_update).map_err(AppError::Decode)?;
     
     // Update database with all edited metadata fields
     let year_i32 = tags.year.as_ref().and_then(|y| y.parse::<i32>().ok());
@@ -325,14 +364,14 @@ pub fn update_track_tags(track_id: String, track_path: String, tags: TagUpdate, 
         &year_i32,
         &track_num_i32,
         &disc_num_i32,
-    ).map_err(|e| format!("Failed to update database: {}", e))?;
+    ).map_err(|e| AppError::Database(format!("Failed to update database: {}", e)))?;
     
     info!("Tags updated successfully");
     Ok(())
 }
 
 #[tauri::command]
-pub fn show_in_folder(path: String) -> Result<(), String> {
+pub fn show_in_folder(path: String) -> AppResult<()> {
     use std::path::Path;
     use std::process::Command;
     
@@ -340,7 +379,7 @@ pub fn show_in_folder(path: String) -> Result<(), String> {
     
     let file_path = Path::new(&path);
     if !file_path.exists() {
-        return Err(format!("File not found: {}", path));
+        return Err(AppError::NotFound(format!("File not found: {}", path)));
     }
     
     #[cfg(target_os = "windows")]
@@ -349,7 +388,7 @@ pub fn show_in_folder(path: String) -> Result<(), String> {
         Command::new("explorer")
             .args(["/select,", &path])
             .spawn()
-            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open explorer: {}", e))))?;
     }
     
     #[cfg(target_os = "macos")]
@@ -358,32 +397,32 @@ pub fn show_in_folder(path: String) -> Result<(), String> {
         Command::new("open")
             .args(["-R", &path])
             .spawn()
-            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open Finder: {}", e))))?;
     }
     
     #[cfg(target_os = "linux")]
     {
         // On Linux, open the parent folder
         let parent = file_path.parent()
-            .ok_or_else(|| "Cannot get parent directory".to_string())?;
+            .ok_or_else(|| AppError::NotFound("Cannot get parent directory".to_string()))?;
         
         Command::new("xdg-open")
             .arg(parent)
             .spawn()
-            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open file manager: {}", e))))?;
     }
     
     Ok(())
 }
 
 #[tauri::command]
-pub fn reset_play_count(track_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+pub fn reset_play_count(track_id: String, state: tauri::State<AppState>) -> AppResult<()> {
     info!("Resetting play count for track: {}", track_id);
-    state.db.reset_play_count(&track_id).map_err(|e| e.to_string())
+    state.db.reset_play_count(&track_id).map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
-pub fn write_text_file(file_path: String, content: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+pub fn write_text_file(file_path: String, content: String, app_handle: tauri::AppHandle) -> AppResult<()> {
     use std::fs;
     use std::path::Path;
     
@@ -391,7 +430,7 @@ pub fn write_text_file(file_path: String, content: String, app_handle: tauri::Ap
     
     // Security: only allow writes inside the app data directory
     let app_data_dir = app_handle.path().app_data_dir()
-        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to resolve app data dir: {}", e))))?;
     
     let canonical_target = Path::new(&file_path).canonicalize()
         .or_else(|_| {
@@ -402,19 +441,20 @@ pub fn write_text_file(file_path: String, content: String, app_handle: tauri::Ap
                 Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"))
             }
         })
-        .map_err(|e| format!("Invalid file path: {}", e))?;
+        .map_err(|e| AppError::Validation(format!("Invalid file path: {}", e)))?;
     
     let canonical_allowed = app_data_dir.canonicalize()
         .unwrap_or(app_data_dir);
     
     if !canonical_target.starts_with(&canonical_allowed) {
-        return Err(format!("Security: writes are only allowed inside the app data directory ({})", canonical_allowed.display()));
+        return Err(AppError::Security(format!("Security: writes are only allowed inside the app data directory ({})", canonical_allowed.display())));
     }
     
     // Prevent directory traversal
     if file_path.contains("..") {
-        return Err("Security: directory traversal is not allowed".to_string());
+        return Err(AppError::Security("Security: directory traversal is not allowed".to_string()));
     }
-    
-    fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {}", e))
+
+    fs::write(&file_path, content)
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write file: {}", e))))
 }

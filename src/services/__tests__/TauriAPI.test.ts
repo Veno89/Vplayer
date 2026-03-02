@@ -102,6 +102,15 @@ describe('TauriAPI', () => {
       expect(tracks).toEqual([]);
     });
 
+    it('getTracksPage should invoke get_tracks_page with paging params', async () => {
+      await TauriAPI.getTracksPage(100, 50, { searchQuery: 'rock' });
+      expect(invoke).toHaveBeenCalledWith('get_tracks_page', {
+        offset: 100,
+        limit: 50,
+        filter: { searchQuery: 'rock' },
+      });
+    });
+
     it('getAllFolders should invoke get_all_folders', async () => {
       const folders = await TauriAPI.getAllFolders();
       expect(invoke).toHaveBeenCalledWith('get_all_folders', {});
@@ -286,6 +295,16 @@ describe('TauriAPI', () => {
     it('analyzeReplayGain should invoke analyze_replaygain', async () => {
       await TauriAPI.analyzeReplayGain('/music/song.mp3');
       expect(invoke).toHaveBeenCalledWith('analyze_replaygain', { trackPath: '/music/song.mp3' });
+    });
+
+    it('getAlbumReplayGain should invoke get_album_replaygain', async () => {
+      await TauriAPI.getAlbumReplayGain('Band A', 'Album A');
+      expect(invoke).toHaveBeenCalledWith('get_album_replaygain', { artist: 'Band A', album: 'Album A' });
+    });
+
+    it('analyzeAlbumReplayGain should invoke analyze_album_replaygain', async () => {
+      await TauriAPI.analyzeAlbumReplayGain('Band A', 'Album A');
+      expect(invoke).toHaveBeenCalledWith('analyze_album_replaygain', { artist: 'Band A', album: 'Album A' });
     });
   });
 

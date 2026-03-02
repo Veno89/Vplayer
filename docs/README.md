@@ -192,6 +192,15 @@ Create rules-based playlists:
 - **Operators**: equals, contains, greater_than, in_last, etc.
 - **Combine** multiple rules with AND/OR logic
 
+### ReplayGain Modes
+- `off`: disables ReplayGain adjustment and uses raw playback gain.
+- `track`: applies per-track ReplayGain (`track_gain`) for consistent loudness between songs.
+- `album`: applies shared album gain for tracks with matching artist+album metadata to preserve album-internal dynamics.
+
+Mode notes:
+- If album data is unavailable, album mode falls back to track gain.
+- Switching modes clears stale applied gain before applying the new mode behavior.
+
 ---
 
 ## Development Guide
@@ -392,4 +401,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.24 | **Updated**: March 2026
+**Version**: 0.9.25 | **Updated**: March 2026

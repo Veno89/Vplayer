@@ -1,5 +1,6 @@
 // Visualizer commands
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use crate::visualizer::{VisualizerData, VisualizerMode};
 use rodio::{Decoder, Source};
 use std::fs::File;
@@ -8,12 +9,12 @@ use std::io::BufReader;
 /// Get visualization data from current audio playback
 /// This reads samples from the audio player's internal buffer and processes them with FFT
 #[tauri::command]
-pub fn get_visualizer_data(state: tauri::State<'_, AppState>) -> Result<VisualizerData, String> {
+pub fn get_visualizer_data(state: tauri::State<'_, AppState>) -> AppResult<VisualizerData> {
     // Get samples from the audio player's visualizer buffer
     let samples = state.player.get_visualizer_samples();
     
     // Process samples with the visualizer (FFT analysis)
-    let mut vis = state.visualizer.lock().unwrap();
+    let mut vis = state.visualizer.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
     
     // Use a fixed delta time (~33ms for 30fps)
     let delta_time = 0.033;
@@ -23,16 +24,16 @@ pub fn get_visualizer_data(state: tauri::State<'_, AppState>) -> Result<Visualiz
 
 /// Set visualizer mode
 #[tauri::command]
-pub fn set_visualizer_mode(mode: VisualizerMode, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut vis = state.visualizer.lock().unwrap();
+pub fn set_visualizer_mode(mode: VisualizerMode, state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let mut vis = state.visualizer.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
     vis.set_mode(mode);
     Ok(())
 }
 
 /// Set beat detection sensitivity
 #[tauri::command]
-pub fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut vis = state.visualizer.lock().unwrap();
+pub fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let mut vis = state.visualizer.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
     vis.set_beat_sensitivity(sensitivity);
     Ok(())
 }
@@ -42,12 +43,12 @@ pub fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>)
 /// Decodes the file and returns `num_bars` peak amplitude values (0.0–1.0).
 /// Intended for rendering a static waveform behind the seekbar.
 #[tauri::command]
-pub fn get_track_waveform(path: String, num_bars: Option<usize>) -> Result<Vec<f32>, String> {
+pub fn get_track_waveform(path: String, num_bars: Option<usize>) -> AppResult<Vec<f32>> {
     let bars = num_bars.unwrap_or(200);
 
-    let file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let file = File::open(&path).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open file: {}", e))))?;
     let source = Decoder::new(BufReader::new(file))
-        .map_err(|e| format!("Failed to decode audio: {}", e))?;
+        .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
 
     // Decoder<BufReader<File>> yields i16 by default in rodio 0.21;
     // collect as f32 by mapping.

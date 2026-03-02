@@ -1,6 +1,6 @@
 {
   "name": "vplayer",
-  "version": "0.9.24",
+  "version": "0.9.25",
   "description": "Fast, lightweight, and fully customizable music player for your desktop",
   "author": "Veno",
   "private": true,
@@ -8,7 +8,8 @@
     "dev": "vite",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "vite build",
     "tauri:build": "tauri build",
     "preview": "vite preview"

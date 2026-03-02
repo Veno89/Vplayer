@@ -59,7 +59,7 @@ use commands::{
     is_audio_healthy, needs_audio_reinit, get_inactive_duration,
     has_audio_device_changed, is_audio_device_available,
     // Library commands
-    scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_all_folders,
+    scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, remove_duplicate_folders, increment_play_count,
     get_recently_played, get_most_played, get_album_art, get_album_art_batch, extract_and_cache_album_art,
@@ -80,7 +80,7 @@ use commands::{
     // Lyrics commands
     load_lyrics, get_lyric_at_time,
     // ReplayGain commands
-    analyze_replaygain, get_track_replaygain, set_replaygain, clear_replaygain,
+    analyze_replaygain, get_track_replaygain, get_album_replaygain, analyze_album_replaygain, set_replaygain, clear_replaygain,
     // Cache commands
     clear_album_art_cache, get_cache_size, get_database_size, get_performance_stats,
     vacuum_database, enforce_cache_limit,
@@ -409,6 +409,7 @@ fn main() {
             scan_folder_incremental,
             get_all_tracks,
             get_filtered_tracks,
+            get_tracks_page,
             get_all_folders,
             remove_folder,
             create_playlist,
@@ -461,6 +462,8 @@ fn main() {
             get_lyric_at_time,
             analyze_replaygain,
             get_track_replaygain,
+            get_album_replaygain,
+            analyze_album_replaygain,
             set_replaygain,
             clear_replaygain,
             set_audio_effects,

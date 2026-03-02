@@ -102,13 +102,7 @@ where
             // Acquire effects lock once for the whole batch
             match self.processor.try_lock() {
                 Ok(mut processor) => {
-                    for s in self.batch_buf.iter_mut() {
-                        if s.is_nan() {
-                            *s = 0.0;
-                            continue;
-                        }
-                        *s = processor.process(*s);
-                    }
+                    processor.process_buffer(&mut self.batch_buf);
                 }
                 Err(_) => {
                     // Lock contention — pass batch through unprocessed

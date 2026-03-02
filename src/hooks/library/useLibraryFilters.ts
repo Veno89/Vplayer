@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useDebounce } from '../useDebounce';
 import { SEARCH_DEBOUNCE_MS } from '../../utils/constants';
+import type { TrackFilter } from '../../types';
 
 interface AdvancedFilters {
   genre: string;
@@ -27,7 +28,7 @@ export interface LibraryFiltersAPI {
   setSortOrder: (order: string) => void;
   advancedFilters: AdvancedFilters;
   setAdvancedFilters: React.Dispatch<React.SetStateAction<AdvancedFilters>>;
-  activeParams: Record<string, unknown>;
+    activeParams: TrackFilter;
 }
 
 /**
@@ -61,7 +62,7 @@ export function useLibraryFilters(): LibraryFiltersAPI {
 
     // Construct backend filter object (memoized)
     const activeParams = useMemo(() => {
-        const filter: Record<string, unknown> = {}; // TrackFilter
+        const filter: TrackFilter = {};
 
         if (debouncedSearchQuery) filter.searchQuery = debouncedSearchQuery;
 
