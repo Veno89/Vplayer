@@ -83,53 +83,44 @@ export function usePlayer({
     }, [tracks, shuffle]);
 
     /**
-     * Calculate the next track index based on playback mode.
-     * Prioritizes queue over shuffle/normal playback.
-     *
-     * Uses `storeGetter()` to read fresh state — intentional Zustand
-     * escape hatch pattern (#14). Without this, the callback would close
-     * over stale `shuffle`, `repeatMode`, etc. from the render cycle.
+     * Internal: calculate the next track index based on playback mode.
+     * When `consume` is true, the shuffle order is advanced (destructive).
+     * When false, it peeks without side effects.
      */
-    const getNextTrackIndex = useCallback((
+    const _getNextTrackIndex = useCallback((
         current: number,
         totalTracks: number,
         isShuffled: boolean,
-        repeat: RepeatMode
+        repeat: RepeatMode,
+        consume: boolean
     ): number | null => {
-        // Always read fresh state from the store to avoid stale closures
         const store = storeGetter ? storeGetter() : null;
-        // Use ref for tracks to get the freshest array
         const currentTracks = store?.activePlaybackTracks?.length ? store.activePlaybackTracks : tracks;
         const effectiveTotalTracks = currentTracks.length || totalTracks;
 
-        log.info('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks);
+        log.info('[getNextTrackIndex] shuffle:', isShuffled, 'current:', current, 'total:', effectiveTotalTracks, 'consume:', consume);
 
         // Check queue first - queue always takes priority
         if (store && store.queue && store.queue.length > 0) {
             const nextQueueTrack = store.peekNextInQueue();
             if (nextQueueTrack) {
-                // Find the track in the tracks array
                 const queueTrackIndex = currentTracks.findIndex((t: Track) => t.id === nextQueueTrack.id);
                 if (queueTrackIndex !== -1) {
-                    store.nextInQueue();
+                    if (consume) store.nextInQueue();
                     log.info('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
                     return queueTrackIndex;
                 } else {
                     console.warn('[getNextTrackIndex] Queue track not found in library, skipping:', nextQueueTrack.id);
-                    store.nextInQueue();
-                    return getNextTrackIndex(current, effectiveTotalTracks, isShuffled, repeat);
+                    if (consume) store.nextInQueue();
+                    return _getNextTrackIndex(current, effectiveTotalTracks, isShuffled, repeat, consume);
                 }
             }
         }
 
-        // No queue or queue exhausted - use normal playback logic
+        // Normal playback logic
         if (isShuffled) {
-            if (effectiveTotalTracks <= 0) {
-                return null;
-            }
-            if (effectiveTotalTracks === 1) {
-                return 0;
-            }
+            if (effectiveTotalTracks <= 0) return null;
+            if (effectiveTotalTracks === 1) return 0;
 
             const signature = currentTracks.map((track: Track) => track.id).join('|');
             if (shuffleSignatureRef.current !== signature) {
@@ -140,22 +131,25 @@ export function usePlayer({
             if (shuffleOrderRef.current.length === 0) {
                 const candidates = Array.from({ length: effectiveTotalTracks }, (_, idx) => idx)
                     .filter(idx => idx !== current);
-
-                // Fisher-Yates for a full non-repeating shuffle cycle.
                 for (let i = candidates.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
                 }
-
                 shuffleOrderRef.current = candidates;
             }
 
-            const nextIdx = shuffleOrderRef.current.shift();
-            if (nextIdx === undefined) {
-                return null;
+            if (consume) {
+                const nextIdx = shuffleOrderRef.current.shift();
+                if (nextIdx === undefined) return null;
+                log.info('[getNextTrackIndex] Shuffled (consume) to:', nextIdx);
+                return nextIdx;
+            } else {
+                // Peek: return the front element without removing it
+                const nextIdx = shuffleOrderRef.current[0];
+                if (nextIdx === undefined) return null;
+                log.info('[getNextTrackIndex] Shuffled (peek) to:', nextIdx);
+                return nextIdx;
             }
-            log.info('[getNextTrackIndex] Shuffled to:', nextIdx);
-            return nextIdx;
         } else {
             const nextIdx = current + 1;
             if (nextIdx < effectiveTotalTracks) {
@@ -170,14 +164,25 @@ export function usePlayer({
         }
     }, [storeGetter, tracks]);
 
-    // Crossfade monitoring effect
+    /** Peek-only: return next track index without consuming shuffle order or queue. */
+    const peekNextTrackIndex = useCallback((
+        current: number, total: number, isShuffled: boolean, repeat: RepeatMode
+    ): number | null => _getNextTrackIndex(current, total, isShuffled, repeat, false),
+    [_getNextTrackIndex]);
+
+    /** Consume: return next track index AND advance shuffle order / queue. */
+    const consumeNextTrackIndex = useCallback((
+        current: number, total: number, isShuffled: boolean, repeat: RepeatMode
+    ): number | null => _getNextTrackIndex(current, total, isShuffled, repeat, true),
+    [_getNextTrackIndex]);
+
+    // Crossfade monitoring effect — uses peek (non-destructive)
     useEffect(() => {
         if (!tracks?.length || currentTrack === null || !duration) return;
         if (!crossfade || !crossfade.enabled) return;
 
-        // Check if we should start crossfade
         if (crossfade.shouldCrossfade(progress, duration) && !crossfadeStartedRef.current) {
-            const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
+            const nextIdx = peekNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
 
             if (nextIdx !== null && nextIdx !== currentTrack) {
                 crossfadeStartedRef.current = true;
@@ -204,32 +209,24 @@ export function usePlayer({
             }
         }
 
-        // Reset crossfade state when near start of track
         if (progress < 1) {
             crossfadeStartedRef.current = false;
         }
-    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, getNextTrackIndex]);
+    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, peekNextTrackIndex]);
 
-    // Pre-load next track for gapless playback.
-    // Also activates when crossfade is enabled — the preloaded sink will be
-    // used for an instant track switch at the crossfade midpoint, combining
-    // smooth volume fading with zero-gap preloading.
+    // Pre-load next track for gapless playback — uses peek (non-destructive).
     useEffect(() => {
         if (!tracks?.length || currentTrack === null || !duration) return;
 
-        // Check if gapless playback is enabled in settings
         const gaplessEnabled = storeGetter ? storeGetter().gaplessPlayback : true;
         if (!gaplessEnabled) return;
 
-        // Preload lead-time: ensure the track is decoded before either the
-        // crossfade window opens or the gapless swap point.
         const crossfadeSecs = crossfade?.enabled ? (crossfade.duration / 1000) : 0;
         const preloadLeadTime = Math.max(5, crossfadeSecs + 2);
-
         const timeRemaining = duration - progress;
 
         if (timeRemaining <= preloadLeadTime && timeRemaining > 0 && !nextTrackPreloadedRef.current) {
-            const nextIdx = getNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
+            const nextIdx = peekNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
 
             if (nextIdx !== null && nextIdx !== currentTrack) {
                 const nextTrack = tracks[nextIdx];
@@ -247,22 +244,18 @@ export function usePlayer({
         if (progress < 1) {
             nextTrackPreloadedRef.current = false;
         }
-    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, getNextTrackIndex, storeGetter]);
+    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, peekNextTrackIndex, storeGetter]);
 
     /**
-     * Skip to the next track.
+     * Skip to the next track — uses consume (destructive).
      * Respects shuffle and repeat modes.
      * Cancels any active crossfade.
-     *
-     * Reads all playback state from `storeGetter()` — intentional Zustand
-     * escape hatch so the callback identity stays stable (#14).
      */
     const handleNextTrack = useCallback(() => {
         const store = storeGetter ? storeGetter() : null;
         const currentTracks = store?.activePlaybackTracks?.length ? store.activePlaybackTracks : tracks;
         if (!currentTracks.length) return;
 
-        // Cancel any in-progress crossfade
         if (crossfade && crossfadeInProgressRef.current) {
             crossfade.cancelCrossfade((vol: number) => {
                 audio.changeVolume(vol).catch(err => console.error('Volume restore failed:', err));
@@ -270,18 +263,17 @@ export function usePlayer({
             crossfadeInProgressRef.current = false;
         }
 
-        // Read fresh values from store to prevent stale closure bugs
         const currentShuffle = store?.shuffle ?? shuffle;
         const currentRepeatMode = store?.repeatMode ?? repeatMode;
         const currentTrackIdx = store?.currentTrack ?? currentTrack ?? 0;
 
-        const nextIdx = getNextTrackIndex(currentTrackIdx, currentTracks.length, currentShuffle, currentRepeatMode);
+        const nextIdx = consumeNextTrackIndex(currentTrackIdx, currentTracks.length, currentShuffle, currentRepeatMode);
         if (nextIdx !== null) {
             setCurrentTrack(nextIdx);
             nextTrackPreloadedRef.current = false;
             crossfadeStartedRef.current = false;
         }
-    }, [setCurrentTrack, crossfade, audio, getNextTrackIndex]);
+    }, [setCurrentTrack, crossfade, audio, consumeNextTrackIndex]);
 
     /**
      * Go to previous track or restart current track.

@@ -142,6 +142,11 @@ pub fn has_preloaded(state: tauri::State<AppState>) -> bool {
     state.player.has_preloaded()
 }
 
+#[tauri::command]
+pub fn get_preloaded_path(state: tauri::State<AppState>) -> Option<String> {
+    state.player.get_preloaded_path()
+}
+
 // ReplayGain commands
 #[tauri::command]
 pub fn set_replaygain(gain_db: f32, preamp_db: f32, state: tauri::State<AppState>) -> Result<(), String> {

@@ -634,6 +634,10 @@ impl AudioPlayer {
         lock_or_recover(&self.preload).has_preloaded()
     }
 
+    pub fn get_preloaded_path(&self) -> Option<String> {
+        lock_or_recover(&self.preload).get_path().map(|s| s.to_string())
+    }
+
     // ── Effects ─────────────────────────────────────────────────────
 
     pub fn set_effects(&self, config: EffectsConfig) {

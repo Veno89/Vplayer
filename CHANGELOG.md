@@ -6,6 +6,24 @@ All notable changes to VPlayer will be documented in this file.
 ## [Unreleased]
 
 
+## [0.9.24] - 2026-03-02
+
+### Playback Correctness
+- Added `currentTrackId` as an authoritative playback identity in player state to prevent index drift after auto-advance, filter/sort changes, and active track-list remaps.
+- Updated player-facing windows (`PlayerWindow`, `MiniPlayerWindow`, `PlaylistWindow`) and playback hooks to resolve current track by ID-aware state helpers instead of direct index-only lookups.
+- Hardened active track remapping with self-healing ID/index reconciliation and development-time invariant warnings in `playerSlice`.
+
+### Shuffle + Preload Reliability
+- Refactored next-track selection in `usePlayer` into explicit peek vs consume paths so shuffle order is not destructively advanced by preload/crossfade checks.
+- Added backend/frontend preload identity verification (`get_preloaded_path`) so preloaded audio is only swapped in when it matches the expected next track path.
+
+### Long-Term Groundwork
+- Started typed backend error propagation by migrating `commands/cache.rs` and `commands/smart_playlist.rs` to `AppResult<T>` / `AppError` returns.
+- Continued typed error propagation by migrating `commands/playlist.rs` to `AppResult<T>` / `AppError` returns.
+- Added initial backend integration-test scaffolding with `src-tauri/src/lib.rs` and first integration test `src-tauri/tests/database_playlist_integration.rs`.
+- Added second backend integration test `src-tauri/tests/smart_playlist_integration.rs` to validate smart-playlist execution against initialized DB schema.
+
+
 ## [0.9.23] - 2026-03-01
 
 ### Architecture & Database Decomposition

@@ -55,6 +55,7 @@ interface TrackMenuEventLike {
 export const PlaylistWindow = React.memo(function PlaylistWindow() {
   // ── Store state ───────────────────────────────────────────────────
   const currentTrack = useStore(s => s.currentTrack) ?? 0;
+  const currentTrackId = useStore(s => s.currentTrackId);
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const loadingTrackIndex = useStore(s => s.loadingTrackIndex);
   const isDraggingTracks = useStore(s => s.isDraggingTracks);
@@ -321,16 +322,12 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
 
   }, [displayTracks, onActiveTracksChange, setCurrentTrack, setPlaying]);
 
-  // The currentTrack index now directly refers to the displayTracks array
-  // (set by handleTrackSelect), so no mapping is needed
+  // The displayCurrentTrack is derived from currentTrackId — immune to index staleness
   const displayCurrentTrack = useMemo(() => {
-    if (currentTrack === null || currentTrack === undefined) return null;
-    // Validate the index is within bounds of displayTracks
-    if (currentTrack >= 0 && currentTrack < displayTracks.length) {
-      return currentTrack;
-    }
-    return null;
-  }, [currentTrack, displayTracks.length]);
+    if (!currentTrackId) return null;
+    const idx = displayTracks.findIndex(t => t.id === currentTrackId);
+    return idx !== -1 ? idx : null;
+  }, [currentTrackId, displayTracks]);
 
   // Auto-scroll to current track when it changes
   useEffect(() => {
@@ -340,10 +337,9 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   }, [displayCurrentTrack, playlistAutoScroll]);
 
   // CRITICAL: Sync activePlaybackTracks when displayTracks changes (sorting/filtering)
-  // This ensures next/previous navigation respects the visible playlist order
+  // This ensures next/previous navigation respects the visible playlist order.
+  // The store's setActivePlaybackTracks handles index remapping via currentTrackId.
   useEffect(() => {
-    // Skip if no active track or no callback
-    if (currentTrack === null || currentTrack === undefined) return;
     if (!onActiveTracksChange) return;
 
     // Check if displayTracks actually changed (not just a re-render)
@@ -364,33 +360,12 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       return;
     }
 
-    // Get the currently playing track from the store
-    const currentlyPlayingTrack = getCurrentTrackData();
-    if (!currentlyPlayingTrack) {
-      prevDisplayTracksRef.current = displayTracks;
-      return;
-    }
-
-    // Find where this track is in the new displayTracks order
-    const newIndex = displayTracks.findIndex((t: Track) => t?.id === currentlyPlayingTrack.id);
-
-    console.log('[PlaylistWindow] displayTracks changed, remapping track:', currentlyPlayingTrack.id,
-      'old index:', currentTrack, 'new index:', newIndex);
-
-    // Update the active playback tracks to match the new display order
+    // Update the active playback tracks — the store remaps currentTrack
+    // by currentTrackId automatically, no manual index fix needed.
     onActiveTracksChange(displayTracks);
 
-    // Remap the current track index if the track is still in the list
-    // Use synchronous update - React batches both state changes in the same effect
-    if (newIndex !== -1 && newIndex !== currentTrack) {
-      setCurrentTrack(newIndex);
-    } else if (newIndex === -1) {
-      // Track was filtered out entirely - keep playing but clear the visual highlight
-      console.warn('[PlaylistWindow] Currently playing track filtered out of display');
-    }
-
     prevDisplayTracksRef.current = displayTracks;
-  }, [displayTracks, currentTrack, onActiveTracksChange, getCurrentTrackData, setCurrentTrack]);
+  }, [displayTracks, onActiveTracksChange]);
 
   // Manual scroll to current track
   const scrollToCurrentTrack = useCallback(() => {

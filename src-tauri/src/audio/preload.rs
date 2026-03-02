@@ -68,6 +68,11 @@ impl PreloadManager {
         self.sink.is_some()
     }
 
+    /// Return the file path of the currently preloaded track, if any.
+    pub fn get_path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
     pub fn clear(&mut self) {
         self.sink = None;
         self.path = None;

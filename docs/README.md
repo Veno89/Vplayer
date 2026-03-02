@@ -392,4 +392,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.23 | **Updated**: March 2026
+**Version**: 0.9.24 | **Updated**: March 2026

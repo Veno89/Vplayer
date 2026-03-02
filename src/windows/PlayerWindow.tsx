@@ -32,7 +32,7 @@ export function PlayerWindow() {
   const currentColors = useCurrentColors();
   const isMuted = false; // TODO: wire up properly when mute state is in store
   const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
-  const currentTrackData = currentTrack !== null ? tracks?.[currentTrack] : null;
+  const currentTrackData = useStore(s => s.getCurrentTrackData)();
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
   const isDisabled = !!audioBackendError; // Disable controls if audio backend has failed
 

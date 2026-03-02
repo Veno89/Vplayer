@@ -1,64 +1,65 @@
 // Smart playlist commands
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use crate::scanner::Track;
 use crate::smart_playlists::{self, SmartPlaylist};
 
 #[tauri::command]
-pub fn create_smart_playlist(playlist: SmartPlaylist, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn create_smart_playlist(playlist: SmartPlaylist, state: tauri::State<'_, AppState>) -> AppResult<()> {
     let conn = state.db.conn();
     smart_playlists::save_smart_playlist(&conn, &playlist)
-        .map_err(|e| format!("Failed to create smart playlist: {}", e))
+    .map_err(|e| AppError::Database(format!("Failed to create smart playlist: {}", e)))
 }
 
 #[tauri::command]
-pub fn get_all_smart_playlists(state: tauri::State<'_, AppState>) -> Result<Vec<SmartPlaylist>, String> {
+pub fn get_all_smart_playlists(state: tauri::State<'_, AppState>) -> AppResult<Vec<SmartPlaylist>> {
     let conn = state.db.conn();
     smart_playlists::load_all_smart_playlists(&conn)
-        .map_err(|e| format!("Failed to load smart playlists: {}", e))
+    .map_err(|e| AppError::Database(format!("Failed to load smart playlists: {}", e)))
 }
 
 #[tauri::command]
-pub fn get_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Result<SmartPlaylist, String> {
+pub fn get_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> AppResult<SmartPlaylist> {
     let conn = state.db.conn();
     smart_playlists::load_smart_playlist(&conn, &id)
-        .map_err(|e| format!("Failed to load smart playlist: {}", e))
+    .map_err(|e| AppError::Database(format!("Failed to load smart playlist: {}", e)))
 }
 
 #[tauri::command]
-pub fn update_smart_playlist(playlist: SmartPlaylist, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn update_smart_playlist(playlist: SmartPlaylist, state: tauri::State<'_, AppState>) -> AppResult<()> {
     let conn = state.db.conn();
     smart_playlists::save_smart_playlist(&conn, &playlist)
-        .map_err(|e| format!("Failed to update smart playlist: {}", e))
+    .map_err(|e| AppError::Database(format!("Failed to update smart playlist: {}", e)))
 }
 
 #[tauri::command]
-pub fn delete_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn delete_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
     let conn = state.db.conn();
     smart_playlists::delete_smart_playlist(&conn, &id)
-        .map_err(|e| format!("Failed to delete smart playlist: {}", e))
+    .map_err(|e| AppError::Database(format!("Failed to delete smart playlist: {}", e)))
 }
 
 #[tauri::command]
-pub fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<Track>, String> {
+pub fn execute_smart_playlist(id: String, state: tauri::State<'_, AppState>) -> AppResult<Vec<Track>> {
     let conn = state.db.conn();
     
     // Load the smart playlist
     let playlist = smart_playlists::load_smart_playlist(&conn, &id)
-        .map_err(|e| format!("Failed to load smart playlist: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to load smart playlist: {}", e)))?;
     
     // Generate parameterized SQL query
     let (query, params) = playlist.to_sql()
-        .map_err(|e| format!("Failed to generate query: {}", e))?;
+        .map_err(|e| AppError::Validation(format!("Failed to generate query: {}", e)))?;
     
     // Execute query with parameters
     let mut stmt = conn.prepare(&query)
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to prepare query: {}", e)))?;
     
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
     let tracks = stmt.query_map(param_refs.as_slice(), Track::from_row)
-    .map_err(|e| format!("Failed to execute query: {}", e))?
+    .map_err(|e| AppError::Database(format!("Failed to execute query: {}", e)))?
     .collect::<rusqlite::Result<Vec<_>>>()
-    .map_err(|e| format!("Failed to collect results: {}", e))?;
+    .map_err(|e| AppError::Database(format!("Failed to collect results: {}", e)))?;
     
     Ok(tracks)
 }

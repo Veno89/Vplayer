@@ -72,6 +72,7 @@ describe('usePlaybackEffects', () => {
       setProgress: vi.fn(),
       setDuration: vi.fn(),
       currentTrack: null,
+      currentTrackId: null,
       abRepeat: null,
       volume: 0.8,
       setLastPosition: vi.fn(),
@@ -242,6 +243,7 @@ describe('usePlaybackEffects', () => {
   it('should increment play count when track starts playing', async () => {
     storeMock.playing = true;
     storeMock.currentTrack = 0;
+    storeMock.currentTrackId = 'track-1';
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
@@ -258,6 +260,7 @@ describe('usePlaybackEffects', () => {
   it('should not increment play count when not playing', async () => {
     storeMock.playing = false;
     storeMock.currentTrack = 0;
+    storeMock.currentTrackId = 'track-1';
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),

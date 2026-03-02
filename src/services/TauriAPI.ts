@@ -312,6 +312,10 @@ class TauriAPIService {
         return this._invoke('has_preloaded');
     }
 
+    async getPreloadedPath(): Promise<string | null> {
+        return this._invoke('get_preloaded_path');
+    }
+
     // ========== Audio Effects Commands ==========
 
     async setAudioEffects(config: AudioEffectsConfig): Promise<void> {

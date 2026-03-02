@@ -12,14 +12,12 @@ import { useStore } from '../store/useStore';
  */
 export function useTitleBar(): void {
   const titleBarFormat = useStore(s => s.titleBarFormat);
-  const currentTrack = useStore(s => s.currentTrack);
+  const currentTrackId = useStore(s => s.currentTrackId);
   const playing = useStore(s => s.playing);
 
   useEffect(() => {
-    // Read fresh track data from store
-    const state = useStore.getState();
-    const tracks = state.activePlaybackTracks;
-    const track = currentTrack !== null ? tracks?.[currentTrack] : null;
+    // Read fresh track data from store using ID-based lookup
+    const track = useStore.getState().getCurrentTrackData();
 
     if (!track || titleBarFormat === 'VPlayer') {
       document.title = 'VPlayer';
@@ -32,5 +30,5 @@ export function useTitleBar(): void {
       .replace(/\{album\}/g, track.album || 'Unknown Album');
 
     document.title = playing ? formatted : `VPlayer`;
-  }, [titleBarFormat, currentTrack, playing]);
+  }, [titleBarFormat, currentTrackId, playing]);
 }

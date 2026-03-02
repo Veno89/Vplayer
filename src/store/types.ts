@@ -171,6 +171,8 @@ export interface DiscographyConfig {
 export interface PlayerSliceState {
     // Player State
     currentTrack: number | null;
+    /** Authoritative track identity — survives index remaps. */
+    currentTrackId: string | null;
     playing: boolean;
     progress: number;
     duration: number;

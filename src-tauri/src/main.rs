@@ -55,7 +55,7 @@ use commands::{
     load_track, play_audio, pause_audio, stop_audio, set_volume, seek_to,
     get_position, get_duration, is_playing, is_finished, recover_audio,
     get_audio_devices, set_audio_device, preload_track, swap_to_preloaded,
-    clear_preload, has_preloaded, set_balance, get_balance,
+    clear_preload, has_preloaded, get_preloaded_path, set_balance, get_balance,
     is_audio_healthy, needs_audio_reinit, get_inactive_duration,
     has_audio_device_changed, is_audio_device_available,
     // Library commands
@@ -444,6 +444,7 @@ fn main() {
             swap_to_preloaded,
             clear_preload,
             has_preloaded,
+            get_preloaded_path,
             set_balance,
             get_balance,
             export_playlist,

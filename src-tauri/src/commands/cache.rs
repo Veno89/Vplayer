@@ -1,29 +1,30 @@
 // Cache and system commands
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use tauri::{AppHandle, Manager};
 use log::info;
 
 /// Clear album art cache
 #[tauri::command]
-pub fn clear_album_art_cache(app: AppHandle) -> Result<(), String> {
+pub fn clear_album_art_cache(app: AppHandle) -> AppResult<()> {
     let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get cache dir: {}", e))))?
         .join("album_art");
     
     if cache_dir.exists() {
         std::fs::remove_dir_all(&cache_dir)
-            .map_err(|e| format!("Failed to clear cache: {}", e))?;
+            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to clear cache: {}", e))))?;
         std::fs::create_dir_all(&cache_dir)
-            .map_err(|e| format!("Failed to recreate cache dir: {}", e))?;
+            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to recreate cache dir: {}", e))))?;
     }
     Ok(())
 }
 
 /// Get cache size in bytes
 #[tauri::command]
-pub fn get_cache_size(app: AppHandle) -> Result<u64, String> {
+pub fn get_cache_size(app: AppHandle) -> AppResult<u64> {
     let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get cache dir: {}", e))))?;
     
     fn dir_size(path: &std::path::Path) -> std::io::Result<u64> {
         let mut size = 0;
@@ -41,24 +42,24 @@ pub fn get_cache_size(app: AppHandle) -> Result<u64, String> {
         Ok(size)
     }
     
-    dir_size(&cache_dir).map_err(|e| format!("Failed to calculate size: {}", e))
+    dir_size(&cache_dir).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to calculate size: {}", e))))
 }
 
 /// Get database size in bytes
 #[tauri::command]
-pub fn get_database_size(app: AppHandle) -> Result<u64, String> {
+pub fn get_database_size(app: AppHandle) -> AppResult<u64> {
     let db_path = app.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get app data dir: {}", e))))?
         .join("vplayer.db");
     
     std::fs::metadata(db_path)
         .map(|m| m.len())
-        .map_err(|e| format!("Failed to get database size: {}", e))
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get database size: {}", e))))
 }
 
 /// Get performance statistics
 #[tauri::command]
-pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<serde_json::Value> {
     let conn = state.db.conn();
     
     // Get database stats
@@ -79,9 +80,10 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_
     
     // Calculate average query times (simplified - just track count queries)
     let start = std::time::Instant::now();
-    let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000").map_err(|e| format!("Query error: {}", e))?;
+    let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000")
+        .map_err(|e| AppError::Database(format!("Query error: {}", e)))?;
     let _track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
-        .map_err(|e| format!("Query error: {}", e))?
+        .map_err(|e| AppError::Database(format!("Query error: {}", e)))?
         .filter_map(Result::ok)
         .collect();
     let query_time_ms = start.elapsed().as_millis();
@@ -113,22 +115,22 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> Result<serde_
 
 /// Run database vacuum to reclaim space and optimize
 #[tauri::command]
-pub fn vacuum_database(state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn vacuum_database(state: tauri::State<'_, AppState>) -> AppResult<()> {
     info!("Running database vacuum to reclaim space and optimize");
     let conn = state.db.conn();
     conn.execute("VACUUM", [])
-        .map_err(|e| format!("Failed to vacuum database: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to vacuum database: {}", e)))?;
     info!("Database vacuum completed successfully");
     Ok(())
 }
 
 /// Evict oldest album-art cache files until total size is ≤ `limit_mb` MB.
 #[tauri::command]
-pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> Result<u64, String> {
+pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> AppResult<u64> {
     let cache_dir = app
         .path()
         .app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get cache dir: {}", e))))?
         .join("album_art");
 
     if !cache_dir.exists() {
@@ -141,9 +143,11 @@ pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> Result<u64, 
     let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = Vec::new();
     let mut total_size: u64 = 0;
 
-    for entry in std::fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(&cache_dir)
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
+    {
+        let entry = entry.map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+        let meta = entry.metadata().map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
         if meta.is_file() {
             let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
             total_size += meta.len();

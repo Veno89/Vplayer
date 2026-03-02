@@ -23,7 +23,7 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
   const tracks = playbackTracks;
   const isMuted = volume === 0; // TODO: wire up when mute state is in store
   const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
-  const currentTrackData = currentTrack !== null ? tracks[currentTrack] : null;
+  const currentTrackData = useStore(s => s.getCurrentTrackData)();
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
 
   return (

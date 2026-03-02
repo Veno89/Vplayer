@@ -28,7 +28,6 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   // Store selectors
   const playing = useStore(s => s.playing);
   const setPlaying = useStore(s => s.setPlaying);
-  const currentTrack = useStore(s => s.currentTrack);
   const abRepeat = useStore(s => s.abRepeat);
   const volume = useStore(s => s.volume);
 
@@ -147,24 +146,26 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   }, [playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Increment play count + track change notification ────────────────
+  const currentTrackId = useStore(s => s.currentTrackId);
   useEffect(() => {
-    if (playing && currentTrack !== null && tracks?.[currentTrack]) {
-      const trackId = tracks[currentTrack].id;
+    if (playing && currentTrackId) {
       // Skip if we already incremented for this track (prevents double-increment
       // when the tracks array identity changes, e.g., during a library refresh)
-      if (lastIncrementedTrackIdRef.current === trackId) return;
-      lastIncrementedTrackIdRef.current = trackId;
-      TauriAPI.incrementPlayCount(trackId)
+      if (lastIncrementedTrackIdRef.current === currentTrackId) return;
+      lastIncrementedTrackIdRef.current = currentTrackId;
+      TauriAPI.incrementPlayCount(currentTrackId)
         .catch(err => console.warn('Failed to increment play count:', err));
 
       // Show in-app toast notification for track change if enabled
       const { trackChangeNotification } = useStore.getState();
       if (trackChangeNotification) {
-        const track = tracks[currentTrack];
-        const title = track.title || track.name || 'Unknown';
-        const artist = track.artist || 'Unknown Artist';
-        toast.showInfo(`Now playing: ${title} — ${artist}`);
+        const track = useStore.getState().getCurrentTrackData();
+        if (track) {
+          const title = track.title || track.name || 'Unknown';
+          const artist = track.artist || 'Unknown Artist';
+          toast.showInfo(`Now playing: ${title} — ${artist}`);
+        }
       }
     }
-  }, [playing, currentTrack, tracks]);
+  }, [playing, currentTrackId]);
 }

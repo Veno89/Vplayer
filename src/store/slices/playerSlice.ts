@@ -7,6 +7,7 @@ type GetFn = () => AppStore;
 export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     // === Player State ===
     currentTrack: null,
+    currentTrackId: null,
     playing: false,
     progress: 0,
     duration: 0,
@@ -36,9 +37,19 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     queueHistory: [],
 
     // === Player Actions ===
-    setCurrentTrack: (track) => {
-        set({ currentTrack: track, progress: 0 });
-    },
+    setCurrentTrack: (trackIndex) => set((state) => {
+        const tracks = state.activePlaybackTracks;
+        const trackId = trackIndex !== null && tracks[trackIndex]
+            ? tracks[trackIndex].id
+            : null;
+
+        // Dev invariant: warn if index is non-null but couldn't resolve to an ID
+        if (trackIndex !== null && !trackId) {
+            console.warn('[setCurrentTrack] Index', trackIndex, 'out of bounds (tracks length:', tracks.length, ')');
+        }
+
+        return { currentTrack: trackIndex, currentTrackId: trackId, progress: 0 };
+    }),
 
     setPlaying: (playingOrUpdater) =>
         set((state) => ({
@@ -54,33 +65,16 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
 
     setActivePlaybackTracks: (tracks) =>
         set((state) => {
-            if (state.currentTrack === null || state.currentTrack === undefined) {
+            // Use the authoritative currentTrackId for remapping
+            const trackId = state.currentTrackId;
+            if (!trackId) {
                 return { activePlaybackTracks: tracks };
             }
-
-            const previousTrack = state.activePlaybackTracks[state.currentTrack];
-            const currentTrackId = previousTrack?.id ?? state.lastTrackId;
-
-            if (!currentTrackId) {
-                const fallbackIndex = state.currentTrack < tracks.length ? state.currentTrack : null;
-                return {
-                    activePlaybackTracks: tracks,
-                    currentTrack: fallbackIndex,
-                };
-            }
-
-            const remappedIndex = tracks.findIndex(track => track.id === currentTrackId);
-            if (remappedIndex !== -1) {
-                return {
-                    activePlaybackTracks: tracks,
-                    currentTrack: remappedIndex,
-                };
-            }
-
-            const fallbackIndex = state.currentTrack < tracks.length ? state.currentTrack : null;
+            const remapped = tracks.findIndex(t => t.id === trackId);
             return {
                 activePlaybackTracks: tracks,
-                currentTrack: fallbackIndex,
+                currentTrack: remapped !== -1 ? remapped : null,
+                // currentTrackId stays — the identity doesn't change
             };
         }),
 
@@ -91,8 +85,20 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
 
     getCurrentTrackData: () => {
         const state = get();
-        if (state.currentTrack === null || state.currentTrack === undefined) return null;
-        return state.activePlaybackTracks[state.currentTrack] || null;
+        if (!state.currentTrackId) return null;
+        // Fast path: index matches ID
+        const atIndex = state.activePlaybackTracks[state.currentTrack ?? -1];
+        if (atIndex?.id === state.currentTrackId) return atIndex;
+        // Self-heal: find by ID, fix stale index
+        const idx = state.activePlaybackTracks.findIndex(
+            t => t.id === state.currentTrackId
+        );
+        if (idx !== -1) {
+            console.warn('[getCurrentTrackData] Self-healed stale index:', state.currentTrack, '→', idx);
+            set({ currentTrack: idx });
+            return state.activePlaybackTracks[idx];
+        }
+        return null;
     },
 
     getPlaybackTracks: () => {
@@ -259,6 +265,7 @@ export const playerPersistState = (state: PlayerSliceState) => ({
     volume: state.volume,
     shuffle: state.shuffle,
     repeatMode: state.repeatMode,
+    currentTrackId: state.currentTrackId,
     lastTrackId: state.lastTrackId,
     lastPosition: state.lastPosition,
     lastPlaylistId: state.lastPlaylistId,

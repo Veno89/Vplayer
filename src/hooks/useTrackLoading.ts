@@ -91,18 +91,26 @@ export function useTrackLoading({
       console.log(`[useTrackLoading] loading: ${track.name} (ID: ${track.id})`);
 
       try {
-        // 4. Try to swap to preloaded track (gapless) before falling back to full load
+        // 4. Try to swap to preloaded track (gapless) before falling back to full load.
+        //    Verify the preloaded path matches the expected track to prevent
+        //    audio-vs-UI mismatch when shuffle order diverges from preloaded content.
         let usedPreload = false;
         try {
           const hasPreloaded = await TauriAPI.hasPreloaded();
           if (hasPreloaded) {
-            await TauriAPI.swapToPreloaded();
-            usedPreload = true;
-            // Still need to update duration in store
-            const realDuration = await TauriAPI.getDuration().catch(() => 0);
-            const dur = realDuration > 0 ? realDuration : track.duration || 0;
-            useStore.getState().setDuration(dur);
-            useStore.getState().setProgress(0);
+            const preloadedPath = await TauriAPI.getPreloadedPath();
+            if (preloadedPath === track.path) {
+              await TauriAPI.swapToPreloaded();
+              usedPreload = true;
+              const realDuration = await TauriAPI.getDuration().catch(() => 0);
+              const dur = realDuration > 0 ? realDuration : track.duration || 0;
+              useStore.getState().setDuration(dur);
+              useStore.getState().setProgress(0);
+            } else {
+              // Preloaded track doesn't match — discard and do a full load
+              console.warn('[useTrackLoading] Preloaded path mismatch, clearing preload');
+              await TauriAPI.clearPreload();
+            }
           }
         } catch {
           // Preload swap failed, fall back to normal load
