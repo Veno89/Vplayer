@@ -17,13 +17,23 @@ import { invoke } from '@tauri-apps/api/core';
 
 // ── Mock store values & setters ────────────────────────────────────────────
 const storeMock: Record<string, any> = {};
+// Capture subscribe listeners so tests can simulate store state transitions
+let subscribeListeners: Array<(state: any) => void> = [];
 
 vi.mock('../../store/useStore', () => ({
   useStore: Object.assign(
     // Selector function: (s => s.field) pattern
     (selector: (s: any) => any) => selector(storeMock),
-    // Static .getState()
-    { getState: () => storeMock },
+    // Static .getState() and .subscribe()
+    {
+      getState: () => storeMock,
+      subscribe: vi.fn((listener: (state: any) => void) => {
+        subscribeListeners.push(listener);
+        return () => {
+          subscribeListeners = subscribeListeners.filter(l => l !== listener);
+        };
+      }),
+    },
   ),
 }));
 
@@ -37,6 +47,7 @@ describe('usePlaybackEffects', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    subscribeListeners = [];
 
     audioMock = {
       isPlaying: false,
@@ -132,39 +143,56 @@ describe('usePlaybackEffects', () => {
   // A-B Repeat (reads from store progress, not audio.progress)
   // -------------------------------------------------------------------------
   it('should seek to point A when progress passes point B', () => {
-    vi.useFakeTimers();
     storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
-    storeMock.progress = 31; // past point B
+    storeMock.progress = 0;
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
     );
 
-    // Advance past the 1-second interval tick
-    act(() => { vi.advanceTimersByTime(1100); });
+    // Simulate a store update where progress passes point B
+    storeMock.progress = 31;
+    act(() => {
+      for (const listener of subscribeListeners) {
+        listener(storeMock);
+      }
+    });
 
     expect(audioMock.seek).toHaveBeenCalledWith(10);
-    vi.useRealTimers();
   });
 
   it('should not seek when A-B repeat is disabled', () => {
     storeMock.abRepeat = { enabled: false, pointA: 10, pointB: 30 };
-    storeMock.progress = 31;
+    storeMock.progress = 0;
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
     );
+
+    storeMock.progress = 31;
+    act(() => {
+      for (const listener of subscribeListeners) {
+        listener(storeMock);
+      }
+    });
 
     expect(audioMock.seek).not.toHaveBeenCalled();
   });
 
   it('should not seek when within A-B range', () => {
     storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
-    storeMock.progress = 20;
+    storeMock.progress = 0;
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
     );
+
+    storeMock.progress = 20;
+    act(() => {
+      for (const listener of subscribeListeners) {
+        listener(storeMock);
+      }
+    });
 
     expect(audioMock.seek).not.toHaveBeenCalled();
   });

@@ -284,6 +284,9 @@ impl Database {
             ("idx_tracks_play_count", "tracks(play_count)"),
             ("idx_tracks_last_played", "tracks(last_played)"),
             ("idx_tracks_date_added", "tracks(date_added)"),
+            ("idx_tracks_duration", "tracks(duration)"),
+            ("idx_tracks_year", "tracks(year)"),
+            ("idx_folders_path", "folders(path)"),
             ("idx_playlist_tracks_playlist", "playlist_tracks(playlist_id)"),
             ("idx_playlist_tracks_track", "playlist_tracks(track_id)"),
         ];

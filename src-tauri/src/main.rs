@@ -6,6 +6,7 @@
 // Core modules
 mod audio;
 mod scanner;
+mod context_log;
 mod database;
 mod database_album_art;
 mod database_failed_tracks;
@@ -16,10 +17,12 @@ mod database_tracks;
 mod error;
 mod watcher;
 mod playlist_io;
+mod query_builder;
 mod smart_playlists;
 mod validation;
 mod lyrics;
 mod replaygain;
+mod replaygain_store;
 mod tag_service;
 mod effects;
 mod visualizer;
@@ -57,7 +60,7 @@ use commands::{
     get_audio_devices, set_audio_device, preload_track, swap_to_preloaded,
     clear_preload, has_preloaded, get_preloaded_path, set_balance, get_balance,
     is_audio_healthy, needs_audio_reinit, get_inactive_duration,
-    has_audio_device_changed, is_audio_device_available,
+    has_audio_device_changed, is_audio_device_available, get_audio_health,
     // Library commands
     scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
@@ -403,6 +406,7 @@ fn main() {
             get_inactive_duration,
             has_audio_device_changed,
             is_audio_device_available,
+            get_audio_health,
             get_audio_devices,
             set_audio_device,
             scan_folder,

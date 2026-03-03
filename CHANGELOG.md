@@ -5,6 +5,23 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.26] - 2026-03-03
+
+### Playback Correctness
+- Fixed crossfade end-of-track race where playback could stop instead of transitioning to the next track.
+- Added midpoint-aware crossfade transition guard so stale `track-ended` events no longer cause double-advance or premature stop.
+- Corrected post-midpoint volume behavior so the newly loaded track fades back up smoothly to the user volume.
+
+### Architecture Improvements (Long-Term)
+- Added `query_builder.rs` and refactored dynamic library filtering queries to share one builder-based filter path.
+- Split ReplayGain responsibilities into pure analysis (`replaygain.rs`) and persistence (`replaygain_store.rs`) with backward-compatible re-exports.
+- Added structured context logging helper (`context_log.rs`) and applied it to audio load flow.
+- Replaced in-memory waveform cache with file-system waveform cache in `commands/visualizer.rs`.
+- Implemented telemetry stub improvements in `ErrorHandler.report()` with a bounded in-memory structured report buffer.
+
+### Documentation
+- Updated architecture audit long-term roadmap status and module reference map for newly introduced backend modules.
+
 ## [0.9.25] - 2026-03-02
 
 ### Long-Term Plan Progress (M1/M2)

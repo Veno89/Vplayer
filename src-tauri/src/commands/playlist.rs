@@ -90,10 +90,15 @@ pub fn reorder_playlist_tracks(
 }
 
 #[tauri::command]
-pub fn get_playlist_tracks(playlist_id: String, state: tauri::State<AppState>) -> AppResult<Vec<Track>> {
+pub fn get_playlist_tracks(
+    playlist_id: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    state: tauri::State<AppState>,
+) -> AppResult<Vec<Track>> {
     state
         .db
-        .get_playlist_tracks(&playlist_id)
+        .get_playlist_tracks_page(&playlist_id, offset, limit)
         .map_err(|e| AppError::Database(e.to_string()))
 }
 

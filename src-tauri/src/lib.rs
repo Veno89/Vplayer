@@ -1,3 +1,4 @@
+pub mod context_log;
 pub mod database;
 pub mod database_album_art;
 pub mod database_failed_tracks;
@@ -6,7 +7,9 @@ pub mod database_playlist;
 pub mod database_schema;
 pub mod database_tracks;
 pub mod error;
+pub mod query_builder;
 pub mod replaygain;
+pub mod replaygain_store;
 pub mod scanner;
 pub mod smart_playlists;
 pub mod time_utils;

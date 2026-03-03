@@ -233,8 +233,8 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
 
     isTogglingRef.current = true;
     try {
-      const deviceAvailable = await TauriAPI.isAudioDeviceAvailable();
-      if (!deviceAvailable) {
+      const health = await TauriAPI.getAudioHealth();
+      if (!health.device_available) {
         toast.showError('No audio device found. Please connect headphones or speakers.');
         setAudioBackendError('No audio device available');
         return;
@@ -246,14 +246,11 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         setAudioBackendError(null);
       }
 
-      const deviceChanged = await TauriAPI.hasAudioDeviceChanged();
-      const inactiveDuration = await TauriAPI.getInactiveDuration();
-
-      if (deviceChanged) {
+      if (health.device_changed) {
         log.info('Audio device changed, backend will reinitialize...');
         toast.showInfo('Audio device changed, reconnecting...', 2000);
-      } else if (inactiveDuration > LONG_IDLE_THRESHOLD_SECONDS) {
-        log.info(`Audio idle for ${Math.round(inactiveDuration / 60)} min, reinitializing...`);
+      } else if (health.inactive_duration > LONG_IDLE_THRESHOLD_SECONDS) {
+        log.info(`Audio idle for ${Math.round(health.inactive_duration / 60)} min, reinitializing...`);
         toast.showInfo('Resuming playback...', 2000);
       }
 

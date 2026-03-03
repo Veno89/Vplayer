@@ -409,8 +409,8 @@ class TauriAPIService {
         return this._invoke('get_all_playlists');
     }
 
-    async getPlaylistTracks(playlistId: string): Promise<Track[]> {
-        return this._invoke('get_playlist_tracks', { playlistId });
+    async getPlaylistTracks(playlistId: string, offset?: number, limit?: number): Promise<Track[]> {
+        return this._invoke('get_playlist_tracks', { playlistId, offset, limit });
     }
 
     async createPlaylist(name: string): Promise<Playlist> {
@@ -492,6 +492,17 @@ class TauriAPIService {
 
     async getInactiveDuration(): Promise<number> {
         return this._invoke('get_inactive_duration');
+    }
+
+    /** Fetch all audio health info in a single IPC round-trip. */
+    async getAudioHealth(): Promise<{
+        healthy: boolean;
+        needs_reinit: boolean;
+        inactive_duration: number;
+        device_changed: boolean;
+        device_available: boolean;
+    }> {
+        return this._invoke('get_audio_health');
     }
 
     async getAudioDevices(): Promise<string[]> {

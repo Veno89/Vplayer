@@ -3,8 +3,55 @@ use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::visualizer::{VisualizerData, VisualizerMode};
 use rodio::{Decoder, Source};
+use std::collections::hash_map::DefaultHasher;
+use std::fs;
 use std::fs::File;
+use std::hash::{Hash, Hasher};
 use std::io::BufReader;
+use std::path::PathBuf;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File-system waveform cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Directory under the system temp folder used for cached waveforms.
+fn waveform_cache_dir() -> PathBuf {
+    let mut dir = std::env::temp_dir();
+    dir.push("vplayer_waveform_cache");
+    dir
+}
+
+/// Deterministic filename for a (path, bars) pair.
+fn cache_key(path: &str, bars: usize) -> String {
+    let mut h = DefaultHasher::new();
+    path.hash(&mut h);
+    bars.hash(&mut h);
+    format!("{:016x}.waveform", h.finish())
+}
+
+/// Try to read a cached waveform from disk.
+fn read_cached_waveform(path: &str, bars: usize) -> Option<Vec<f32>> {
+    let file_path = waveform_cache_dir().join(cache_key(path, bars));
+    let bytes = fs::read(&file_path).ok()?;
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    Some(
+        bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect(),
+    )
+}
+
+/// Persist a waveform to disk cache (best-effort, failure is silent).
+fn write_cached_waveform(path: &str, bars: usize, data: &[f32]) {
+    let dir = waveform_cache_dir();
+    let _ = fs::create_dir_all(&dir);
+    let file_path = dir.join(cache_key(path, bars));
+    let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let _ = fs::write(file_path, bytes);
+}
 
 /// Get visualization data from current audio playback
 /// This reads samples from the audio player's internal buffer and processes them with FFT
@@ -46,6 +93,11 @@ pub fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>)
 pub fn get_track_waveform(path: String, num_bars: Option<usize>) -> AppResult<Vec<f32>> {
     let bars = num_bars.unwrap_or(200);
 
+    // Check file-system cache first
+    if let Some(cached) = read_cached_waveform(&path, bars) {
+        return Ok(cached);
+    }
+
     let file = File::open(&path).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open file: {}", e))))?;
     let source = Decoder::new(BufReader::new(file))
         .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
@@ -83,6 +135,9 @@ pub fn get_track_waveform(path: String, num_bars: Option<usize>) -> AppResult<Ve
             *p /= max_peak;
         }
     }
+
+    // Persist to file-system cache
+    write_cached_waveform(&path, bars, &peaks);
 
     Ok(peaks)
 }

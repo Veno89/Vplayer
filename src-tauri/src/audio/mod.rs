@@ -23,6 +23,7 @@ use rodio::{Decoder, Sink, Source};
 use std::fs::File;
 use std::io::BufReader;
 use log::{info, error, warn};
+use crate::context_log::LogContext;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Condvar};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -180,19 +181,20 @@ impl AudioPlayer {
     // ── Track loading ───────────────────────────────────────────────
 
     pub fn load(&self, path: String) -> AppResult<()> {
-        info!("Loading audio file: {}", path);
+        let ctx = LogContext::new("audio_load").with("path", &path);
+        ctx.info("Loading audio file");
         let file = File::open(&path).map_err(|e| {
-            error!("Failed to open file {}: {}", path, e);
+            ctx.error(&format!("Failed to open: {}", e));
             AppError::NotFound(format!("Failed to open file {}: {}", path, e))
         })?;
 
         let source = Decoder::new(BufReader::new(file)).map_err(|e| {
-            error!("Failed to decode audio: {}", e);
+            ctx.error(&format!("Decode failed: {}", e));
             AppError::Decode(format!("Failed to decode audio: {}", e))
         })?;
 
         let duration = source.total_duration().unwrap_or(Duration::ZERO);
-        info!("Audio file loaded successfully, duration: {:?}", duration);
+        ctx.info(&format!("Loaded, duration={:?}", duration));
 
         // Clear visualizer buffer for new track
         self.visualizer_buffer.clear();

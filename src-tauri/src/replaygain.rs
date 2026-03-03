@@ -1,7 +1,5 @@
 use ebur128::{EbuR128, Mode};
-use rusqlite::Connection;
 use std::fs::File;
-use std::sync::Mutex;
 use symphonia::core::audio::{AudioBuffer, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::formats::FormatOptions;
@@ -10,7 +8,6 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use serde::{Serialize, Deserialize};
 use log::{info, warn};
-use crate::time_utils::now_millis;
 
 /**
  * ReplayGain analyzer for track loudness normalization
@@ -34,22 +31,6 @@ pub struct AlbumReplayGainData {
     pub album_peak: f64,
     pub loudness: f64,
     pub track_count: i64,
-}
-
-impl ReplayGainData {
-    #[allow(dead_code)]
-    /// Calculate volume adjustment factor (0.0-1.0 range)
-    pub fn get_adjustment(&self, target_lufs: f64) -> f64 {
-        let gain_db = target_lufs - self.loudness;
-        let factor = 10_f64.powf(gain_db / 20.0);
-        
-        // Prevent clipping - if gain would cause peak > 1.0, reduce it
-        if self.track_peak * factor > 1.0 {
-            1.0 / self.track_peak
-        } else {
-            factor
-        }
-    }
 }
 
 /**
@@ -176,234 +157,31 @@ pub fn analyze_track(path: &str) -> Result<ReplayGainData, String> {
     })
 }
 
-/**
- * Store ReplayGain data in database
- */
-pub fn store_replaygain(
-    conn: &Mutex<Connection>,
-    track_path: &str,
-    data: &ReplayGainData,
-) -> Result<(), String> {
-    let conn = conn.lock().unwrap_or_else(|poisoned| {
-        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
-        poisoned.into_inner()
-    });
-    
-    conn.execute(
-        "UPDATE tracks SET track_gain = ?, track_peak = ?, loudness = ? WHERE path = ?",
-        rusqlite::params![data.track_gain, data.track_peak, data.loudness, track_path],
-    )
-    .map_err(|e| format!("Failed to store ReplayGain: {}", e))?;
-    
-    Ok(())
-}
-
-/**
- * Get ReplayGain data from database
- */
-pub fn get_replaygain(
-    conn: &Mutex<Connection>,
-    track_path: &str,
-) -> Result<Option<ReplayGainData>, String> {
-    let conn = conn.lock().unwrap_or_else(|poisoned| {
-        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
-        poisoned.into_inner()
-    });
-    
-    let mut stmt = conn
-        .prepare("SELECT track_gain, track_peak, loudness FROM tracks WHERE path = ?")
-        .map_err(|e| format!("Failed to prepare statement: {}", e))?;
-    
-    let result = stmt.query_row(rusqlite::params![track_path], |row| {
-        let gain: Option<f64> = row.get(0)?;
-        let peak: Option<f64> = row.get(1)?;
-        let loudness: Option<f64> = row.get(2)?;
-        
-        if let (Some(g), Some(p), Some(l)) = (gain, peak, loudness) {
-            Ok(Some(ReplayGainData {
-                track_gain: g,
-                track_peak: p,
-                loudness: l,
-            }))
-        } else {
-            Ok(None)
-        }
-    });
-    
-    match result {
-        Ok(data) => Ok(data),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(format!("Database error: {}", e)),
-    }
-}
-
-/// Store album-level ReplayGain data in the album_replaygain cache table.
-pub fn store_album_replaygain(
-    conn: &Mutex<Connection>,
-    artist: &str,
-    album: &str,
-    data: &AlbumReplayGainData,
-) -> Result<(), String> {
-    let conn = conn.lock().unwrap_or_else(|poisoned| {
-        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
-        poisoned.into_inner()
-    });
-
-    let updated_at = now_millis();
-    conn.execute(
-        "INSERT OR REPLACE INTO album_replaygain
-            (artist, album, album_gain, album_peak, loudness, track_count, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            artist,
-            album,
-            data.album_gain,
-            data.album_peak,
-            data.loudness,
-            data.track_count,
-            updated_at
-        ],
-    )
-    .map_err(|e| format!("Failed to store album ReplayGain: {}", e))?;
-
-    Ok(())
-}
-
-/// Read album-level ReplayGain data from cache table.
-pub fn get_album_replaygain(
-    conn: &Mutex<Connection>,
-    artist: &str,
-    album: &str,
-) -> Result<Option<AlbumReplayGainData>, String> {
-    let conn = conn.lock().unwrap_or_else(|poisoned| {
-        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
-        poisoned.into_inner()
-    });
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT album_gain, album_peak, loudness, track_count
-             FROM album_replaygain
-             WHERE artist = ?1 AND album = ?2",
-        )
-        .map_err(|e| format!("Failed to prepare statement: {}", e))?;
-
-    let result = stmt.query_row(rusqlite::params![artist, album], |row| {
-        Ok(AlbumReplayGainData {
-            album_gain: row.get(0)?,
-            album_peak: row.get(1)?,
-            loudness: row.get(2)?,
-            track_count: row.get(3)?,
-        })
-    });
-
-    match result {
-        Ok(data) => Ok(Some(data)),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(format!("Database error: {}", e)),
-    }
-}
-
-/// Compute album-level ReplayGain from existing per-track ReplayGain rows and cache it.
-pub fn analyze_album_replaygain(
-    conn: &Mutex<Connection>,
-    artist: &str,
-    album: &str,
-) -> Result<Option<AlbumReplayGainData>, String> {
-    let conn_guard = conn.lock().unwrap_or_else(|poisoned| {
-        warn!("ReplayGain DB mutex was poisoned — recovering inner connection");
-        poisoned.into_inner()
-    });
-
-    let mut stmt = conn_guard
-        .prepare(
-            "SELECT track_gain, track_peak, loudness, duration
-             FROM tracks
-             WHERE artist = ?1
-               AND album = ?2
-               AND track_gain IS NOT NULL
-               AND track_peak IS NOT NULL
-               AND loudness IS NOT NULL",
-        )
-        .map_err(|e| format!("Failed to prepare album analysis query: {}", e))?;
-
-    let rows = stmt
-        .query_map(rusqlite::params![artist, album], |row| {
-            let gain: f64 = row.get(0)?;
-            let peak: f64 = row.get(1)?;
-            let loudness: f64 = row.get(2)?;
-            let duration: f64 = row.get(3)?;
-            Ok((gain, peak, loudness, duration.max(0.001)))
-        })
-        .map_err(|e| format!("Failed to execute album analysis query: {}", e))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| format!("Failed to collect album analysis rows: {}", e))?;
-
-    drop(stmt);
-    drop(conn_guard);
-
-    if rows.is_empty() {
-        return Ok(None);
-    }
-
-    let mut weighted_gain_sum = 0.0_f64;
-    let mut weighted_loudness_sum = 0.0_f64;
-    let mut total_duration = 0.0_f64;
-    let mut peak = 0.0_f64;
-
-    for (gain, track_peak, loudness, duration) in &rows {
-        weighted_gain_sum += gain * duration;
-        weighted_loudness_sum += loudness * duration;
-        total_duration += duration;
-        if *track_peak > peak {
-            peak = *track_peak;
-        }
-    }
-
-    if total_duration <= 0.0 {
-        return Ok(None);
-    }
-
-    let data = AlbumReplayGainData {
-        album_gain: weighted_gain_sum / total_duration,
-        album_peak: peak,
-        loudness: weighted_loudness_sum / total_duration,
-        track_count: rows.len() as i64,
-    };
-
-    store_album_replaygain(conn, artist, album, &data)?;
-    Ok(Some(data))
-}
+// Storage functions have been moved to `replaygain_store.rs` to separate
+// pure analysis (this module) from database I/O.
+// Re-export from the store module for backward compatibility with callers
+// that still use `replaygain::store_replaygain(…)` etc.
+pub use crate::replaygain_store::{
+    store_replaygain,
+    get_replaygain,
+    store_album_replaygain,
+    get_album_replaygain,
+    analyze_album_replaygain,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_adjustment_calculation() {
+    fn test_replaygain_data_creation() {
         let data = ReplayGainData {
             track_gain: -5.0,
             track_peak: 0.8,
             loudness: -23.0,
         };
-        
-        // Target -18 LUFS from -23 LUFS = +5 dB gain
-        let adjustment = data.get_adjustment(-18.0);
-        assert!(adjustment > 1.0); // Should boost
-        assert!(adjustment < 2.0); // Reasonable range
-    }
-
-    #[test]
-    fn test_peak_limiting() {
-        let data = ReplayGainData {
-            track_gain: 10.0,
-            track_peak: 0.9,
-            loudness: -28.0,
-        };
-        
-        // Would need +10 dB to reach -18 LUFS, but peak is 0.9
-        // Should limit to prevent clipping
-        let adjustment = data.get_adjustment(-18.0);
-        assert!(data.track_peak * adjustment <= 1.0);
+        assert_eq!(data.track_gain, -5.0);
+        assert_eq!(data.track_peak, 0.8);
+        assert_eq!(data.loudness, -23.0);
     }
 }

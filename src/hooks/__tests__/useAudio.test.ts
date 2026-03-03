@@ -85,6 +85,7 @@ function setDefaultMock(overrides: Record<string, any> = {}) {
     is_audio_device_available: true,
     has_audio_device_changed: false,
     get_inactive_duration: 0,
+    get_audio_health: { healthy: true, needs_reinit: false, inactive_duration: 0, device_changed: false, device_available: true },
     recover_audio: true,
     ...overrides,
   };
@@ -290,13 +291,13 @@ describe('useAudio', () => {
         await result.current.play();
       });
 
-      expect(invoke).toHaveBeenCalledWith('is_audio_device_available', {});
+      expect(invoke).toHaveBeenCalledWith('get_audio_health', {});
       expect(invoke).toHaveBeenCalledWith('play_audio', {});
       // isPlaying is driven by the store, not set locally in play()
     });
 
     it('should not play when no audio device available', async () => {
-      setDefaultMock({ is_audio_device_available: false });
+      setDefaultMock({ get_audio_health: { healthy: true, needs_reinit: false, inactive_duration: 0, device_changed: false, device_available: false } });
 
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
 
@@ -320,6 +321,7 @@ describe('useAudio', () => {
           is_audio_device_available: true,
           has_audio_device_changed: false,
           get_inactive_duration: 0,
+          get_audio_health: { healthy: true, needs_reinit: false, inactive_duration: 0, device_changed: false, device_available: true },
           recover_audio: true,
         };
         return Promise.resolve(defaults[cmd] ?? null);

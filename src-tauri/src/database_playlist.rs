@@ -112,17 +112,49 @@ impl Database {
     }
 
     pub fn get_playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played
-             FROM tracks t
-             INNER JOIN playlist_tracks pt ON t.id = pt.track_id
-             WHERE pt.playlist_id = ?1
-             ORDER BY pt.position ASC",
-        )?;
+        self.get_playlist_tracks_page(playlist_id, None, None)
+    }
 
+    pub fn get_playlist_tracks_page(
+        &self,
+        playlist_id: &str,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Track>> {
+        let conn = self.conn();
+
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+            match (offset, limit) {
+                (Some(off), Some(lim)) => (
+                    "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played \
+                     FROM tracks t \
+                     INNER JOIN playlist_tracks pt ON t.id = pt.track_id \
+                     WHERE pt.playlist_id = ?1 \
+                     ORDER BY pt.position ASC \
+                     LIMIT ?2 OFFSET ?3"
+                        .to_string(),
+                    vec![
+                        Box::new(playlist_id.to_string()) as Box<dyn rusqlite::types::ToSql>,
+                        Box::new(lim as i64),
+                        Box::new(off as i64),
+                    ],
+                ),
+                _ => (
+                    "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played \
+                     FROM tracks t \
+                     INNER JOIN playlist_tracks pt ON t.id = pt.track_id \
+                     WHERE pt.playlist_id = ?1 \
+                     ORDER BY pt.position ASC"
+                        .to_string(),
+                    vec![Box::new(playlist_id.to_string()) as Box<dyn rusqlite::types::ToSql>],
+                ),
+            };
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql)?;
         let tracks = stmt
-            .query_map(params![playlist_id], Track::from_row)?
+            .query_map(param_refs.as_slice(), Track::from_row)?
             .collect::<Result<Vec<_>>>()?;
 
         Ok(tracks)

@@ -20,8 +20,11 @@ use crate::error::{AppError, AppResult};
 #[allow(dead_code)]
 pub(crate) struct SendOutputStream(pub OutputStream);
 
-// SAFETY: OutputStream is !Send but we only access it from the main thread
-// or wrap it in Mutex in AudioPlayer.
+// SAFETY: OutputStream holds a cpal::Stream which is !Send. This is safe
+// because SendOutputStream is always stored inside DeviceState which is
+// wrapped in a Mutex<DeviceState> within AudioPlayer. All access goes
+// through the mutex, ensuring single-threaded access to the underlying
+// stream handle at any given time.
 unsafe impl Send for SendOutputStream {}
 unsafe impl Sync for SendOutputStream {}
 

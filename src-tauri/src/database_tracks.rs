@@ -1,112 +1,36 @@
 use crate::database::{Database, TrackFilter};
+use crate::query_builder::QueryBuilder;
 use crate::scanner::Track;
 use crate::time_utils::now_millis;
 use log::info;
-use rusqlite::{params, Result, ToSql};
-use rusqlite::types::Value;
+use rusqlite::{params, Result};
 
 impl Database {
     pub fn get_tracks_page(&self, filter: TrackFilter, offset: usize, limit: usize) -> Result<(Vec<Track>, usize)> {
-        let mut where_sql = String::from(" WHERE 1=1");
-        let mut params_values: Vec<Value> = Vec::new();
-
-        if let Some(query) = &filter.search_query {
-            if !query.is_empty() {
-                where_sql.push_str(" AND (title LIKE ? OR artist LIKE ? OR album LIKE ?)");
-                let pattern = format!("%{}%", query);
-                params_values.push(Value::from(pattern.clone()));
-                params_values.push(Value::from(pattern.clone()));
-                params_values.push(Value::from(pattern));
-            }
-        }
-
-        if let Some(artist) = &filter.artist {
-            where_sql.push_str(" AND artist = ?");
-            params_values.push(Value::from(artist.clone()));
-        }
-
-        if let Some(album) = &filter.album {
-            where_sql.push_str(" AND album = ?");
-            params_values.push(Value::from(album.clone()));
-        }
-
-        if let Some(genre) = &filter.genre {
-            where_sql.push_str(" AND genre = ?");
-            params_values.push(Value::from(genre.clone()));
-        }
-
-        if let Some(min) = filter.play_count_min {
-            where_sql.push_str(" AND play_count >= ?");
-            params_values.push(Value::from(min));
-        }
-
-        if let Some(max) = filter.play_count_max {
-            where_sql.push_str(" AND play_count <= ?");
-            params_values.push(Value::from(max));
-        }
-
-        if let Some(min) = filter.min_rating {
-            where_sql.push_str(" AND rating >= ?");
-            params_values.push(Value::from(min));
-        }
-
-        if let Some(from) = filter.duration_from {
-            where_sql.push_str(" AND duration >= ?");
-            params_values.push(Value::from(from));
-        }
-
-        if let Some(to) = filter.duration_to {
-            where_sql.push_str(" AND duration <= ?");
-            params_values.push(Value::from(to));
-        }
-
-        if let Some(folder_id) = &filter.folder_id {
-            where_sql.push_str(" AND path LIKE (SELECT path FROM folders WHERE id = ?) || '%'");
-            params_values.push(Value::from(folder_id.clone()));
-        }
-
-        let mut order_sql = String::new();
-        if let Some(sort_by) = &filter.sort_by {
-            let col = match sort_by.as_str() {
-                "title" => "title",
-                "artist" => "artist",
-                "album" => "artist, album",
-                "date" => "date_added",
-                "date_added" => "date_added",
-                "rating" => "rating",
-                "duration" => "duration",
-                "play_count" => "play_count",
-                _ => "title",
-            };
-            let dir = if filter.sort_desc { "DESC" } else { "ASC" };
-            order_sql.push_str(&format!(" ORDER BY {} {}", col, dir));
-        } else {
-            order_sql.push_str(" ORDER BY title ASC");
-        }
+        let mut qb = QueryBuilder::new();
+        qb.apply_track_filter(&filter);
 
         let conn = self.conn();
 
-        let count_sql = format!("SELECT COUNT(*) FROM tracks{}", where_sql);
+        let count_sql = format!("SELECT COUNT(*) FROM tracks{}", qb.where_sql());
         let total: i64 = conn.query_row(
             &count_sql,
-            rusqlite::params_from_iter(params_values.iter()),
+            rusqlite::params_from_iter(qb.params().iter()),
             |row| row.get(0),
         )?;
 
+        qb.paginate(limit, offset);
         let query_sql = format!(
-            "SELECT {} FROM tracks{}{} LIMIT ? OFFSET ?",
+            "SELECT {} FROM tracks{}{}{}",
             crate::scanner::TRACK_SELECT_COLUMNS,
-            where_sql,
-            order_sql
+            qb.where_sql(),
+            qb.order_sql(),
+            qb.limit_sql(),
         );
-
-        let mut query_params = params_values.clone();
-        query_params.push(Value::from(limit as i64));
-        query_params.push(Value::from(offset as i64));
 
         let mut stmt = conn.prepare(&query_sql)?;
         let tracks = stmt
-            .query_map(rusqlite::params_from_iter(query_params.iter()), Track::from_row)?
+            .query_map(rusqlite::params_from_iter(qb.params().iter()), Track::from_row)?
             .collect::<Result<Vec<_>>>()?;
 
         Ok((tracks, total as usize))
@@ -149,96 +73,22 @@ impl Database {
     }
 
     pub fn get_filtered_tracks(&self, filter: TrackFilter) -> Result<Vec<Track>> {
-        // Build SQL query dynamically
-        let mut sql = format!(
-            "SELECT {} FROM tracks WHERE 1=1",
-            crate::scanner::TRACK_SELECT_COLUMNS
+        let mut qb = QueryBuilder::new();
+        qb.apply_track_filter(&filter);
+
+        let sql = format!(
+            "SELECT {} FROM tracks{}{}",
+            crate::scanner::TRACK_SELECT_COLUMNS,
+            qb.where_sql(),
+            qb.order_sql(),
         );
-        let mut params_values: Vec<Box<dyn ToSql>> = Vec::new();
-
-        if let Some(query) = &filter.search_query {
-            if !query.is_empty() {
-                sql.push_str(" AND (title LIKE ? OR artist LIKE ? OR album LIKE ?)");
-                let pattern = format!("%{}%", query);
-                params_values.push(Box::new(pattern.clone()));
-                params_values.push(Box::new(pattern.clone()));
-                params_values.push(Box::new(pattern.clone()));
-            }
-        }
-
-        if let Some(artist) = &filter.artist {
-            sql.push_str(" AND artist = ?");
-            params_values.push(Box::new(artist.clone()));
-        }
-
-        if let Some(album) = &filter.album {
-            sql.push_str(" AND album = ?");
-            params_values.push(Box::new(album.clone()));
-        }
-
-        if let Some(genre) = &filter.genre {
-            sql.push_str(" AND genre = ?");
-            params_values.push(Box::new(genre.clone()));
-        }
-
-        // Additional filters
-        if let Some(min) = filter.play_count_min {
-            sql.push_str(" AND play_count >= ?");
-            params_values.push(Box::new(min));
-        }
-
-        if let Some(max) = filter.play_count_max {
-            sql.push_str(" AND play_count <= ?");
-            params_values.push(Box::new(max));
-        }
-
-        if let Some(min) = filter.min_rating {
-            sql.push_str(" AND rating >= ?");
-            params_values.push(Box::new(min));
-        }
-
-        if let Some(from) = filter.duration_from {
-            sql.push_str(" AND duration >= ?");
-            params_values.push(Box::new(from));
-        }
-
-        if let Some(to) = filter.duration_to {
-            sql.push_str(" AND duration <= ?");
-            params_values.push(Box::new(to));
-        }
-
-        // Folder filtering via folder-id subquery
-        if let Some(folder_id) = &filter.folder_id {
-            sql.push_str(" AND path LIKE (SELECT path FROM folders WHERE id = ?) || '%'");
-            params_values.push(Box::new(folder_id.clone()));
-        }
-
-        // Sorting
-        if let Some(sort_by) = &filter.sort_by {
-            let col = match sort_by.as_str() {
-                "title" => "title",
-                "artist" => "artist",
-                // Sort by artist first, then album to keep albums grouped by artist
-                "album" => "artist, album",
-                "date" => "date_added",
-                "date_added" => "date_added",
-                "rating" => "rating",
-                "duration" => "duration",
-                "play_count" => "play_count",
-                _ => "title",
-            };
-            let dir = if filter.sort_desc { "DESC" } else { "ASC" };
-            sql.push_str(&format!(" ORDER BY {} {}", col, dir));
-        } else {
-            sql.push_str(" ORDER BY title ASC");
-        }
 
         let conn = self.conn();
         let mut stmt = conn.prepare(&sql)?;
 
         let tracks = stmt
             .query_map(
-                rusqlite::params_from_iter(params_values.iter()),
+                rusqlite::params_from_iter(qb.params().iter()),
                 Track::from_row,
             )?
             .collect::<Result<Vec<_>>>()?;

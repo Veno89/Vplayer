@@ -19,6 +19,8 @@ export interface CrossfadeAPI {
   startCrossfade: (params: CrossfadeParams) => void;
   cancelCrossfade: (setVolume: (vol: number) => void) => void;
   readonly isFading: boolean;
+  /** True after the midpoint callback has fired (track switch already triggered). */
+  readonly midpointReached: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export function useCrossfade(): CrossfadeAPI {
   const fadeIntervalRef = useRef<number | null>(null);
   const fadeTimeoutRef = useRef<number | null>(null);
   const isFadingRef = useRef<boolean>(false);
+  const midpointReachedRef = useRef<boolean>(false);
   const originalVolumeRef = useRef<number>(1.0);
   const fadeStartTimeRef = useRef<number | null>(null);
 
@@ -95,27 +98,36 @@ export function useCrossfade(): CrossfadeAPI {
 
     log.info('[Crossfade] Starting crossfade, duration:', duration, 'ms');
     isFadingRef.current = true;
+    midpointReachedRef.current = false;
     originalVolumeRef.current = currentVolume;
     fadeStartTimeRef.current = Date.now();
 
     let midpointCalled = false;
     const FADE_INTERVAL_MS = 50; // Update volume every 50ms for smooth fade
+    const halfDuration = duration * 0.5;
 
     // Volume fade animation
     const fadeCallback = () => {
       const elapsed = Date.now() - (fadeStartTimeRef.current ?? Date.now());
-      const fadeMultiplier = getFadeOutMultiplier(elapsed);
-      
-      // Apply faded volume
-      const newVolume = originalVolumeRef.current * fadeMultiplier;
-      setVolume(newVolume);
 
-      // Call midpoint when we're halfway through (for track switch)
-      if (!midpointCalled && elapsed >= duration * 0.5) {
+      if (!midpointCalled && elapsed >= halfDuration) {
         midpointCalled = true;
+        midpointReachedRef.current = true;
         log.info('[Crossfade] Midpoint reached, switching tracks');
         if (onMidpoint) onMidpoint();
       }
+
+      let newVolume: number;
+      if (midpointCalled) {
+        // After midpoint: fade the NEW track back up to full volume
+        const fadeInProgress = Math.min(1, (elapsed - halfDuration) / halfDuration);
+        const midpointMultiplier = getFadeOutMultiplier(halfDuration);
+        newVolume = originalVolumeRef.current * (midpointMultiplier + (1 - midpointMultiplier) * Math.sin(fadeInProgress * Math.PI * 0.5));
+      } else {
+        // Before midpoint: fade the OLD track's volume down
+        newVolume = originalVolumeRef.current * getFadeOutMultiplier(elapsed);
+      }
+      setVolume(newVolume);
     };
     fadeIntervalRef.current = window.setInterval(fadeCallback, FADE_INTERVAL_MS);
 
@@ -125,6 +137,7 @@ export function useCrossfade(): CrossfadeAPI {
       if (fadeIntervalRef.current !== null) clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
       isFadingRef.current = false;
+      midpointReachedRef.current = false;
       
       // Restore original volume
       setVolume(originalVolumeRef.current);
@@ -176,5 +189,6 @@ export function useCrossfade(): CrossfadeAPI {
     startCrossfade,
     cancelCrossfade,
     get isFading() { return isFadingRef.current; },
+    get midpointReached() { return midpointReachedRef.current; },
   };
 }

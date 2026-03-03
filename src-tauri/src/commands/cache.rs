@@ -127,6 +127,9 @@ pub fn vacuum_database(state: tauri::State<'_, AppState>) -> AppResult<()> {
 /// Evict oldest album-art cache files until total size is ≤ `limit_mb` MB.
 #[tauri::command]
 pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> AppResult<u64> {
+    if limit_mb == 0 {
+        return Err(AppError::Validation("Cache limit must be greater than 0 MB".to_string()));
+    }
     let cache_dir = app
         .path()
         .app_cache_dir()

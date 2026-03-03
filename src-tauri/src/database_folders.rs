@@ -6,9 +6,11 @@ use rusqlite::{params, Result};
 impl Database {
     pub fn remove_tracks_by_folder(&self, folder_path: &str) -> Result<usize> {
         let conn = self.conn();
+        // Escape SQL LIKE wildcards in the folder path to prevent unintended matches
+        let escaped = folder_path.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
         let count = conn.execute(
-            "DELETE FROM tracks WHERE path LIKE ?1",
-            params![format!("{}%", folder_path)],
+            "DELETE FROM tracks WHERE path LIKE ?1 ESCAPE '\\'",
+            params![format!("{}%", escaped)],
         )?;
         Ok(count)
     }

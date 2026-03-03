@@ -38,7 +38,7 @@ impl VolumeManager {
     pub fn set_replaygain(&mut self, gain_db: f32, preamp_db: f32) -> f32 {
         let total_gain_db = gain_db + preamp_db;
         let multiplier = 10_f32.powf(total_gain_db / 20.0);
-        self.replaygain_multiplier = multiplier.clamp(0.1, 3.0);
+        self.replaygain_multiplier = multiplier.clamp(0.1, 2.0);
         info!(
             "ReplayGain: {}dB + {}dB preamp = {}dB (multiplier: {:.3})",
             gain_db, preamp_db, total_gain_db, self.replaygain_multiplier

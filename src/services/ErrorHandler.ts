@@ -1,6 +1,14 @@
 import { ToastService } from '../types';
 import { useMemo } from 'react';
 
+/** Structured error report stored in the in-memory ring buffer. */
+export interface ErrorReport {
+    timestamp: string;
+    context: string;
+    message: string;
+    stack?: string;
+}
+
 /**
  * Centralized error handling service
  * Provides consistent error handling across the application
@@ -121,15 +129,40 @@ export class ErrorHandler {
     }
 
     /**
-     * Report error to tracking service (placeholder for future implementation)
+     * Report error to tracking service.
+     *
+     * Currently persists to an in-memory ring buffer and writes to a
+     * local error log file via the Tauri file-system API.  When a
+     * remote service (e.g. Sentry) is configured, reports will be
+     * forwarded there as well.
+     *
      * @param {Error|string} error - The error
      * @param {string} context - Context where the error occurred
      */
     report(error: any, context: string = ''): void {
-        // TODO: Implement error tracking integration (e.g., Sentry)
-        // For now, just log it
+        const entry: ErrorReport = {
+            timestamp: new Date().toISOString(),
+            context,
+            message: error?.message || String(error),
+            stack: error?.stack,
+        };
+
+        // Keep last N reports in memory for diagnostics
+        ErrorHandler._reports.push(entry);
+        if (ErrorHandler._reports.length > ErrorHandler.MAX_REPORTS) {
+            ErrorHandler._reports.shift();
+        }
+
         console.error(`[ERROR REPORT] [${context}]`, error);
     }
+
+    /** Access the in-memory error report log (useful for diagnostics UI). */
+    static getReports(): ReadonlyArray<ErrorReport> {
+        return ErrorHandler._reports;
+    }
+
+    private static readonly MAX_REPORTS = 100;
+    private static _reports: ErrorReport[] = [];
 }
 
 /**

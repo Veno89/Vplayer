@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { TauriAPI } from '../services/TauriAPI';
 import type { AudioService, ToastService, Track } from '../types';
@@ -41,35 +41,41 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── A-B repeat looping + periodic position save ───────────────────
-  // Uses an interval (1 Hz) instead of reacting to every progress tick (~10 Hz).
-  // This avoids 10 React effect runs/sec when only 1/sec of work is needed.
+  // A-B repeat: subscribe to store progress changes (~10Hz from playback-tick)
+  // for tighter looping precision (~100ms vs former 1s interval).
+  // Position save: still uses 1Hz interval since it's IO and doesn't need precision.
   const abRepeatRef = useRef(abRepeat);
   abRepeatRef.current = abRepeat;
 
-  const positionSaveAndABRepeat = useCallback(() => {
-    const state = useStore.getState();
-    const currentProgress = state.progress;
+  // A-B repeat check — runs on every store update to catch progress changes (~10Hz)
+  useEffect(() => {
+    let prevProgress = useStore.getState().progress;
+    const unsub = useStore.subscribe((state) => {
+      if (state.progress === prevProgress) return;
+      prevProgress = state.progress;
 
-    // Save position at most once per second — only if rememberTrackPosition is on
-    if (state.rememberTrackPosition && currentProgress > 0) {
-      state.setLastPosition(currentProgress);
-    }
-
-    // A-B repeat loop
-    const ab = abRepeatRef.current;
-    if (ab?.enabled && ab?.pointA !== null && ab?.pointB !== null) {
-      if (currentProgress >= ab.pointB) {
-        audio.seek(ab.pointA).catch(err => {
-          console.error('Failed to seek for A-B repeat:', err);
-        });
+      const ab = abRepeatRef.current;
+      if (ab?.enabled && ab?.pointA !== null && ab?.pointB !== null) {
+        if (state.progress >= ab.pointB) {
+          audio.seek(ab.pointA).catch(err => {
+            console.error('Failed to seek for A-B repeat:', err);
+          });
+        }
       }
-    }
+    });
+    return unsub;
   }, [audio]);
 
+  // Periodic position save (1Hz is sufficient for IO)
   useEffect(() => {
-    const id = setInterval(positionSaveAndABRepeat, 1000);
+    const id = setInterval(() => {
+      const state = useStore.getState();
+      if (state.rememberTrackPosition && state.progress > 0) {
+        state.setLastPosition(state.progress);
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, [positionSaveAndABRepeat]);
+  }, []);
 
   // ── Translate store `playing` → audio.play() / audio.pause() ──────
   // Supports fadeOnPause: ramp volume smoothly instead of abrupt stop/start

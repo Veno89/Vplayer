@@ -12,14 +12,24 @@ use crate::replaygain::{
 };
 use log::info;
 
-/// Analyze track for ReplayGain data and store in database
+/// Analyze track for ReplayGain data and store in database.
+/// Runs the CPU-heavy decode + EBU R128 analysis on a blocking thread
+/// so the Tauri async runtime is not stalled.
 #[tauri::command]
-pub fn analyze_replaygain(track_path: String, state: tauri::State<'_, AppState>) -> AppResult<ReplayGainData> {
+pub async fn analyze_replaygain(track_path: String, state: tauri::State<'_, AppState>) -> AppResult<ReplayGainData> {
     info!("Analyzing ReplayGain for: {}", track_path);
-    
-    let data = analyze_track(&track_path).map_err(AppError::Decode)?;
-    store_replaygain(&state.db.conn, &track_path, &data).map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    let path = track_path.clone();
+    let data = tauri::async_runtime::spawn_blocking(move || {
+        analyze_track(&path)
+    })
+    .await
+    .map_err(|e| AppError::Audio(format!("ReplayGain task panicked: {}", e)))?
+    .map_err(AppError::Decode)?;
+
+    store_replaygain(&state.db.conn, &track_path, &data)
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
     Ok(data)
 }
 

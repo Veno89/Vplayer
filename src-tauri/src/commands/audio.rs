@@ -4,6 +4,29 @@ use crate::audio::{AudioPlayer, AudioDevice};
 use crate::error::{AppError, AppResult};
 use crate::validation;
 use log::info;
+use serde::Serialize;
+
+/// Combined audio health status — avoids multiple IPC round-trips.
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioHealthStatus {
+    pub healthy: bool,
+    pub needs_reinit: bool,
+    pub inactive_duration: f64,
+    pub device_changed: bool,
+    pub device_available: bool,
+}
+
+/// Get all audio health info in a single IPC call.
+#[tauri::command]
+pub fn get_audio_health(state: tauri::State<AppState>) -> AudioHealthStatus {
+    AudioHealthStatus {
+        healthy: state.player.is_healthy(),
+        needs_reinit: state.player.needs_reinit(),
+        inactive_duration: state.player.get_inactive_duration(),
+        device_changed: state.player.has_device_changed(),
+        device_available: state.player.is_device_available(),
+    }
+}
 
 #[tauri::command]
 pub fn load_track(path: String, state: tauri::State<AppState>) -> AppResult<()> {

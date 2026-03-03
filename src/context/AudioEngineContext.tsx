@@ -3,6 +3,7 @@ import { useAudio } from '../hooks/useAudio';
 import { useStore } from '../store/useStore';
 import { useToast } from '../hooks/useToast';
 import { TauriAPI } from '../services/TauriAPI';
+import { log } from '../utils/logger';
 import type { AudioService, Track } from '../types';
 import type { CrossfadeAPI } from '../hooks/useCrossfade';
 
@@ -53,6 +54,13 @@ export function AudioEngineProvider({
       }
     },
     onEnded: () => {
+      // ── Crossfade already handled this transition ──────────────────
+      // If the crossfade midpoint already called setCurrentTrack, the
+      // track switch is in progress. This track-ended event is a stale
+      // signal from the old track running out — ignore it so we don't
+      // double-advance (skip) or prematurely stop.
+      const midpointHandled = crossfadeRef.current?.midpointReached ?? false;
+
       // Cancel any active crossfade first
       if (crossfadeRef.current?.isFading) {
         crossfadeRef.current.cancelCrossfade((vol: number) => {
@@ -61,6 +69,11 @@ export function AudioEngineProvider({
             console.error('[onEnded] Failed to restore volume after crossfade cancel:', err)
           );
         });
+      }
+
+      if (midpointHandled) {
+        log.info('[onEnded] Crossfade midpoint already switched tracks — ignoring stale track-ended');
+        return;
       }
 
       // Read fresh state from store to avoid stale closures

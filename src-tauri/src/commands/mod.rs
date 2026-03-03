@@ -3,6 +3,9 @@
 
 pub mod audio;
 pub mod library;
+pub mod library_scan;
+pub mod library_tracks;
+pub mod library_maintenance;
 pub mod playlist;
 pub mod smart_playlist;
 pub mod watcher;

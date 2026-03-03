@@ -156,6 +156,9 @@ impl BiquadFilter {
         let output = self.a0 * input + self.z1;
         self.z1 = self.a1 * input - self.b1 * output + self.z2;
         self.z2 = self.a2 * input - self.b2 * output;
+        // Flush denormals to zero to prevent CPU spikes on near-silent signals
+        if self.z1.abs() < 1e-15 { self.z1 = 0.0; }
+        if self.z2.abs() < 1e-15 { self.z2 = 0.0; }
         output
     }
 }
@@ -678,7 +681,6 @@ impl EffectsProcessor {
         }
     }
     
-    #[allow(dead_code)]
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
         if self.block_processing_enabled {
             self.process_buffer_staged(buffer);

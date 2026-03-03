@@ -125,6 +125,7 @@ export interface CrossfadeService {
     shouldCrossfade: (progress: number, duration: number) => boolean;
     startCrossfade: (options: CrossfadeOptions) => void;
     cancelCrossfade: (setVolume: (vol: number) => void) => void;
+    readonly midpointReached?: boolean;
 }
 
 export interface CrossfadeOptions {

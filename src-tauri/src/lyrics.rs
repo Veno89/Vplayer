@@ -123,23 +123,6 @@ impl Lrc {
             .rev()
             .find(|line| line.timestamp <= time)
     }
-
-    #[allow(dead_code)]
-    /// Get current and next lyric
-    pub fn get_lyrics_around(&self, time: f64) -> (Option<&LyricLine>, Option<&LyricLine>) {
-        let current_idx = self.lines
-            .iter()
-            .rposition(|line| line.timestamp <= time);
-
-        match current_idx {
-            Some(idx) => {
-                let current = self.lines.get(idx);
-                let next = self.lines.get(idx + 1);
-                (current, next)
-            }
-            None => (None, self.lines.first()),
-        }
-    }
 }
 
 #[cfg(test)]

@@ -401,4 +401,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.25 | **Updated**: March 2026
+**Version**: 0.9.26 | **Updated**: March 2026
