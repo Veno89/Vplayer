@@ -291,5 +291,6 @@ export const playerPersistState = (state: PlayerSliceState) => ({
     lastPosition: state.lastPosition,
     lastPlaylistId: state.lastPlaylistId,
     queue: state.queue,
+    queueIndex: state.queueIndex,
     queueHistory: state.queueHistory.slice(-50)
 });

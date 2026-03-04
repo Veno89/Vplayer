@@ -45,6 +45,7 @@ export const useStore = create<AppStore>()(
         // If rememberQueue is disabled, strip queue data from persistence
         if (!state.rememberQueue) {
           (persisted as Record<string, unknown>).queue = [];
+          (persisted as Record<string, unknown>).queueIndex = 0;
           (persisted as Record<string, unknown>).queueHistory = [];
         }
         return persisted;

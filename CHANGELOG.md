@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.29] - 2026-03-04
+
+### Playback Reliability
+- Fixed restart behavior where pressing `Next` could repeatedly jump to the same song when queue data was restored.
+- Persisted `queueIndex` alongside persisted queue state so queue progression remains consistent across app restarts.
+- Reset persisted `queueIndex` to `0` whenever `Remember Play Queue` is disabled.
+
 ## [0.9.28] - 2026-03-04
 
 ### Shuffle Reliability
