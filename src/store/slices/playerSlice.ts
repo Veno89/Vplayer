@@ -31,6 +31,11 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     lastPosition: 0,
     lastPlaylistId: null as string | null,
 
+    // === Shuffle State (persisted) ===
+    shuffleOrder: [],
+    shuffleSignature: '',
+    shuffleHistory: [],
+
     // === Queue State ===
     queue: [],
     queueIndex: 0,
@@ -135,6 +140,22 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     clearABRepeat: () => set({
         abRepeat: { enabled: false, pointA: null, pointB: null }
     }),
+
+    // === Shuffle Actions ===
+    setShuffleOrder: (order) => set({ shuffleOrder: order }),
+    setShuffleSignature: (signature) => set({ shuffleSignature: signature }),
+    pushShuffleHistory: (index) =>
+        set((state) => ({
+            shuffleHistory: [...state.shuffleHistory.slice(-200), index]
+        })),
+    popShuffleHistory: () => {
+        const state = get();
+        if (state.shuffleHistory.length === 0) return undefined;
+        const last = state.shuffleHistory[state.shuffleHistory.length - 1];
+        set({ shuffleHistory: state.shuffleHistory.slice(0, -1) });
+        return last;
+    },
+    clearShuffleState: () => set({ shuffleOrder: [], shuffleSignature: '', shuffleHistory: [] }),
 
     // === Queue Actions ===
     addToQueue: (tracks, position = 'end') => {
@@ -269,6 +290,9 @@ export const playerPersistState = (state: PlayerSliceState) => ({
     lastTrackId: state.lastTrackId,
     lastPosition: state.lastPosition,
     lastPlaylistId: state.lastPlaylistId,
+    shuffleOrder: state.shuffleOrder,
+    shuffleSignature: state.shuffleSignature,
+    shuffleHistory: state.shuffleHistory.slice(-200),
     queue: state.queue,
     queueHistory: state.queueHistory.slice(-50)
 });

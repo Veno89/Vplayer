@@ -192,6 +192,11 @@ export interface PlayerSliceState {
     lastPosition: number;
     lastPlaylistId: string | null;
 
+    // Shuffle State (persisted)
+    shuffleOrder: number[];
+    shuffleSignature: string;
+    shuffleHistory: number[];
+
     // Queue State
     queue: Track[];
     queueIndex: number;
@@ -224,6 +229,13 @@ export interface PlayerSliceActions {
     setPointB: (time: number | null) => void;
     toggleABRepeat: () => void;
     clearABRepeat: () => void;
+
+    // Shuffle Actions
+    setShuffleOrder: (order: number[]) => void;
+    setShuffleSignature: (signature: string) => void;
+    pushShuffleHistory: (index: number) => void;
+    popShuffleHistory: () => number | undefined;
+    clearShuffleState: () => void;
 
     // Queue Actions
     addToQueue: (tracks: Track | Track[], position?: 'end' | 'next' | 'start') => void;

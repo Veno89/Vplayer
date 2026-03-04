@@ -57,8 +57,6 @@ export function usePlayer({
     const userVolumeRef = useRef<number>(volume);
     const seekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSeekTimeRef = useRef<number>(0);
-    const shuffleOrderRef = useRef<number[]>([]);
-    const shuffleSignatureRef = useRef<string>('');
 
     // Keep user volume in sync
     useEffect(() => {
@@ -76,11 +74,13 @@ export function usePlayer({
         };
     }, []);
 
-    // Invalidate generated shuffle order when track list or mode changes.
+    // Invalidate persisted shuffle order when track list or mode changes.
     useEffect(() => {
-        shuffleOrderRef.current = [];
-        shuffleSignatureRef.current = '';
-    }, [tracks, shuffle]);
+        const store = storeGetter ? storeGetter() : null;
+        if (store) {
+            store.clearShuffleState();
+        }
+    }, [tracks, shuffle, storeGetter]);
 
     /**
      * Internal: calculate the next track index based on playback mode.
@@ -123,29 +123,49 @@ export function usePlayer({
             if (effectiveTotalTracks === 1) return 0;
 
             const signature = currentTracks.map((track: Track) => track.id).join('|');
-            if (shuffleSignatureRef.current !== signature) {
-                shuffleOrderRef.current = [];
-                shuffleSignatureRef.current = signature;
+            if ((store?.shuffleSignature ?? '') !== signature) {
+                store?.setShuffleOrder([]);
+                store?.setShuffleSignature(signature);
             }
 
-            if (shuffleOrderRef.current.length === 0) {
+            const currentOrder = store?.shuffleOrder ?? [];
+
+            if (currentOrder.length === 0) {
                 const candidates = Array.from({ length: effectiveTotalTracks }, (_, idx) => idx)
                     .filter(idx => idx !== current);
+                // Fisher-Yates shuffle with crypto-grade randomness
+                const randomValues = new Uint32Array(candidates.length);
+                crypto.getRandomValues(randomValues);
                 for (let i = candidates.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
+                    const j = randomValues[i] % (i + 1);
                     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
                 }
-                shuffleOrderRef.current = candidates;
+                store?.setShuffleOrder(candidates);
+                store?.setShuffleSignature(signature);
+
+                if (consume) {
+                    const nextIdx = candidates[0];
+                    if (nextIdx === undefined) return null;
+                    store?.setShuffleOrder(candidates.slice(1));
+                    log.info('[getNextTrackIndex] Shuffled (consume, fresh) to:', nextIdx);
+                    return nextIdx;
+                } else {
+                    const nextIdx = candidates[0];
+                    if (nextIdx === undefined) return null;
+                    log.info('[getNextTrackIndex] Shuffled (peek, fresh) to:', nextIdx);
+                    return nextIdx;
+                }
             }
 
             if (consume) {
-                const nextIdx = shuffleOrderRef.current.shift();
+                const nextIdx = currentOrder[0];
                 if (nextIdx === undefined) return null;
+                store?.setShuffleOrder(currentOrder.slice(1));
                 log.info('[getNextTrackIndex] Shuffled (consume) to:', nextIdx);
                 return nextIdx;
             } else {
                 // Peek: return the front element without removing it
-                const nextIdx = shuffleOrderRef.current[0];
+                const nextIdx = currentOrder[0];
                 if (nextIdx === undefined) return null;
                 log.info('[getNextTrackIndex] Shuffled (peek) to:', nextIdx);
                 return nextIdx;
@@ -269,6 +289,10 @@ export function usePlayer({
 
         const nextIdx = consumeNextTrackIndex(currentTrackIdx, currentTracks.length, currentShuffle, currentRepeatMode);
         if (nextIdx !== null) {
+            // Record current track in shuffle history before moving forward
+            if (currentShuffle && store) {
+                store.pushShuffleHistory(currentTrackIdx);
+            }
             setCurrentTrack(nextIdx);
             nextTrackPreloadedRef.current = false;
             crossfadeStartedRef.current = false;
@@ -315,11 +339,20 @@ export function usePlayer({
         const currentTrackIdx = store?.currentTrack ?? currentTrack ?? 0;
 
         if (currentShuffle) {
-            let prevIdx: number;
-            do {
-                prevIdx = Math.floor(Math.random() * currentTracks.length);
-            } while (prevIdx === currentTrackIdx && currentTracks.length > 1);
-            setCurrentTrack(prevIdx);
+            // Use shuffle history to go back to the actual previous track
+            const prevIdx = store?.popShuffleHistory();
+            if (prevIdx !== undefined) {
+                setCurrentTrack(prevIdx);
+            } else {
+                // No history — pick a random track as fallback
+                const randomValues = new Uint32Array(1);
+                crypto.getRandomValues(randomValues);
+                let fallbackIdx = randomValues[0] % currentTracks.length;
+                if (fallbackIdx === currentTrackIdx && currentTracks.length > 1) {
+                    fallbackIdx = (fallbackIdx + 1) % currentTracks.length;
+                }
+                setCurrentTrack(fallbackIdx);
+            }
         } else {
             const prevIdx = currentTrackIdx - 1;
             if (prevIdx >= 0) {

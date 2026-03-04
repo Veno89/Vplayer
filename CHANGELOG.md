@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.27] - 2026-03-04
+
+### Shuffle Reliability
+- Persisted generated shuffle order and signature in store state so shuffle progression survives app restart.
+- Added shuffle playback history tracking so `Previous` in shuffle mode returns to the actual last-played track.
+- Switched shuffle randomization paths to `crypto.getRandomValues()` for higher-entropy sequence generation.
+
 ## [0.9.26] - 2026-03-03
 
 ### Playback Correctness
