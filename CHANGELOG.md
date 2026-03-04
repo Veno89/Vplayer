@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.28] - 2026-03-04
+
+### Shuffle Reliability
+- Fixed deterministic shuffle resume behavior after app restart where `Next` could repeatedly jump to the same track.
+- Made generated shuffle sequence state (`shuffleOrder`, `shuffleSignature`, `shuffleHistory`) session-only so stale order data is not restored from persisted storage.
+- Added hydration-time reset for legacy persisted shuffle sequencing fields.
+
 ## [0.9.27] - 2026-03-04
 
 ### Shuffle Reliability

@@ -53,6 +53,11 @@ export const useStore = create<AppStore>()(
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppStore>;
         const merged = { ...currentState, ...persisted };
+
+        // Shuffle order/history are session-only and should never survive restarts.
+        merged.shuffleOrder = [];
+        merged.shuffleSignature = '';
+        merged.shuffleHistory = [];
         
         // If rememberWindowPositions was disabled, discard persisted window positions
         if (persisted?.rememberWindowPositions === false) {

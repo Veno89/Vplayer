@@ -290,9 +290,6 @@ export const playerPersistState = (state: PlayerSliceState) => ({
     lastTrackId: state.lastTrackId,
     lastPosition: state.lastPosition,
     lastPlaylistId: state.lastPlaylistId,
-    shuffleOrder: state.shuffleOrder,
-    shuffleSignature: state.shuffleSignature,
-    shuffleHistory: state.shuffleHistory.slice(-200),
     queue: state.queue,
     queueHistory: state.queueHistory.slice(-50)
 });
