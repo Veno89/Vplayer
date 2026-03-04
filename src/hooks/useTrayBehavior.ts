@@ -39,32 +39,32 @@ export function useTrayBehavior() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once
 
-  // ── minimizeToTray: poll for minimised state and hide ──────────────
+  // ── minimizeToTray: listen for window state changes and hide when minimized ─
   useEffect(() => {
-    let cancelled = false;
+    let unlisten: (() => void) | null = null;
 
-    const poll = async () => {
+    const setup = async () => {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const win = getCurrentWindow();
 
-        while (!cancelled) {
-          await new Promise(r => setTimeout(r, 400));
-          if (cancelled) break;
-
-          if (minimizeToTrayRef.current) {
-            const minimized = await win.isMinimized();
-            if (minimized) {
-              await win.unminimize();
-              await win.hide();
-            }
+        // Listen for focus changes — when the window loses focus due to
+        // being minimized, we detect it and hide to tray.
+        unlisten = await win.onFocusChanged(async ({ payload: focused }) => {
+          if (!focused && minimizeToTrayRef.current) {
+            try {
+              const minimized = await win.isMinimized();
+              if (minimized) {
+                await win.hide();
+              }
+            } catch { /* ignore transient errors */ }
           }
-        }
+        });
       } catch { /* not in Tauri context */ }
     };
 
-    poll();
+    setup();
 
-    return () => { cancelled = true; };
+    return () => { unlisten?.(); };
   }, []);
 }

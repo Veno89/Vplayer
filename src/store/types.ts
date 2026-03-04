@@ -275,6 +275,7 @@ export interface UISliceState {
     debugVisible: boolean;
 
     // Transient UI State (not persisted)
+    miniPlayerMode: boolean;
     tagEditorTrack: Track | null;
     themeEditorOpen: boolean;
     isDraggingTracks: boolean;
@@ -309,6 +310,7 @@ export interface UISliceActions {
     setDebugVisible: (visible: boolean) => void;
 
     // Transient UI Actions
+    setMiniPlayerMode: (mode: boolean) => void;
     setTagEditorTrack: (track: Track | null) => void;
     setThemeEditorOpen: (open: boolean) => void;
     setIsDraggingTracks: (dragging: boolean) => void;

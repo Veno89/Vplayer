@@ -5,6 +5,14 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.30] - 2026-03-04
+
+### UI/Playback Fixes
+- Fixed mini-player mode activation so clicking Mini Player now opens the mini-player overlay.
+- Removed `Add to Playlist` from track context menus in playlist views.
+- Fixed `Minimize to tray` behavior so minimizing hides the main window to the tray reliably.
+- Fixed shuffle-on-restart behavior where the first shuffled next-track could repeat deterministically after app relaunch.
+
 ## [0.9.29] - 2026-03-04
 
 ### Playback Reliability

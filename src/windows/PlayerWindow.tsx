@@ -20,6 +20,7 @@ export function PlayerWindow() {
   const repeatMode = useStore(s => s.repeatMode);
   const setRepeatMode = useStore(s => s.setRepeatMode);
   const toggleWindow = useStore(s => s.toggleWindow);
+  const setMiniPlayerMode = useStore(s => s.setMiniPlayerMode);
   const abRepeat = useStore(s => s.abRepeat);
   const setPointA = useStore(s => s.setPointA);
   const setPointB = useStore(s => s.setPointB);
@@ -146,7 +147,7 @@ export function PlayerWindow() {
           onMouseDown={e => e.stopPropagation()}
           onClick={e => {
             e.stopPropagation();
-            toggleWindow('miniPlayer');
+            setMiniPlayerMode(true);
           }}
           aria-label="Mini Player"
           className="p-2 hover:bg-slate-800 rounded-lg transition-colors"

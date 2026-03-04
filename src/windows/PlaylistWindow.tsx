@@ -439,7 +439,8 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       onSetRating: () => setShowRatingDialog(track),
       onShowInfo: () => {
         setShowInfoDialog(track);
-      }
+      },
+      isPlaylist: true
     });
 
     setContextMenu({

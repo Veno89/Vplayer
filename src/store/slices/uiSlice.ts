@@ -44,6 +44,7 @@ export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
   debugVisible: false,
 
   // === Transient UI State (not persisted) ===
+  miniPlayerMode: false,
   tagEditorTrack: null,
   themeEditorOpen: false,
   isDraggingTracks: false,
@@ -205,6 +206,7 @@ export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
   setDebugVisible: (visible: boolean) => set({ debugVisible: visible }),
 
   // === Transient UI Actions ===
+  setMiniPlayerMode: (mode: boolean) => set({ miniPlayerMode: mode }),
   setTagEditorTrack: (track: import('../../types').Track | null) => set({ tagEditorTrack: track }),
   setThemeEditorOpen: (open: boolean) => set({ themeEditorOpen: open }),
   setIsDraggingTracks: (dragging: boolean) => set({ isDraggingTracks: dragging }),

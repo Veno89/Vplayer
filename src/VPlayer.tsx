@@ -22,7 +22,8 @@ const VPlayerInner = () => {
   } = usePlayerContext();
 
   const currentColors = useCurrentColors();
-  const [miniPlayerMode, setMiniPlayerMode] = React.useState(false);
+  const miniPlayerMode = useStore(s => s.miniPlayerMode);
+  const setMiniPlayerMode = useStore(s => s.setMiniPlayerMode);
 
   // ── Store selectors (only what VPlayer itself needs) ──────────────
   const volume = useStore(s => s.volume);

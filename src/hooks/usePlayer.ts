@@ -74,13 +74,16 @@ export function usePlayer({
         };
     }, []);
 
-    // Invalidate persisted shuffle order when track list or mode changes.
+    // Clear shuffle state when shuffle is turned off.
+    // Track list changes are handled by the signature check in _getNextTrackIndex.
     useEffect(() => {
-        const store = storeGetter ? storeGetter() : null;
-        if (store) {
-            store.clearShuffleState();
+        if (!shuffle) {
+            const store = storeGetter ? storeGetter() : null;
+            if (store) {
+                store.clearShuffleState();
+            }
         }
-    }, [tracks, shuffle, storeGetter]);
+    }, [shuffle, storeGetter]);
 
     /**
      * Internal: calculate the next track index based on playback mode.
