@@ -60,37 +60,46 @@ pub fn get_database_size(app: AppHandle) -> AppResult<u64> {
 /// Get performance statistics
 #[tauri::command]
 pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<serde_json::Value> {
+    use log::warn;
     let conn = state.db.conn();
     
-    // Get database stats
+    // Get database stats — log any errors before defaulting so diagnostic runs
+    // don't silently present zeros for a locked or corrupt database.
     let track_count: i32 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+        .inspect_err(|e| warn!("get_performance_stats: track count failed: {}", e))
         .unwrap_or(0);
     let playlist_count: i32 = conn.query_row("SELECT COUNT(*) FROM playlists", [], |row| row.get(0))
+        .inspect_err(|e| warn!("get_performance_stats: playlist count failed: {}", e))
         .unwrap_or(0);
     let smart_playlist_count: i32 = conn.query_row("SELECT COUNT(*) FROM smart_playlists", [], |row| row.get(0))
+        .inspect_err(|e| warn!("get_performance_stats: smart_playlist count failed: {}", e))
         .unwrap_or(0);
     
     // Get database file size
     let db_size: i64 = conn.query_row("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()", [], |row| row.get(0))
+        .inspect_err(|e| warn!("get_performance_stats: db_size failed: {}", e))
         .unwrap_or(0);
     
     // Get index usage stats
     let index_count: i32 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'", [], |row| row.get(0))
+        .inspect_err(|e| warn!("get_performance_stats: index_count failed: {}", e))
         .unwrap_or(0);
     
     // Calculate average query times (simplified - just track count queries)
-    let start = std::time::Instant::now();
-    let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000")
-        .map_err(|e| AppError::Database(format!("Query error: {}", e)))?;
-    let _track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
-        .map_err(|e| AppError::Database(format!("Query error: {}", e)))?
-        .filter_map(Result::ok)
-        .collect();
-    let query_time_ms = start.elapsed().as_millis();
-    drop(stmt);
+    let query_time_ms = {
+        let start = std::time::Instant::now();
+        let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000")
+            .map_err(|e| AppError::Database(format!("Query error: {}", e)))?;
+        let _track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
+            .map_err(|e| AppError::Database(format!("Query error: {}", e)))?
+            .filter_map(Result::ok)
+            .collect();
+        start.elapsed().as_millis()
+    };
     
-    // Memory stats (approximation)
-    let memory_usage = std::mem::size_of_val(&*conn) + (track_count as usize * 1024); // Rough estimate
+    // Memory stats (approximation — use a fixed per-track estimate rather than
+    // dereferencing the connection guard, which causes borrow-checker issues.)
+    let memory_usage: usize = track_count as usize * 1024; // Rough estimate
     
     Ok(serde_json::json!({
         "database": {
@@ -116,6 +125,14 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
 /// Run database vacuum to reclaim space and optimize
 #[tauri::command]
 pub fn vacuum_database(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    // VACUUM requires an exclusive lock on the database for its entire duration.
+    // Running it during active playback would block play-count/position writes
+    // for several seconds on large libraries. Require the player to be idle.
+    if state.player.is_playing() {
+        return Err(AppError::Validation(
+            "Cannot vacuum the database while a track is playing. Pause playback first.".to_string()
+        ));
+    }
     info!("Running database vacuum to reclaim space and optimize");
     let conn = state.db.conn();
     conn.execute("VACUUM", [])

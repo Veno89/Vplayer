@@ -31,8 +31,8 @@ impl Database {
     }
 
     pub fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
-        let conn = self.conn();
-        let tx = conn.unchecked_transaction()?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
         // Allow deletion of any playlist including 'library'
         tx.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
@@ -68,8 +68,8 @@ impl Database {
         track_ids: &[String],
         starting_position: i32,
     ) -> Result<usize> {
-        let conn = self.conn();
-        let tx = conn.unchecked_transaction()?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
 
         let mut count = 0;
         for (i, track_id) in track_ids.iter().enumerate() {
@@ -95,10 +95,10 @@ impl Database {
     }
 
     pub fn reorder_playlist_tracks(&self, playlist_id: &str, track_positions: Vec<(String, i32)>) -> Result<()> {
-        let conn = self.conn();
+        let mut conn = self.conn();
 
         // Use a transaction for atomic updates
-        let tx = conn.unchecked_transaction()?;
+        let tx = conn.transaction()?;
 
         for (track_id, new_position) in track_positions {
             tx.execute(

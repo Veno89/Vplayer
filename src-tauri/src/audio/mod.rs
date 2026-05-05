@@ -429,6 +429,13 @@ impl AudioPlayer {
                 let total_dur = lock_or_recover(&self.playback).total_duration;
 
                 if let Some(path) = path {
+                    // Fade out before clearing the sink to prevent a hard pop/click.
+                    // 10 steps × 3 ms = 30 ms — imperceptible latency but eliminates the glitch.
+                    for i in (0..10u32).rev() {
+                        sink.set_volume(current_volume * i as f32 / 10.0);
+                        std::thread::sleep(Duration::from_millis(3));
+                    }
+
                     // Must drop sink lock before calling self.methods that also lock it
                     drop(sink);
 
@@ -473,7 +480,14 @@ impl AudioPlayer {
                     }
 
                     if was_playing {
+                        // Fade in from silence to restore the pre-seek volume smoothly.
+                        sink.set_volume(0.0);
                         sink.play();
+                        for i in 1..=10u32 {
+                            sink.set_volume(current_volume * i as f32 / 10.0);
+                            std::thread::sleep(Duration::from_millis(3));
+                        }
+                        sink.set_volume(current_volume);
                     } else {
                         sink.pause();
                     }
@@ -794,5 +808,37 @@ mod tests {
         wake.wait_idle(Duration::from_millis(40));
         let timeout_elapsed = timeout_start.elapsed();
         assert!(timeout_elapsed >= Duration::from_millis(30));
+    }
+
+    // ── F-017e: AudioPlayer recover() contract (requires audio hardware) ─────
+
+    /// Full recover() cycle on a freshly constructed AudioPlayer.
+    /// Verifies that recover() returns Ok(true) and the player stays healthy.
+    ///
+    /// Requires a real audio output device. Run with:
+    ///   cargo test --lib -- audio::tests::recover_restores_healthy_state --include-ignored
+    #[test]
+    #[ignore = "requires real audio hardware — run with --include-ignored on a dev machine"]
+    fn recover_restores_healthy_state_after_reinit() {
+        let player = AudioPlayer::new().expect("AudioPlayer::new requires audio hardware");
+
+        assert!(player.is_healthy(), "new AudioPlayer should report healthy");
+        assert!(!player.needs_reinit(), "new AudioPlayer should not need reinit immediately");
+
+        let recovered = player.recover().expect("recover() should not return an AppError");
+        assert!(recovered, "recover() on a healthy player should return true");
+        assert!(player.is_healthy(), "AudioPlayer should still be healthy after recover()");
+    }
+
+    /// needs_reinit() must be false immediately after construction (no long
+    /// pause has elapsed, and the device name is still present in the OS list).
+    #[test]
+    #[ignore = "requires real audio hardware — run with --include-ignored on a dev machine"]
+    fn needs_reinit_is_false_immediately_after_construction() {
+        let player = AudioPlayer::new().expect("AudioPlayer::new requires audio hardware");
+        assert!(
+            !player.needs_reinit(),
+            "needs_reinit should be false immediately after construction"
+        );
     }
 }

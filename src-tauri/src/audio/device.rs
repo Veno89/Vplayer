@@ -164,6 +164,44 @@ pub fn is_device_available() -> bool {
     true
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── F-017e: device-change detection (hardware-free) ───────────────────────
+
+    /// When no device name was ever recorded, `has_device_changed` must return
+    /// false (conservative — don't trigger spurious reinit on startup).
+    #[test]
+    fn has_device_changed_returns_false_when_no_device_recorded() {
+        let connected: Option<String> = None;
+        assert!(
+            !has_device_changed(&connected),
+            "has_device_changed should return false when connected_device_name is None"
+        );
+    }
+
+    /// A device name that cannot exist in any OS device list must be reported
+    /// as "changed" (i.e. no longer present in the enumeration).
+    #[test]
+    fn has_device_changed_returns_true_for_nonexistent_device() {
+        let connected = Some("VPlayer_NonExistent_Audio_Device_xyz_1a2b3c".to_string());
+        assert!(
+            has_device_changed(&connected),
+            "has_device_changed should return true when the device is absent from OS list"
+        );
+    }
+
+    /// `is_device_available` must not panic regardless of whether hardware is
+    /// present. The return value is environment-dependent.
+    #[test]
+    fn is_device_available_does_not_panic() {
+        let _available = is_device_available();
+        // No assertion on the value — CI may have no audio hardware.
+    }
+}
+
+
 /// Get list of all audio output devices
 pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
     let host = rodio::cpal::default_host();

@@ -132,7 +132,7 @@ impl SmartPlaylist {
                         };
                         let threshold = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_secs() as i64 - seconds;
                         sql_params.push(Value::Integer(threshold));
                         format!("{} > ?", rule.field)
@@ -190,7 +190,8 @@ pub fn create_smart_playlist_table(conn: &Connection) -> Result<()> {
 }
 
 pub fn save_smart_playlist(conn: &Connection, playlist: &SmartPlaylist) -> Result<()> {
-    let rules_json = serde_json::to_string(&playlist.rules).unwrap();
+    let rules_json = serde_json::to_string(&playlist.rules)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     
     conn.execute(
         "INSERT OR REPLACE INTO smart_playlists (id, name, description, rules, match_all, limit_count, sort_by, sort_desc, live_update, created_at)

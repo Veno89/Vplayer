@@ -134,6 +134,11 @@ pub fn import_playlist(playlist_name: String, input_path: String, state: tauri::
     let validated_name = crate::validation::validate_playlist_name(&playlist_name)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     
+    // Validate the source file path to prevent directory traversal.
+    // validate_path checks existence and rejects ".." sequences.
+    crate::validation::validate_path(&input_path)
+        .map_err(|e| AppError::Validation(format!("Invalid input path: {}", e)))?;
+    
     // Import M3U file
     let tracks = PlaylistIO::import_m3u(&input_path)
         .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to import playlist: {}", e))))?;

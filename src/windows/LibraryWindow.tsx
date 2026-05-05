@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useToast } from '../hooks/useToast';
 import { FolderOpen, Search, RefreshCw, Trash2, X, Loader, AlertCircle, FileQuestion, Copy, ChevronDown, ChevronRight, Music, GripVertical } from 'lucide-react';
 import { AdvancedSearch } from '../components/AdvancedSearch';
@@ -152,6 +152,7 @@ export function LibraryWindow() {
   const [missingFiles, setMissingFiles] = useState<MissingFile[]>([]);
   const [showMissingFiles, setShowMissingFiles] = useState(false);
   const [checkingMissing, setCheckingMissing] = useState(false);
+  const [missingProgress, setMissingProgress] = useState<{ checked: number; total: number } | null>(null);
   const [isRefreshingFolders, setIsRefreshingFolders] = useState(false);
   const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
@@ -170,6 +171,12 @@ export function LibraryWindow() {
   // Check for missing files
   const handleCheckMissingFiles = async () => {
     setCheckingMissing(true);
+    setMissingProgress(null);
+    // Subscribe to progress events emitted every 500 tracks
+    const unlisten = await TauriAPI.onEvent<[number, number]>('missing-files-progress', (e) => {
+      const [checked, total] = e.payload;
+      setMissingProgress({ checked, total });
+    });
     try {
       const missing = await TauriAPI.checkMissingFiles();
       setMissingFiles(missing);
@@ -178,6 +185,8 @@ export function LibraryWindow() {
       console.error('Failed to check missing files:', err);
       await nativeError('Failed to check for missing files');
     } finally {
+      unlisten();
+      setMissingProgress(null);
       setCheckingMissing(false);
     }
   };
@@ -302,7 +311,9 @@ export function LibraryWindow() {
             ) : (
               <FileQuestion className="w-3 h-3" />
             )}
-            Check Missing
+            {checkingMissing && missingProgress
+              ? `${missingProgress.checked}/${missingProgress.total}`
+              : 'Check Missing'}
           </button>
           <button
             onMouseDown={e => e.stopPropagation()}

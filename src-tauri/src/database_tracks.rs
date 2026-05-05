@@ -242,33 +242,46 @@ impl Database {
             return Ok(Vec::new());
         }
 
-        // Step 2: Fetch only the tracks that belong to duplicate groups
-        let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
-
-        let mut track_stmt = conn.prepare(&format!(
-            "SELECT {} FROM tracks WHERE title = ?1 AND artist = ?2 AND album = ?3 ORDER BY duration",
-            crate::scanner::TRACK_SELECT_COLUMNS
-        ))?;
-
-        for (title, artist, album) in &dup_keys {
-            let tracks: Vec<Track> = track_stmt
-                .query_map(params![title, artist, album], Track::from_row)?
+        // Step 2: Fetch all tracks that belong to any duplicate group in a single
+        // query, ordered so same-key tracks are adjacent and duration-sorted within
+        // each key. This eliminates the previous N-query-per-group pattern.
+        let all_dup_tracks: Vec<Track> = {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {cols} FROM tracks
+                 WHERE title IS NOT NULL AND artist IS NOT NULL
+                   AND (title, artist, album) IN (
+                       SELECT title, artist, album
+                       FROM tracks
+                       WHERE title IS NOT NULL AND artist IS NOT NULL
+                       GROUP BY title, artist, album
+                       HAVING COUNT(*) > 1
+                   )
+                 ORDER BY title, artist, album, duration",
+                cols = crate::scanner::TRACK_SELECT_COLUMNS
+            ))?;
+            let rows: Vec<Track> = stmt.query_map([], Track::from_row)?
                 .collect::<Result<Vec<_>>>()?;
+            rows
+        };
 
-            // Further refine by duration similarity (within 2 seconds)
-            // Tracks are sorted by duration, so we can group sequentially.
+        // Group by (title, artist, album) and apply the same 2-second duration
+        // window logic as before.
+        let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
+        let mut current_key: Option<(String, String, String)> = None;
+        let mut key_tracks: Vec<Track> = Vec::new();
+
+        let process_key_group = |key_tracks: &mut Vec<Track>, out: &mut Vec<Vec<Track>>| {
             let mut current_group: Vec<Track> = Vec::new();
-
-            for track in &tracks {
+            for track in key_tracks.iter() {
                 if current_group.is_empty() {
                     current_group.push(track.clone());
                 } else {
-                    let last = current_group.last().unwrap();
-                    if (track.duration - last.duration).abs() < 2.0 {
+                    let last_dur = current_group.last().unwrap().duration;
+                    if (track.duration - last_dur).abs() < 2.0 {
                         current_group.push(track.clone());
                     } else {
                         if current_group.len() > 1 {
-                            duplicate_groups.push(std::mem::take(&mut current_group));
+                            out.push(std::mem::take(&mut current_group));
                         } else {
                             current_group.clear();
                         }
@@ -277,9 +290,24 @@ impl Database {
                 }
             }
             if current_group.len() > 1 {
-                duplicate_groups.push(current_group);
+                out.push(current_group);
             }
+            key_tracks.clear();
+        };
+
+        for track in all_dup_tracks {
+            let key = (
+                track.title.clone().unwrap_or_default(),
+                track.artist.clone().unwrap_or_default(),
+                track.album.clone().unwrap_or_default(),
+            );
+            if current_key.as_ref() != Some(&key) {
+                process_key_group(&mut key_tracks, &mut duplicate_groups);
+                current_key = Some(key);
+            }
+            key_tracks.push(track);
         }
+        process_key_group(&mut key_tracks, &mut duplicate_groups);
 
         info!("Found {} groups of duplicates", duplicate_groups.len());
         Ok(duplicate_groups)

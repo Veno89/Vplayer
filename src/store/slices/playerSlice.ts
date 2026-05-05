@@ -79,7 +79,10 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             return {
                 activePlaybackTracks: tracks,
                 currentTrack: remapped !== -1 ? remapped : null,
-                // currentTrackId stays — the identity doesn't change
+                // Clear the ID too when the track is absent from the new list so
+                // that components checking `currentTrackId !== null` stay consistent
+                // with `getCurrentTrackData()` returning null.
+                currentTrackId: remapped !== -1 ? trackId : null,
             };
         }),
 

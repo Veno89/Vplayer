@@ -5,6 +5,43 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.31] - 2026-05-05
+
+### Bug Fixes & Reliability
+- Fixed startup panic when the tray icon asset is missing from the bundle (`main.rs` — `default_window_icon().unwrap()`).
+- Fixed mutex-poison panic in the close-to-tray handler triggered if a previous thread panic poisoned the `tray_settings` lock.
+- Fixed `duration_since(UNIX_EPOCH).unwrap()` panic in smart playlist `in_last` rule evaluation.
+- Fixed `serde_json::to_string().unwrap()` in `save_smart_playlist`.
+
+### Audio Quality
+- Fixed reverb buffer under-allocation at non-44100 Hz sample rates — `CombFilter` and `AllpassFilter` now use floating-point ceiling arithmetic to scale delay buffers. At 48 kHz the reverb tail was ~8.2% shorter than specified; this is now correct.
+- Added 30 ms fade-out/fade-in around the seek fallback reload path to eliminate the audible pop when seeking backward in FLAC/AIFF files.
+
+### Security Hardening
+- Fixed TOCTOU issue in `write_text_file`: the actual file write now uses the canonicalized path (not the original user-supplied string), preventing a symlink-swap race after the security check.
+- Added explicit empty-filename guard to `write_text_file` to prevent silent "is a directory" errors.
+- Added `validate_path` call in `import_playlist` before reading the M3U file, consistent with all other file-reading commands.
+
+### Performance
+- Replaced N+1 query pattern in `find_duplicates` with a single SQL query using an `IN` subquery — reduces IPC round-trips from O(groups) to O(1) regardless of library size.
+- Added playback guard to `vacuum_database`: VACUUM is now rejected with a clear error if a track is playing, preventing DB lock contention during playback.
+- `check_missing_files` now emits `missing-files-progress` events every 500 tracks; `LibraryWindow` displays live `checked/total` progress in the button label.
+
+### State Management
+- Fixed stale `currentTrackId` in `setActivePlaybackTracks`: when the playing track is absent from the new track list, `currentTrackId` is now cleared to `null` (previously it was left set while `getCurrentTrackData()` returned `null`, causing UI inconsistency).
+
+### IPC Hygiene
+- Removed five legacy individual audio-health commands (`is_audio_healthy`, `needs_audio_reinit`, `get_inactive_duration`, `has_audio_device_changed`, `is_audio_device_available`) from the Tauri handler — superseded by `get_audio_health` which returns all fields in a single round-trip.
+- Removed `get_lyric_at_time` from the Tauri handler (no frontend caller; function retained in source with a TODO comment).
+- `get_performance_stats` now logs a `warn!` before defaulting to zero on any DB query failure, making silent errors observable in the Tauri log.
+- Replaced `unchecked_transaction()` with `transaction()` in `delete_playlist`, `add_tracks_to_playlist_batch`, and `reorder_playlist_tracks`.
+
+### Tests
+- Added `test_biquad_low_shelf_bounded`, `test_comb_filter_index_wrap`, `test_allpass_filter_index_wrap`, and `test_comb_filter_capacity_scales_with_sample_rate` to `effects.rs`.
+- Added `test_visualizer_write_pos_overflow` and three companion tests to `audio/visualizer.rs`.
+- Added shuffle-hydration regression test (`shuffleOrder` always zeroed on hydration) and three `setActivePlaybackTracks` stale-ID tests to `store/__tests__/store.test.ts`.
+- Added hardware-free device-change detection tests to `audio/device.rs`; added `#[ignore]`-gated `AudioPlayer::recover()` contract tests to `audio/mod.rs`.
+
 ## [0.9.30] - 2026-03-04
 
 ### UI/Playback Fixes

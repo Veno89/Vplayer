@@ -223,8 +223,11 @@ struct CombFilter {
 
 impl CombFilter {
     fn new(sample_rate: u32, delay_samples: usize) -> Self {
-        // Provide enough buffer for max sample rates
-        let capacity = delay_samples * (sample_rate as usize / 44100 + 1);
+        // Scale delay buffer to the actual sample rate using float arithmetic to
+        // avoid integer truncation. At 48 kHz, integer division would give the
+        // same capacity as 44100 Hz (8.2% too short); at 96 kHz it would
+        // over-allocate by 31%. Ceiling ensures we never under-allocate.
+        let capacity = ((delay_samples as f64 * sample_rate as f64 / 44100.0).ceil() as usize).max(1);
         Self {
             buffer: vec![0.0; capacity],
             index: 0,
@@ -277,7 +280,8 @@ struct AllpassFilter {
 
 impl AllpassFilter {
     fn new(sample_rate: u32, delay_samples: usize) -> Self {
-        let capacity = delay_samples * (sample_rate as usize / 44100 + 1);
+        // Same float-ceiling formula as CombFilter — see comment there.
+        let capacity = ((delay_samples as f64 * sample_rate as f64 / 44100.0).ceil() as usize).max(1);
         Self {
             buffer: vec![0.0; capacity],
             index: 0,
@@ -849,5 +853,94 @@ mod tests {
                 legacy_ns_per_sample / block_ns_per_sample,
             );
         }
+    }
+
+    // ── F-017a: BiquadFilter correctness & CombFilter index wrap ─────────────
+
+    /// A ±12 dB low-shelf at 200 Hz should produce bounded, finite output for
+    /// white-noise-like input at 44100 Hz and at 48000 Hz.
+    #[test]
+    fn test_biquad_low_shelf_bounded() {
+        for &sr in &[44100u32, 48000u32] {
+            let mut filter = BiquadFilter::new();
+            filter.set_lowshelf(sr, 200.0, 0.707, 12.0);
+
+            // Pseudo-random white noise via an LCG so the test is deterministic.
+            let mut rng: u32 = 0xDEAD_BEEF;
+            for _ in 0..1000 {
+                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                // Map to [-1.0, 1.0)
+                let sample = (rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                let out = filter.process(sample);
+                assert!(
+                    out.is_finite(),
+                    "BiquadFilter produced non-finite at sr={}", sr
+                );
+                assert!(
+                    out.abs() <= 2.0,
+                    "BiquadFilter output {} out of bounds at sr={}", out, sr
+                );
+            }
+
+            // Negative gain: confirm the filter still settles without runaway.
+            filter.set_lowshelf(sr, 200.0, 0.707, -12.0);
+            let out = filter.process(1.0);
+            assert!(out.is_finite(), "negative-gain lowshelf non-finite at sr={}", sr);
+        }
+    }
+
+    /// `CombFilter::process` called for `capacity + 10` iterations must not panic
+    /// and the internal `index` must stay within bounds (i.e., wrap correctly).
+    #[test]
+    fn test_comb_filter_index_wrap() {
+        // Use a deliberately small delay so capacity is tiny and wrapping happens
+        // quickly. At 44100 Hz, delay_samples=5 → capacity=5.
+        let mut comb = CombFilter::new(44100, 5);
+        let capacity = comb.buffer.len();
+        assert!(capacity >= 1, "capacity should be at least 1");
+
+        for i in 0..(capacity + 10) {
+            let input = if i % 3 == 0 { 0.5 } else { -0.3 };
+            let out = comb.process(input);
+            assert!(out.is_finite(), "CombFilter output non-finite at i={}", i);
+            assert!(
+                comb.index < capacity,
+                "CombFilter index {} out of bounds (capacity={}) at i={}",
+                comb.index, capacity, i
+            );
+        }
+    }
+
+    /// `AllpassFilter::process` must also wrap correctly and stay finite.
+    #[test]
+    fn test_allpass_filter_index_wrap() {
+        let mut ap = AllpassFilter::new(48000, 5);
+        let capacity = ap.buffer.len();
+
+        for i in 0..(capacity + 10) {
+            let input = if i % 2 == 0 { 0.4 } else { -0.4 };
+            let out = ap.process(input);
+            assert!(out.is_finite(), "AllpassFilter output non-finite at i={}", i);
+            assert!(
+                ap.index < capacity,
+                "AllpassFilter index {} out of bounds at i={}", ap.index, i
+            );
+        }
+    }
+
+    /// The buffer capacity formula must be strictly proportional to sample rate.
+    /// At 48000 Hz a 1116-sample 44.1 kHz delay should map to ⌈1116 × 48000/44100⌉ = 1215.
+    #[test]
+    fn test_comb_filter_capacity_scales_with_sample_rate() {
+        let c44 = CombFilter::new(44100, 1116).buffer.len();
+        let c48 = CombFilter::new(48000, 1116).buffer.len();
+        let c96 = CombFilter::new(96000, 1116).buffer.len();
+
+        assert_eq!(c44, 1116, "44.1 kHz capacity should equal delay_samples");
+        assert_eq!(c48, 1215, "48 kHz capacity should be ⌈1116×48000/44100⌉=1215");
+        assert_eq!(c96, 2431, "96 kHz capacity should be ⌈1116×96000/44100⌉=2431");
+        // 48 kHz must be larger than 44.1 kHz
+        assert!(c48 > c44, "48 kHz buffer must be larger than 44.1 kHz buffer");
+        assert!(c96 > c48, "96 kHz buffer must be larger than 48 kHz buffer");
     }
 }

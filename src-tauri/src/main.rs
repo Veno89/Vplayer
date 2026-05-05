@@ -59,8 +59,7 @@ use commands::{
     get_position, get_duration, is_playing, is_finished, recover_audio,
     get_audio_devices, set_audio_device, preload_track, swap_to_preloaded,
     clear_preload, has_preloaded, get_preloaded_path, set_balance, get_balance,
-    is_audio_healthy, needs_audio_reinit, get_inactive_duration,
-    has_audio_device_changed, is_audio_device_available, get_audio_health,
+    get_audio_health,
     // Library commands
     scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
@@ -352,7 +351,11 @@ fn main() {
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
             
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(
+                    app.default_window_icon()
+                        .ok_or("No window icon configured — add an icon to tauri.conf.json")?                        
+                        .clone(),
+                )
                 .tooltip("VPlayer")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
@@ -401,11 +404,6 @@ fn main() {
             is_playing,
             is_finished,
             recover_audio,
-            is_audio_healthy,
-            needs_audio_reinit,
-            get_inactive_duration,
-            has_audio_device_changed,
-            is_audio_device_available,
             get_audio_health,
             get_audio_devices,
             set_audio_device,
@@ -463,7 +461,8 @@ fn main() {
             get_performance_stats,
             vacuum_database,
             load_lyrics,
-            get_lyric_at_time,
+            // get_lyric_at_time is implemented but has no frontend caller yet;
+            // it is not registered to keep the IPC surface minimal.
             analyze_replaygain,
             get_track_replaygain,
             get_album_replaygain,
@@ -493,7 +492,7 @@ fn main() {
                     // Check whether the user wants to hide to tray on close
                     let should_hide = app_handle
                         .try_state::<AppState>()
-                        .map(|s| s.tray_settings.lock().unwrap().close_to_tray)
+                        .map(|s| s.tray_settings.lock().unwrap_or_else(|e| e.into_inner()).close_to_tray)
                         .unwrap_or(false);
 
                     if should_hide {
