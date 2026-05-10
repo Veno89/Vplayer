@@ -161,7 +161,14 @@ where
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.input.try_seek(pos)
+        let result = self.input.try_seek(pos);
+        if result.is_ok() {
+            // Discard stale pre-seek samples so the next iterator call reads
+            // fresh audio from the seeked position rather than leftover batch data.
+            self.batch_buf.clear();
+            self.batch_pos = 0;
+        }
+        result
     }
 }
 

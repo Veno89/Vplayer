@@ -103,10 +103,6 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
         // conn guard released here
     };
     
-    // Memory stats (approximation — use a fixed per-track estimate rather than
-    // dereferencing the connection guard, which causes borrow-checker issues.)
-    let memory_usage: usize = track_count as usize * 1024; // Rough estimate
-    
     Ok(serde_json::json!({
         "database": {
             "tracks": track_count,
@@ -118,8 +114,6 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
         },
         "performance": {
             "query_time_ms": query_time_ms,
-            "memory_usage_bytes": memory_usage,
-            "memory_usage_mb": (memory_usage as f64 / 1024.0 / 1024.0),
         },
         "recommendations": {
             "vacuum_recommended": db_size > 10_000_000, // > 10MB

@@ -1,5 +1,5 @@
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event, EventKind};
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::sync::mpsc::{channel, Receiver};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,6 @@ use log::error;
 pub struct FolderWatcher {
     watcher: Option<RecommendedWatcher>,
     watched_paths: Arc<Mutex<HashSet<PathBuf>>>,
-    tx: Option<Sender<notify::Result<Event>>>,
 }
 
 impl FolderWatcher {
@@ -18,7 +17,6 @@ impl FolderWatcher {
         Ok(Self {
             watcher: None,
             watched_paths: Arc::new(Mutex::new(HashSet::new())),
-            tx: None,
         })
     }
 
@@ -26,17 +24,14 @@ impl FolderWatcher {
     where
         F: Fn(PathBuf) + Send + 'static,
     {
-        let (tx, rx): (Sender<notify::Result<Event>>, Receiver<notify::Result<Event>>) = channel();
+        let (tx, rx): (_, Receiver<notify::Result<Event>>) = channel();
         
-        // Clone tx before moving into closure
         let tx_clone = tx.clone();
         
         let watcher = notify::recommended_watcher(move |res| {
             let _ = tx_clone.send(res);
         })?;
 
-        // Store tx for adding watched paths later
-        self.tx = Some(tx);
         self.watcher = Some(watcher);
 
         // Spawn thread to handle file system events with debounced batching.

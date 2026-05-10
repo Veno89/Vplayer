@@ -77,10 +77,40 @@ pub const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "m4a", "flac", "wav", "ogg", "op
 impl Scanner {
     /// Collect all audio file paths from a directory tree.
     fn collect_audio_files(path: &str) -> Vec<std::path::PathBuf> {
+        let root_path = std::path::Path::new(path);
+        // Canonicalize once so symlink resolution comparisons are consistent.
+        // Falls back to the original path on error (e.g. unusual Windows paths).
+        let canonical_root = root_path.canonicalize().unwrap_or_else(|_| root_path.to_path_buf());
+
         WalkDir::new(path)
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
+            // Symlink boundary guard: if an entry is itself a symlink, verify that
+            // it resolves inside the scan root. This prevents a symlink like
+            // `Music/link -> C:\Windows\System32` from walking outside the intended
+            // directory. We only canonicalize symlinks (not every entry) so the
+            // per-file syscall overhead is negligible on normal libraries.
+            .filter(|e| {
+                if e.path_is_symlink() {
+                    match e.path().canonicalize() {
+                        Ok(resolved) => {
+                            if resolved.starts_with(&canonical_root) {
+                                true
+                            } else {
+                                warn!("Scanner: skipping out-of-root symlink {:?} -> {:?}", e.path(), resolved);
+                                false
+                            }
+                        }
+                        Err(_) => {
+                            warn!("Scanner: skipping broken symlink {:?}", e.path());
+                            false
+                        }
+                    }
+                } else {
+                    true
+                }
+            })
             .filter(|e| e.path().is_file())
             .filter(|e| {
                 e.path().extension()

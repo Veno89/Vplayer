@@ -105,30 +105,6 @@ pub fn recover_audio(state: tauri::State<AppState>) -> AppResult<bool> {
     state.player.recover().map_err(|e| AppError::Audio(e.to_string()))
 }
 
-// The five individual health query commands below have been superseded by
-// `get_audio_health` which returns all fields in one IPC round-trip.
-// They are kept as private helpers so `get_audio_health` can call them,
-// but they are NOT registered in main.rs's generate_handler!.
-
-fn _is_audio_healthy(state: &tauri::State<AppState>) -> bool {
-    state.player.is_healthy()
-}
-
-fn _needs_audio_reinit(state: &tauri::State<AppState>) -> bool {
-    state.player.needs_reinit()
-}
-
-fn _get_inactive_duration(state: &tauri::State<AppState>) -> f64 {
-    state.player.get_inactive_duration()
-}
-
-fn _has_audio_device_changed(state: &tauri::State<AppState>) -> bool {
-    state.player.has_device_changed()
-}
-
-fn _is_audio_device_available(state: &tauri::State<AppState>) -> bool {
-    state.player.is_device_available()
-}
 
 #[tauri::command]
 pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {

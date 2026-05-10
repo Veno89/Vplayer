@@ -121,8 +121,19 @@ impl SmartPlaylist {
                 "between" => {
                     let parts: Vec<&str> = rule.value.split(',').collect();
                     if parts.len() == 2 {
-                        sql_params.push(Value::Text(parts[0].trim().to_string()));
-                        sql_params.push(Value::Text(parts[1].trim().to_string()));
+                        let low = parts[0].trim();
+                        let high = parts[1].trim();
+                        // Both bounds must be non-empty and parseable as numbers.
+                        // Silently using 0 for a malformed bound would produce wrong
+                        // query results without any user-visible error.
+                        if low.is_empty() || high.is_empty()
+                            || low.parse::<f64>().is_err()
+                            || high.parse::<f64>().is_err()
+                        {
+                            return Err(rusqlite::Error::InvalidQuery);
+                        }
+                        sql_params.push(Value::Text(low.to_string()));
+                        sql_params.push(Value::Text(high.to_string()));
                         format!("{} BETWEEN ? AND ?", rule.field)
                     } else {
                         return Err(rusqlite::Error::InvalidQuery);
@@ -132,7 +143,10 @@ impl SmartPlaylist {
                     // Value should be in format "7:days" or "30:days" or "1:weeks"
                     let parts: Vec<&str> = rule.value.split(':').collect();
                     if parts.len() == 2 {
-                        let num: i64 = parts[0].parse().unwrap_or(0);
+                        // Propagate parse error instead of silently using 0,
+                        // which would match all tracks since the Unix epoch.
+                        let num: i64 = parts[0].parse()
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?;
                         let unit = parts[1];
                         let seconds = match unit {
                             "minutes" => num * 60,

@@ -193,21 +193,30 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
 
     nextInQueue: () => {
         const state = get();
-        if (state.queueIndex < state.queue.length - 1) {
-            const currentTrack = state.queue[state.queueIndex];
-            const newIndex = state.queueIndex + 1;
-            // Add current track to history before moving to next
-            if (currentTrack) {
-                set((s) => ({
-                    queueHistory: [...s.queueHistory, currentTrack],
-                    queueIndex: newIndex
-                }));
-            } else {
-                set({ queueIndex: newIndex });
-            }
-            return state.queue[newIndex];
+        // The queue is treated as a FIFO dequeue:
+        //   queue[queueIndex]     = item currently being played from the queue
+        //   queue[queueIndex + 1] = the next item to advance to
+        //
+        // When consuming, remove the played item from the array so that the UI
+        // queue panel never shows already-consumed entries. queueIndex stays the
+        // same — after removal the "next" item slides into the current slot.
+        if (state.queueIndex + 1 >= state.queue.length) {
+            return null;
         }
-        return null;
+        const consumed = state.queue[state.queueIndex];
+        const next = state.queue[state.queueIndex + 1];
+        set((s) => ({
+            queue: [
+                ...s.queue.slice(0, s.queueIndex),
+                ...s.queue.slice(s.queueIndex + 1),
+            ],
+            // queueIndex intentionally unchanged — after removing the consumed item
+            // the next entry now occupies the same index position.
+            queueHistory: consumed
+                ? [...s.queueHistory, consumed]
+                : s.queueHistory,
+        }));
+        return next;
     },
 
     previousInQueue: () => {

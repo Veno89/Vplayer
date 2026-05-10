@@ -103,12 +103,26 @@ export function useCrossfade(): CrossfadeAPI {
     fadeStartTimeRef.current = Date.now();
 
     let midpointCalled = false;
-    const FADE_INTERVAL_MS = 50; // Update volume every 50ms for smooth fade
     const halfDuration = duration * 0.5;
 
-    // Volume fade animation
-    const fadeCallback = () => {
+    // Use requestAnimationFrame instead of setInterval so the volume curve
+    // updates are synchronised with the display refresh and are not throttled
+    // by a busy main thread (which setInterval is subject to in WebView2).
+    // The elapsed-time calculation uses Date.now() so timing accuracy is
+    // preserved even when individual frames are dropped.
+    const fadeStep = () => {
       const elapsed = Date.now() - (fadeStartTimeRef.current ?? Date.now());
+
+      if (elapsed >= duration) {
+        // Fade complete — restore volume and clean up.
+        log.info('[Crossfade] Fade complete');
+        fadeIntervalRef.current = null;
+        isFadingRef.current = false;
+        midpointReachedRef.current = false;
+        setVolume(originalVolumeRef.current);
+        if (onComplete) onComplete();
+        return;
+      }
 
       if (!midpointCalled && elapsed >= halfDuration) {
         midpointCalled = true;
@@ -128,22 +142,12 @@ export function useCrossfade(): CrossfadeAPI {
         newVolume = originalVolumeRef.current * getFadeOutMultiplier(elapsed);
       }
       setVolume(newVolume);
-    };
-    fadeIntervalRef.current = window.setInterval(fadeCallback, FADE_INTERVAL_MS);
 
-    // Complete the fade after duration
-    fadeTimeoutRef.current = window.setTimeout(() => {
-      log.info('[Crossfade] Fade complete');
-      if (fadeIntervalRef.current !== null) clearInterval(fadeIntervalRef.current);
-      fadeIntervalRef.current = null;
-      isFadingRef.current = false;
-      midpointReachedRef.current = false;
-      
-      // Restore original volume
-      setVolume(originalVolumeRef.current);
-      
-      if (onComplete) onComplete();
-    }, duration);
+      // Schedule the next frame
+      fadeIntervalRef.current = requestAnimationFrame(fadeStep);
+    };
+
+    fadeIntervalRef.current = requestAnimationFrame(fadeStep);
   }, [enabled, duration, getFadeOutMultiplier]);
 
   /**
@@ -151,7 +155,7 @@ export function useCrossfade(): CrossfadeAPI {
    */
   const cancelCrossfade = useCallback((setVolume: (vol: number) => void) => {
     if (fadeIntervalRef.current) {
-      clearInterval(fadeIntervalRef.current);
+      cancelAnimationFrame(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
     }
     if (fadeTimeoutRef.current) {
@@ -172,7 +176,7 @@ export function useCrossfade(): CrossfadeAPI {
   useEffect(() => {
     return () => {
       if (fadeIntervalRef.current) {
-        clearInterval(fadeIntervalRef.current);
+        cancelAnimationFrame(fadeIntervalRef.current);
       }
       if (fadeTimeoutRef.current) {
         clearTimeout(fadeTimeoutRef.current);

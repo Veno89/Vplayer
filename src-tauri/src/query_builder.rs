@@ -99,9 +99,15 @@ impl QueryBuilder {
     pub fn apply_track_filter(&mut self, filter: &TrackFilter) -> &mut Self {
         if let Some(query) = &filter.search_query {
             if !query.is_empty() {
-                let pattern = format!("%{}%", query);
+                // Escape SQLite LIKE metacharacters so the user's text is matched
+                // literally. Order: escape the escape char (\) first, then % and _.
+                let escaped = query
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_");
+                let pattern = format!("%{}%", escaped);
                 self.and_where_multi(
-                    "(title LIKE ? OR artist LIKE ? OR album LIKE ?)",
+                    "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')",
                     vec![
                         Value::from(pattern.clone()),
                         Value::from(pattern.clone()),

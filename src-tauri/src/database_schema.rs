@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 
 impl Database {
     pub fn new(db_path: &Path) -> Result<Self> {
@@ -33,7 +33,6 @@ impl Database {
                 last_played INTEGER DEFAULT 0,
                 rating INTEGER DEFAULT 0,
                 file_modified INTEGER DEFAULT 0,
-                album_art BLOB,
                 track_gain REAL,
                 track_peak REAL,
                 loudness REAL,
@@ -43,7 +42,7 @@ impl Database {
                 disc_number INTEGER
             )",
             [],
-        )?;
+        )?;;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS track_album_art (
@@ -231,6 +230,40 @@ impl Database {
                 [],
             )?;
             info!("Migration v8 complete: album_replaygain table created");
+        }
+
+        // Migration v9: Drop the now-null album_art BLOB column from tracks.
+        // Migration v7 zeroed this column (moved data to track_album_art table);
+        // v9 removes the dead column to keep the schema clean.
+        // ALTER TABLE … DROP COLUMN requires SQLite ≥ 3.35 (March 2021).
+        // We check at runtime so that older embedded SQLite versions skip gracefully.
+        if current_version < 9 {
+            let sqlite_ver: String = conn
+                .query_row("SELECT sqlite_version()", [], |r| r.get(0))
+                .unwrap_or_default();
+            let can_drop = {
+                let parts: Vec<u32> = sqlite_ver
+                    .split('.')
+                    .filter_map(|p| p.parse().ok())
+                    .collect();
+                matches!(parts.as_slice(), [maj, min, ..] if *maj > 3 || (*maj == 3 && *min >= 35))
+            };
+            if can_drop {
+                match conn.execute("ALTER TABLE tracks DROP COLUMN album_art", []) {
+                    Ok(_) => info!("Migration v9 complete: album_art column dropped"),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        // Column may already be absent on fresh installs (not in CREATE TABLE)
+                        if msg.contains("no such column") || msg.contains("cannot drop") {
+                            info!("Migration v9: album_art column absent, skipping drop");
+                        } else {
+                            warn!("Migration v9: failed to drop album_art: {}", e);
+                        }
+                    }
+                }
+            } else {
+                info!("Migration v9 skipped: SQLite {} does not support DROP COLUMN", sqlite_ver);
+            }
         }
 
         // Update stored schema version

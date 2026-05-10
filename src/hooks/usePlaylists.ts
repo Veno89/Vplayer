@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 import { log } from '../utils/logger';
 import { useStore } from '../store/useStore';
@@ -39,7 +39,9 @@ export function usePlaylists(): PlaylistsAPI {
   const [currentPlaylist, setCurrentPlaylist] = useState<string | null>(null);
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [hasRestoredPlaylist, setHasRestoredPlaylist] = useState(false);
+  // Use a ref instead of state so setting it does not re-create loadPlaylists
+  // (which would cause a spurious second IPC call on mount via its useEffect).
+  const hasRestoredPlaylistRef = useRef(false);
   const [addingProgress, setAddingProgress] = useState<AddingProgress>({ current: 0, total: 0, isAdding: false });
 
   // Read last playlist from store (persisted)
@@ -60,8 +62,8 @@ export function usePlaylists(): PlaylistsAPI {
       });
       setPlaylists(playlistObjects);
       
-      // Restore last playlist on first load
-      if (!hasRestoredPlaylist && playlistObjects.length > 0) {
+      // Restore last playlist on first load (runs only once — ref prevents re-run)
+      if (!hasRestoredPlaylistRef.current && playlistObjects.length > 0) {
         if (lastPlaylistId) {
           // Check if saved playlist still exists
           const exists = playlistObjects.some((p: PlaylistItem) => p.id === lastPlaylistId);
@@ -69,13 +71,15 @@ export function usePlaylists(): PlaylistsAPI {
             setCurrentPlaylist(lastPlaylistId);
           }
         }
-        setHasRestoredPlaylist(true);
+        hasRestoredPlaylistRef.current = true;
       }
     } catch (err) {
       console.error('Failed to load playlists:', err);
       throw err;
     }
-  }, [hasRestoredPlaylist, lastPlaylistId]);
+  // hasRestoredPlaylistRef is a ref, not state, so it is not a dependency here.
+  // This keeps loadPlaylists identity stable after the first call.
+  }, [lastPlaylistId]);
 
   const loadPlaylistTracks = useCallback(async (playlistId: string | null) => {
     if (!playlistId) {

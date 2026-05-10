@@ -149,9 +149,8 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
     queuePositions,
   } = data;
 
-  const queuePos = track.id ? queuePositions?.get(track.id) : undefined;
-
   const track = tracks[index];
+  const queuePos = track?.id ? queuePositions?.get(track.id) : undefined;
   const isActive = index === currentTrack;
   const isLoading = loadingTrackIndex === index;
   const isDragging = draggedIndex === index;

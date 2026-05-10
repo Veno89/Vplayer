@@ -345,4 +345,42 @@ impl Database {
         )?;
         Ok(())
     }
+
+    /// Batch upsert tracks with mtime in a single transaction.
+    ///
+    /// Each element is `(track, file_modified)`. Wrapping all writes in one
+    /// transaction is orders-of-magnitude faster than per-track implicit
+    /// transactions for large incremental scans.
+    pub fn add_tracks_incremental_batch(&self, tracks: &[(Track, i64)]) -> Result<usize> {
+        if tracks.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut count = 0;
+        for (track, file_modified) in tracks {
+            tx.execute(
+                "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?13)",
+                params![
+                    track.id,
+                    track.path,
+                    track.name,
+                    track.title,
+                    track.artist,
+                    track.album,
+                    track.genre,
+                    track.year,
+                    track.track_number,
+                    track.disc_number,
+                    track.duration,
+                    track.date_added,
+                    file_modified,
+                ],
+            )?;
+            count += 1;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
 }

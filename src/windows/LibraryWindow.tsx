@@ -52,7 +52,9 @@ const VirtualTrackRow = ({ index, style, data }: { index: number; style: React.C
         dragImg.style.top = '-1000px';
         document.body.appendChild(dragImg);
         e.dataTransfer.setDragImage(dragImg, 0, 0);
-        setTimeout(() => document.body.removeChild(dragImg), 0);
+        setTimeout(() => {
+          try { document.body.removeChild(dragImg); } catch { /* already removed on unmount */ }
+        }, 0);
 
         notifyDragStart(); // Prevent window resize during drag
         if (onTrackDragStart) onTrackDragStart(trackData);

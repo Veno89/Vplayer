@@ -5,6 +5,28 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.33] - 2026-05-10
+
+### Bug Fixes
+- **Critical:** Fixed "Error in Playlist window" crash on launch — `queuePos` was computed before `track` was declared in `TrackRow`, causing a JavaScript ReferenceError (temporal dead zone) on every playlist render. The `const track = tracks[index]` declaration is now correctly placed before the `queuePos` lookup. This was introduced in v0.9.32 alongside the queue-position badge feature.
+
+### Code Quality (Audit A-001–A-015)
+- **[A-001]** `EffectsSource::try_seek` now clears the DSP batch buffer after a successful seek, eliminating ~5.8 ms of stale audio on effect-enabled seeks.
+- **[A-002]** Incremental library scan (`scan_folder_incremental`) batches all new tracks into a single SQLite transaction instead of one implicit transaction per track, dramatically reducing scan time on large folders.
+- **[A-003]** Smart playlist `between` and `in_last` rule validators now return `InvalidQuery` errors for malformed values instead of silently falling back to zero.
+- **[A-004]** Library search LIKE patterns now escape `\`, `%`, and `_` metacharacters (`ESCAPE '\'`), preventing wildcard injection in the search bar.
+- **[A-005]** `update_track_path` validates the new path with `validate_path()` before writing to the database.
+- **[A-006]** `usePlaylists` restore-on-mount guard converted from `useState` to `useRef`, eliminating a spurious double-load on startup caused by the state change re-triggering the effect.
+- **[A-007]** Queue consumed-item cleanup: `nextInQueue` now removes the played entry from the queue array, so the queue panel never shows already-played tracks.
+- **[A-008]** Crossfade timer replaced `setInterval`/`setTimeout` with a `requestAnimationFrame` loop for smoother, tab-throttle-immune fades.
+- **[A-009]** Removed five dead private functions in `audio.rs` (`_is_audio_healthy`, `_needs_audio_reinit`, `_get_inactive_duration`, `_has_audio_device_changed`, `_is_audio_device_available`).
+- **[A-010]** Database schema bumped to v9; `album_art BLOB` column dropped from the `tracks` table (data was nulled in v7; the column was dead weight). Migration gracefully skips if column is absent or SQLite < 3.35.
+- **[A-011]** Removed fabricated `memory_usage_bytes`/`memory_usage_mb` fields from `get_performance_stats` response (the values were `track_count × 1 024`, not real measurements).
+- **[A-012]** `FolderWatcher` dead `tx: Option<Sender<…>>` field removed; `Sender` import dropped.
+- **[A-013]** `collect_audio_files` now guards against symlink escapes: symlinks whose canonical target falls outside the scanned root are skipped with a warning.
+- **[A-014]** Drag-image `removeChild` in `LibraryWindow` wrapped in `try/catch` to suppress `NotFoundError` when the element is already removed during unmount.
+- **[A-015]** (Documentation) Architecture audit document added at `docs/Audit.md`.
+
 ## [0.9.32] - 2026-05-10
 
 ### Bug Fixes

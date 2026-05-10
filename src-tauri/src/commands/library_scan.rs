@@ -80,26 +80,22 @@ pub async fn scan_folder_incremental(
             .map_err(AppError::Scanner)?;
 
         info!("Incremental scan complete, updating {} tracks in database", tracks.len());
-        
-        // Update tracks in database with modification times
-        for track in &tracks {
+
+        // Collect (track, mtime) pairs so we can persist everything in one transaction.
+        let mut batch: Vec<(crate::scanner::Track, i64)> = Vec::with_capacity(tracks.len());
+        for track in tracks.iter() {
             let path = std::path::Path::new(&track.path);
-            if let Ok(metadata) = std::fs::metadata(path) {
-                if let Ok(modified) = metadata.modified() {
-                    let mtime = modified.duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                    
-                    db.add_track_with_mtime(track, mtime)
-                        .map_err(|e| AppError::Database(e.to_string()))?;
-                } else {
-                    db.add_track(track).map_err(|e| AppError::Database(e.to_string()))?;
-                }
-            } else {
-                db.add_track(track).map_err(|e| AppError::Database(e.to_string()))?;
-            }
+            let mtime = std::fs::metadata(path)
+                .and_then(|m| m.modified())
+                .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                .unwrap_or(0);
+            batch.push((track.clone(), mtime));
         }
-        
+
+        // Single transaction — same pattern as full scan's add_folder_with_tracks.
+        db.add_tracks_incremental_batch(&batch)
+            .map_err(|e| AppError::Database(format!("Failed to persist incremental tracks: {}", e)))?;
+
         Ok(tracks)
     })
     .await

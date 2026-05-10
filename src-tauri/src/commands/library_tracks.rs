@@ -73,6 +73,7 @@ pub fn set_track_rating(track_id: String, rating: i32, state: tauri::State<'_, A
 
 #[tauri::command]
 pub fn update_track_path(track_id: String, new_path: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
+    crate::validation::validate_path(&new_path).map_err(|e| AppError::Validation(e.to_string()))?;
     info!("Updating track path: {} -> {}", track_id, new_path);
     state.db.update_track_path(&track_id, &new_path).map_err(|e| AppError::Database(e.to_string()))
 }
