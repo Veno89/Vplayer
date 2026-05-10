@@ -58,6 +58,7 @@ interface TrackRowData {
   onToggleSelect?: (index: number, isShift: boolean, isCtrl: boolean) => void;
   isMultiSelectMode?: boolean;
   columnWidths?: ColumnWidths;
+  queuePositions?: Map<string, number>;
 }
 
 export interface TrackListHandle {
@@ -93,6 +94,7 @@ interface TrackListProps {
   onSelectionChange?: React.Dispatch<React.SetStateAction<Set<number>>>;
   onBatchAction?: (action: string, tracks: Track[]) => void;
   columnWidths?: ColumnWidths;
+  queuePositions?: Map<string, number>;
 }
 
 interface SimpleTrackListProps {
@@ -144,7 +146,10 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
     onToggleSelect,
     isMultiSelectMode = false,
     columnWidths, // New
+    queuePositions,
   } = data;
+
+  const queuePos = track.id ? queuePositions?.get(track.id) : undefined;
 
   const track = tracks[index];
   const isActive = index === currentTrack;
@@ -239,13 +244,17 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
       )}
 
       {/* Title */}
-      <span
-        className="truncate font-medium px-1"
+      <div
+        className="flex items-center gap-1 px-1 overflow-hidden"
         style={{ width: columnWidths?.title || 200, minWidth: 80 }}
-        title={track.title || 'Unknown'}
       >
-        {track.title || 'Unknown'}
-      </span>
+        <span className="truncate font-medium" title={track.title || 'Unknown'}>
+          {track.title || 'Unknown'}
+        </span>
+        {queuePos !== undefined && (
+          <span className="flex-shrink-0 text-cyan-400 text-xs font-bold">({queuePos})</span>
+        )}
+      </div>
 
       {/* Artist */}
       {showArtist && (
@@ -354,7 +363,8 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
     prevProps.data.draggedIndex === nextProps.data.draggedIndex &&
     prevProps.data.focusedIndex === nextProps.data.focusedIndex &&
     prevProps.data.selectedIndices === nextProps.data.selectedIndices &&
-    prevProps.data.isMultiSelectMode === nextProps.data.isMultiSelectMode
+    prevProps.data.isMultiSelectMode === nextProps.data.isMultiSelectMode &&
+    prevProps.data.queuePositions?.get(prevTrack?.id ?? '') === nextProps.data.queuePositions?.get(nextTrack?.id ?? '')
   );
 });
 
@@ -390,6 +400,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   onSelectionChange,
   onBatchAction,
   columnWidths,
+  queuePositions,
 }, ref) {
   const [focusedIndex, setFocusedIndex] = useState<number>(currentTrack ?? 0);
   const [localSelectedIndices, setLocalSelectedIndices] = useState<Set<number>>(new Set());
@@ -585,6 +596,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     focusedIndex,
     showRating,
     columnWidths, // New prop
+    queuePositions,
     showAlbum,
     showArtist,
     showNumber,
@@ -615,7 +627,8 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     actualSelectedIndices,
     enableMultiSelect,
     handleToggleSelect,
-    isMultiSelectMode
+    isMultiSelectMode,
+    queuePositions
   ]);
 
   return (

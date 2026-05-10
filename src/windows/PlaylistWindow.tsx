@@ -6,7 +6,7 @@ import type { TrackListHandle } from '../components/TrackList';
 import { AutoSizer } from '../components/AutoSizer';
 import { StarRating } from '../components/StarRating';
 import { TrackInfoDialog } from '../components/TrackInfoDialog'; // New
-import { formatDuration } from '../utils/formatters';
+import { formatDuration, formatTotalDuration } from '../utils/formatters';
 import { usePlaylists } from '../hooks/usePlaylists';
 import { usePlaylistActions } from '../hooks/usePlaylistActions';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
@@ -118,6 +118,12 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   }, [playlists]);
   const queue = useStore((state) => state.queue);
   const addToQueue = useStore(state => state.addToQueue);
+
+  // Map track ID → 1-based queue position (only tracks actually in the queue)
+  const queuePositions = React.useMemo(
+    () => new Map(queue.map((t, i) => [t.id, i + 1])),
+    [queue]
+  );
   const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
   const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
   const getCurrentTrackData = useStore(state => state.getCurrentTrackData);
@@ -666,6 +672,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             showRating={true} // Enable rating display
             onRatingChange={onRatingChange}
             columnWidths={columnWidths} // Pass dynamic widths
+            queuePositions={queuePositions}
           />
         )
         }
@@ -852,7 +859,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             Playing: Track {currentTrack !== null ? currentTrack + 1 : 0} of {displayTracks.length}
           </span>
           <span>
-            Total: {Math.floor(displayTracks.reduce((sum: number, t: Track) => sum + (t.duration || 0), 0) / 60)} minutes
+            Total: {formatTotalDuration(displayTracks.reduce((sum: number, t: Track) => sum + (t.duration || 0), 0))}
           </span>
         </div>
       )}

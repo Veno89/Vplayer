@@ -34,6 +34,18 @@ fn validate_sort_field(field: &str) -> Result<()> {
     }
 }
 
+/// Escape SQLite LIKE metacharacters (`%`, `_`, and the chosen escape char `\`)
+/// in a user-supplied value so that they are matched literally.
+///
+/// The LIKE expression must use `ESCAPE '\\'` to activate escaping.  All three
+/// LIKE operators that embed a user value (`contains`, `not_contains`,
+/// `starts_with`, `ends_with`) call this before building their pattern.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+     .replace('%', "\\%")
+     .replace('_', "\\_")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartPlaylist {
     pub id: String,
@@ -75,20 +87,20 @@ impl SmartPlaylist {
                     format!("{} != ?", rule.field)
                 }
                 "contains" => {
-                    sql_params.push(Value::Text(format!("%{}%", rule.value)));
-                    format!("{} LIKE ?", rule.field)
+                    sql_params.push(Value::Text(format!("%{}%", escape_like(&rule.value))));
+                    format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
                 }
                 "not_contains" => {
-                    sql_params.push(Value::Text(format!("%{}%", rule.value)));
-                    format!("{} NOT LIKE ?", rule.field)
+                    sql_params.push(Value::Text(format!("%{}%", escape_like(&rule.value))));
+                    format!("{} NOT LIKE ? ESCAPE '\\\\'", rule.field)
                 }
                 "starts_with" => {
-                    sql_params.push(Value::Text(format!("{}%", rule.value)));
-                    format!("{} LIKE ?", rule.field)
+                    sql_params.push(Value::Text(format!("{}%", escape_like(&rule.value))));
+                    format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
                 }
                 "ends_with" => {
-                    sql_params.push(Value::Text(format!("%{}", rule.value)));
-                    format!("{} LIKE ?", rule.field)
+                    sql_params.push(Value::Text(format!("%{}", escape_like(&rule.value))));
+                    format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
                 }
                 "greater_than" => {
                     sql_params.push(Value::Text(rule.value.clone()));

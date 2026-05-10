@@ -108,9 +108,9 @@ mod tests {
     fn replaygain_multiplier_is_clamped() {
         let mut vm = VolumeManager::new();
 
-        // Extreme positive gain
+        // Extreme positive gain — code clamps multiplier at 2.0 (≤ +6 dB)
         vm.set_replaygain(100.0, 0.0);
-        assert!(vm.replaygain_multiplier <= 3.0);
+        assert!(vm.replaygain_multiplier <= 2.0);
 
         // Extreme negative gain
         vm.set_replaygain(-100.0, 0.0);

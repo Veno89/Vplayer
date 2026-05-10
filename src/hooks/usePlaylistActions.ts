@@ -187,7 +187,13 @@ export function usePlaylistActions({
             }
         }
 
-        playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+        try {
+            await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+        } catch (err) {
+            console.error('Failed to remove track from playlist:', err);
+            closeContextMenu();
+            return;
+        }
 
         // Adjust current track if needed
         if (currentTrack !== null && currentTrack === index) {

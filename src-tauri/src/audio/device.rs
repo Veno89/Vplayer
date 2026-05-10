@@ -127,21 +127,32 @@ pub fn create_high_quality_output_with_device_name() -> AppResult<(OutputStream,
     }
 }
 
-/// Check if the connected audio device has disappeared.
+/// Check if the audio situation has changed in a way that requires reinit.
 ///
-/// Instead of comparing against the OS default (which can change without the
-/// connected device going away), we check whether the device we originally
-/// connected to is still present in the system enumeration.
+/// Returns `true` in two cases:
+///
+/// 1. The device we originally connected to has *disappeared* from the OS
+///    enumeration (e.g. the user unplugged a USB DAC).
+///
+/// 2. The Windows default output device has *changed* to a different device
+///    (e.g. the user powers on a USB DAC or HDMI monitor after the app
+///    started, and Windows promotes it to the new default). In this case the
+///    old device is still present in the enumeration, so the disappearance
+///    check alone would not fire — but we are producing audio on the wrong
+///    device. Detecting the default-device switch and triggering reinit causes
+///    `reinit_and_reload()` → `create_high_quality_output_with_device_name()`
+///    to open a fresh stream on the current Windows default, restoring audio
+///    without requiring an app restart.
 pub fn has_device_changed(connected_device_name: &Option<String>) -> bool {
     let name = match connected_device_name {
         Some(n) => n,
-        // If we don't know what we connected to, assume it hasn't changed
+        // If we don't know what we connected to, assume it hasn't changed.
         None => return false,
     };
 
     let host = rodio::cpal::default_host();
 
-    // Check if our connected device still exists in the output device list
+    // ── Check 1: has our connected device disappeared from the OS? ──────────
     let still_present = host
         .output_devices()
         .map(|devices| devices.filter_map(|d| d.name().ok()).any(|n| n == *name))
@@ -149,9 +160,28 @@ pub fn has_device_changed(connected_device_name: &Option<String>) -> bool {
 
     if !still_present {
         info!("Connected audio device disappeared: {:?}", name);
+        return true;
     }
 
-    !still_present
+    // ── Check 2: has Windows changed its default output to something else? ──
+    // This covers the "started app with device off, device powers on, Windows
+    // promotes it to default" scenario. The old device is still present so
+    // Check 1 passes, but we are sending audio to the wrong endpoint.
+    let default_name = host
+        .default_output_device()
+        .and_then(|d| d.name().ok());
+
+    if let Some(ref default) = default_name {
+        if default != name {
+            info!(
+                "Windows default output changed from {:?} to {:?} — reinit needed",
+                name, default
+            );
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Check if there's any audio device available
@@ -168,7 +198,7 @@ pub fn is_device_available() -> bool {
 mod tests {
     use super::*;
 
-    // ── F-017e: device-change detection (hardware-free) ───────────────────────
+    // ── F-017e / F-009: device-change detection (hardware-free) ──────────────
 
     /// When no device name was ever recorded, `has_device_changed` must return
     /// false (conservative — don't trigger spurious reinit on startup).
@@ -182,7 +212,7 @@ mod tests {
     }
 
     /// A device name that cannot exist in any OS device list must be reported
-    /// as "changed" (i.e. no longer present in the enumeration).
+    /// as "changed" (disappeared from OS enumeration — Check 1).
     #[test]
     fn has_device_changed_returns_true_for_nonexistent_device() {
         let connected = Some("VPlayer_NonExistent_Audio_Device_xyz_1a2b3c".to_string());
@@ -190,6 +220,73 @@ mod tests {
             has_device_changed(&connected),
             "has_device_changed should return true when the device is absent from OS list"
         );
+    }
+
+    /// When the connected device name matches the current Windows default,
+    /// `has_device_changed` must return false (no reinit needed).
+    ///
+    /// This test requires at least one output device to be present. If no
+    /// device is available the test is skipped via early return.
+    #[test]
+    fn has_device_changed_returns_false_when_connected_to_current_default() {
+        let host = rodio::cpal::default_host();
+        let default_name = match host.default_output_device().and_then(|d| d.name().ok()) {
+            Some(n) => n,
+            None => return, // no audio hardware in this environment — skip
+        };
+        let connected = Some(default_name);
+        assert!(
+            !has_device_changed(&connected),
+            "has_device_changed should return false when connected to the current default device"
+        );
+    }
+
+    /// When the app is connected to a device that is present in the OS but is
+    /// no longer the Windows default, `has_device_changed` must return true
+    /// (Check 2: default-device switch — e.g. USB DAC powered on after startup).
+    ///
+    /// We synthesise this by using a known-present device name (the real
+    /// default) but then passing a *different* fabricated name as the
+    /// "connected" device, ensuring the connected name is still present yet
+    /// the default has moved on. We achieve the same logical condition by
+    /// claiming we are connected to an impossible device name while a real
+    /// default exists — but Check 1 already covers absence. Instead we rely
+    /// on the fact that the nonexistent device used in
+    /// `has_device_changed_returns_true_for_nonexistent_device` exercises the
+    /// disappearance path; the default-switch path is exercised here by
+    /// passing a name that is present but is NOT the default.
+    ///
+    /// If the system has only one output device this test cannot be
+    /// constructed meaningfully and is skipped.
+    #[test]
+    fn has_device_changed_returns_true_when_default_device_changed() {
+        let host = rodio::cpal::default_host();
+
+        // Collect all device names.
+        let all_names: Vec<String> = match host.output_devices() {
+            Ok(devs) => devs.filter_map(|d| d.name().ok()).collect(),
+            Err(_) => return, // no audio hardware — skip
+        };
+
+        let default_name = match host.default_output_device().and_then(|d| d.name().ok()) {
+            Some(n) => n,
+            None => return, // no default device — skip
+        };
+
+        // Find a device that is present but is NOT the current default.
+        let non_default = all_names.iter().find(|n| *n != &default_name);
+
+        if let Some(connected_name) = non_default {
+            // We are "connected" to a real but non-default device.
+            // Check 2 should fire: default != connected_name.
+            let connected = Some(connected_name.clone());
+            assert!(
+                has_device_changed(&connected),
+                "has_device_changed should return true when connected device is not the current default"
+            );
+        }
+        // If no non-default device exists (single-device system) we skip —
+        // we cannot simulate a default-switch without real hardware.
     }
 
     /// `is_device_available` must not panic regardless of whether hardware is

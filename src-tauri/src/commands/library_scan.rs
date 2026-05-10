@@ -18,7 +18,7 @@ pub async fn scan_folder(
     // Check if this folder already exists in the database — if so, do an
     // incremental scan instead of a full rescan to avoid redundant I/O.
     let existing_folder: Option<String> = {
-        let conn = state.db.conn.lock().unwrap_or_else(|p| p.into_inner());
+        let conn = state.db.conn();
         conn.query_row(
             "SELECT id FROM folders WHERE path = ?1",
             rusqlite::params![&folder_path],

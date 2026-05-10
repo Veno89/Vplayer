@@ -47,7 +47,10 @@ pub fn show_in_folder(path: String) -> AppResult<()> {
     use std::process::Command;
     
     info!("Showing file in folder: {}", path);
-    
+
+    crate::validation::validate_path(&path)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+
     let file_path = Path::new(&path);
     if !file_path.exists() {
         return Err(AppError::NotFound(format!("File not found: {}", path)));

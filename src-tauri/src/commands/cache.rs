@@ -84,9 +84,14 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
     let index_count: i32 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'", [], |row| row.get(0))
         .inspect_err(|e| warn!("get_performance_stats: index_count failed: {}", e))
         .unwrap_or(0);
+
+    // Release the DB guard before the benchmark query so that playback-related
+    // writes (play_count, position) are not blocked for the duration of the scan.
+    drop(conn);
     
     // Calculate average query times (simplified - just track count queries)
     let query_time_ms = {
+        let conn = state.db.conn();
         let start = std::time::Instant::now();
         let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000")
             .map_err(|e| AppError::Database(format!("Query error: {}", e)))?;
@@ -95,6 +100,7 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
             .filter_map(Result::ok)
             .collect();
         start.elapsed().as_millis()
+        // conn guard released here
     };
     
     // Memory stats (approximation — use a fixed per-track estimate rather than

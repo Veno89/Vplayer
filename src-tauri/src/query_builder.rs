@@ -144,8 +144,16 @@ impl QueryBuilder {
         }
 
         if let Some(folder_id) = &filter.folder_id {
+            // Escape SQLite LIKE metacharacters in the folder path before using
+            // it as a prefix pattern. The REPLACE chain escapes `\` first (the
+            // escape char itself), then `%` and `_`, so folder names containing
+            // any of these (e.g. "My_Music" or "50%Off") are matched literally.
+            // The `ESCAPE '\'` clause activates the escaping for this LIKE only.
             self.and_where(
-                "path LIKE (SELECT path FROM folders WHERE id = ?) || '%'",
+                "path LIKE REPLACE(REPLACE(REPLACE(\
+                    (SELECT path FROM folders WHERE id = ?), \
+                    '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%' \
+                ESCAPE '\\'",
                 Value::from(folder_id.clone()),
             );
         }

@@ -32,7 +32,7 @@ You are a senior desktop application engineer and systems architect with deep ex
 | Audio engine | Rodio + Symphonia | rodio 0.21, symphonia 0.5 |
 | Metadata / tags | Lofty | 0.18 |
 | Database | SQLite (rusqlite) | 0.30 (bundled) |
-| UI framework | React | 18.2 |
+| UI framework | React | 19.x |
 | State management | Zustand (sliced, persisted) | 5.x |
 | Styling | Tailwind CSS | 3.x |
 | Build tooling | Vite | 7.x |
@@ -104,7 +104,7 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.16
+├── package.json                        # v0.9.32
 ├── vite.config.js                      # Vite 7 config
 ├── vitest.config.js                    # Test config (jsdom environment)
 ├── tsconfig.json                       # TS config (strict, allowJs)
@@ -114,15 +114,14 @@ VPlayer/
 ├── docs/
 │   ├── README.md                       # User-facing readme
 │   ├── readmeforai.md                  # THIS FILE — AI agent context
-│   ├── Architecture Analysis.md        # Detailed code audit & improvement tracker
-│   └── Known Bugs & Roadmap.md
+│   └── Audit.md                        # Code health audit (July 2026) — all 9 findings fixed
 │
 ├── src/                                # ── React Frontend ──
-│   ├── main.jsx                        # React root mount
-│   ├── App.jsx                         # Top-level <PlayerProvider> + <AppContainer>
-│   ├── VPlayer.jsx                     # Main UI shell (updater, shortcuts, window mgr)
+│   ├── main.tsx                        # React root mount
+│   ├── App.tsx                         # Top-level <PlayerProvider> + <AppContainer>
+│   ├── VPlayer.tsx                     # Main UI shell (updater, shortcuts, window mgr)
 │   ├── index.css                       # Global styles + Tailwind directives
-│   ├── windowRegistry.jsx              # Window ID → component mapping
+│   ├── windowRegistry.tsx              # Window ID → component mapping
 │   │
 │   ├── components/                     # Reusable UI components
 │   │   ├── AppContainer.tsx            # Root layout (theme, toast, drag-drop, bg image)
@@ -371,3 +370,23 @@ Before declaring any feature "done":
 - **Window layout is persisted:** The Zustand `persist` middleware saves window positions/sizes. Changes to default window configs in `uiSlice.ts` only affect fresh installs.
 - **Tauri v2 capabilities:** Permissions for filesystem, dialog, shell, etc. are configured in `src-tauri/capabilities/`. New plugin permissions must be added there.
 - **Test mocks:** Tauri `invoke` is mocked in `src/test/setupTests.js`. When adding new IPC commands, add corresponding mocks or tests will fail.
+
+---
+
+## 10. Known Bugs
+
+These are confirmed present as of v0.9.32 and have not yet been fixed:
+
+| # | Bug | Area |
+|---|-----|------|
+| 1 | Mini-player mode does nothing when clicked | `MiniPlayerWindow`, tray/window management |
+| 2 | "Add to Playlist" appears in context menu when right-clicking a track already inside a playlist — it should be hidden in that context | `ContextMenu`, playlist track view |
+| 3 | "Minimize to tray" setting does nothing — the app remains in both the tray and the taskbar simultaneously | `useTrayBehavior`, Tauri tray plugin |
+
+---
+
+## 11. Roadmap
+
+| Item | Description |
+|------|-------------|
+| Console log catcher | In-app panel that captures console logs with filtering by level, and easy copy of individual entries or all at once |

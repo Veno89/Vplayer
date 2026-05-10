@@ -5,7 +5,33 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
-## [0.9.31] - 2026-05-05
+## [0.9.32] - 2026-05-10
+
+### Bug Fixes
+- Fixed "Remove from Playlist" context menu action doing nothing — `handleRemoveTrack` was not `await`ing `removeTrackFromPlaylist`, silently discarding the returned promise. Errors are now caught and reported; the context menu closes correctly on both success and failure.
+
+### UI Improvements
+- Playlist view now shows queue position badges — tracks currently in the play queue display their 1-based position `(1)`, `(2)` etc. next to the track title. Badges update in real time as the queue changes.
+- Playlist footer total duration now uses smart formatting instead of raw minutes. Durations under an hour show `Xh Ym`; multi-day totals show `X days Yh`; multi-week totals show `X weeks D days`.
+
+### Audio Engine Hardening (July 2026 Audit — all 9 findings resolved)
+- **[F-009]** Fixed audio device reconnection failure: `has_device_changed()` now also returns `true` when the Windows default output differs from the connected device, covering the case where a USB DAC or HDMI device is powered on after app startup. Users no longer need to restart the app to restore audio to a newly-active device.
+
+### Database Correctness
+- **[F-001]** Fixed LIKE metacharacter injection in smart playlist rule operators (`contains`, `not_contains`, `starts_with`, `ends_with`) — user-supplied `%` and `_` characters are now escaped with `ESCAPE '\\'` so patterns match literally.
+- **[F-007]** Fixed unescaped folder-path LIKE filter in `query_builder.rs` — paths containing `%` or `_` now resolve to the correct track set.
+
+### Performance & Atomicity
+- **[F-002]** `import_playlist` now inserts all resolved track IDs in a single batched transaction via `add_tracks_to_playlist_batch`, replacing an O(N) per-track INSERT loop. Partial-import states on failure are eliminated.
+- **[F-003]** `get_performance_stats` releases the DB `MutexGuard` before running its benchmark LIMIT 1000 scan and re-acquires it for that query alone, preventing multi-hundred-millisecond stalls on all playback-related DB writes during stat collection.
+- **[F-008]** `export_playlist` now fetches tracks in pages of 1,000 via `get_playlist_tracks_page` and streams the M3U output incrementally, eliminating O(N) memory allocation for large playlists.
+
+### Code Consistency & Test Correctness
+- **[F-004]** `scan_folder` now uses the established `state.db.conn()` abstraction instead of accessing `state.db.conn.lock()` directly.
+- **[F-005]** `show_in_folder` now calls `validate_path()` before the existence check, consistent with all other file-reading commands.
+- **[F-006]** Updated `replaygain_multiplier_is_clamped` test assertion from `<= 3.0` to `<= 2.0` with a descriptive message — the old bound passed at the correct value but gave no regression protection.
+
+
 
 ### Bug Fixes & Reliability
 - Fixed startup panic when the tray icon asset is missing from the bundle (`main.rs` — `default_window_icon().unwrap()`).

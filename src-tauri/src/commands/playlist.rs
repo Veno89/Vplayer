@@ -104,26 +104,53 @@ pub fn get_playlist_tracks(
 
 #[tauri::command]
 pub fn export_playlist(playlist_id: String, output_path: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
+    use std::io::Write;
     info!("Exporting playlist {} to {}", playlist_id, output_path);
-    
-    // Get playlist tracks from database
-    let tracks = state.db.get_playlist_tracks(&playlist_id)
-        .map_err(|e| AppError::Database(format!("Failed to get playlist tracks: {}", e)))?;
-    
-    // Convert to (title, path) tuples
-    let track_data: Vec<(String, String)> = tracks.iter()
-        .map(|t| {
-            let title = t.title.as_ref()
-                .unwrap_or(&t.name)
-                .clone();
-            (title, t.path.clone())
-        })
-        .collect();
-    
-    // Export to M3U
-    PlaylistIO::export_m3u(&track_data, &output_path)
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to export playlist: {}", e))))?;
-    
+
+    // Validate destination path — reject traversal sequences.
+    crate::validation::validate_path(&output_path)
+        .map_err(|e| AppError::Validation(format!("Invalid output path: {}", e)))?;
+
+    let file = std::fs::File::create(&output_path)
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to create playlist file: {}", e))))?;
+    let mut writer = std::io::BufWriter::new(file);
+
+    writeln!(writer, "#EXTM3U")
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write playlist header: {}", e))))?;
+
+    // Fetch and write in pages of 1000 so a 10,000-track playlist does not
+    // allocate all Track structs at once and does not hold the DB guard for
+    // the entire fetch duration.
+    const PAGE_SIZE: usize = 1000;
+    let mut offset = 0;
+    let mut total_written = 0usize;
+
+    loop {
+        let page = state.db.get_playlist_tracks_page(&playlist_id, Some(offset), Some(PAGE_SIZE))
+            .map_err(|e| AppError::Database(format!("Failed to get playlist tracks: {}", e)))?;
+
+        let is_last = page.len() < PAGE_SIZE;
+
+        for track in &page {
+            let title = track.title.as_ref().unwrap_or(&track.name);
+            writeln!(writer, "#EXTINF:-1,{}", title)
+                .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write track info: {}", e))))?;
+            writeln!(writer, "{}", track.path)
+                .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write track path: {}", e))))?;
+        }
+
+        total_written += page.len();
+        offset += page.len();
+
+        if is_last {
+            break;
+        }
+    }
+
+    writer.flush()
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to flush playlist file: {}", e))))?;
+
+    info!("Successfully exported {} tracks", total_written);
     Ok(())
 }
 
@@ -174,12 +201,14 @@ pub fn import_playlist(playlist_name: String, input_path: String, state: tauri::
             }
         };
         
-        // Add to playlist
-        let position = imported_track_ids.len() as i32;
-        state.db.add_track_to_playlist(&playlist_id, &track_id, position)
-            .map_err(|e| AppError::Database(format!("Failed to add track to playlist: {}", e)))?;
-        
         imported_track_ids.push(track_id);
+    }
+    
+    // Batch-insert all resolved tracks in a single transaction.
+    // This is atomic (all-or-nothing) and avoids N separate SQLite commits.
+    if !imported_track_ids.is_empty() {
+        state.db.add_tracks_to_playlist_batch(&playlist_id, &imported_track_ids, 0)
+            .map_err(|e| AppError::Database(format!("Failed to add tracks to playlist: {}", e)))?;
     }
     
     info!("Successfully imported {} tracks", imported_track_ids.len());
