@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "VPlayer",
-  "version": "0.9.33",
+  "version": "0.9.34",
   "identifier": "com.vplayer.dev",
   "build": {
     "frontendDist": "../dist",
@@ -39,7 +39,14 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "shortcutName": "VPlayer",
+        "displayLanguageSelector": false
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

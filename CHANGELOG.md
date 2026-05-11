@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.34] - 2026-05-11
+
+### Installer / Distribution
+- **Windows:** Build target changed from `"all"` (NSIS + MSI) to NSIS-only, eliminating duplicate entries in Programs and Features that appeared when both installer formats were run across versions.
+- **Windows:** NSIS `installMode` set to `perMachine` — VPlayer now installs to `C:\Program Files\VPlayer` instead of the hidden per-user `%LOCALAPPDATA%\Programs` path, and the Start Menu shortcut is created in the all-users Start Menu where it is properly discoverable.
+- **Windows:** `shortcutName` explicitly set to `"VPlayer"` so the Start Menu entry always has a consistent display name.
+
 ## [0.9.33] - 2026-05-10
 
 ### Bug Fixes
