@@ -5,16 +5,19 @@
  * These are async (unlike browser confirm/alert) so callers must await them.
  */
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 /**
  * Show a native confirmation dialog (Yes/No).
  * Returns true if the user clicked "Yes".
+ * Passing the current window as parent ensures the dialog appears in front
+ * of the app window on Windows (otherwise it can appear behind).
  */
 export async function nativeConfirm(
   msg: string,
   title = 'VPlayer',
 ): Promise<boolean> {
-  return ask(msg, { title, kind: 'warning' });
+  return ask(msg, { title, kind: 'warning', parent: getCurrentWindow() });
 }
 
 /**
@@ -24,7 +27,7 @@ export async function nativeAlert(
   msg: string,
   title = 'VPlayer',
 ): Promise<void> {
-  await message(msg, { title, kind: 'info' });
+  await message(msg, { title, kind: 'info', parent: getCurrentWindow() });
 }
 
 /**
@@ -34,5 +37,5 @@ export async function nativeError(
   msg: string,
   title = 'Error',
 ): Promise<void> {
-  await message(msg, { title, kind: 'error' });
+  await message(msg, { title, kind: 'error', parent: getCurrentWindow() });
 }

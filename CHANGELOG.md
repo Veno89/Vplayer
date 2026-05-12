@@ -5,7 +5,14 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
-## [0.9.36] - 2026-05-12
+## [0.9.37] - 2026-05-12
+
+### Bug Fixes
+- **Remove from Playlist / Remove Folder do nothing** — The root cause was that native confirmation dialogs (`ask()` from `@tauri-apps/plugin-dialog`) were opened without a `parent` window reference. On Windows (WebView2), this causes the system dialog to appear **behind** the app window — invisible to the user — so the operation silently waited forever for input that could never be given. Fixed by passing `parent: getCurrentWindow()` to every `ask()` and `message()` call in the shared `nativeDialog` utility, ensuring dialogs are always shown in front of the app.
+- **Remove from Playlist — unhandled rejection on dialog error** — `handleRemoveTrack` in `usePlaylistActions` had no `try/catch` around `nativeConfirm()`. If the dialog IPC threw for any reason the entire async handler failed as an unhandled rejection, silently discarding the operation. The block now matches the pattern established in `LibraryWindow` (v0.9.35): wrap in `try/catch`, treat an error as a cancel. Failures in `removeTrackFromPlaylist` itself are now surfaced as an error toast instead of a silent `console.error`.
+- **Batch-delete confirmation in playlist has same unhandled-rejection risk** — The `'delete'` case in `handleBatchAction` (multi-select remove) was calling `await nativeConfirm()` without `try/catch`. Wrapped with the same pattern.
+
+
 
 ### Bug Fixes
 - **Context menus clipped at window edge** — `ContextMenu` used a `useLayoutEffect` to reposition the menu away from the right/bottom viewport edge before the first paint, but a second `useEffect` with the same `[x, y]` dependency unconditionally reset `position` back to the raw cursor coordinates *after* the paint. The result was a visible snap from the corrected position to the clipped position every time a menu opened near an edge. The redundant `useEffect` has been removed; `useLayoutEffect` alone now owns position state. A 4 px safety margin is also applied on all four edges, and the post-flip clamp prevents the adjusted position from going off the opposite edge. (Audit A-016)

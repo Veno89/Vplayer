@@ -398,16 +398,27 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
         setShowBatchPlaylistPicker(true);
         break;
 
-      case 'delete':
+      case 'delete': {
         // Remove selected tracks from current playlist
         if (!playlists.currentPlaylist) return;
-        if (await nativeConfirm(`Remove ${selectedTracks.length} track(s) from this playlist?`)) {
-          for (const track of selectedTracks) {
-            await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+        let batchConfirmed = false;
+        try {
+          batchConfirmed = await nativeConfirm(`Remove ${selectedTracks.length} track(s) from this playlist?`);
+        } catch {
+          return; // Dialog error — treat as cancelled
+        }
+        if (batchConfirmed) {
+          try {
+            for (const track of selectedTracks) {
+              await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
+            }
+          } catch (err) {
+            console.error('Failed to remove tracks from playlist:', err);
           }
           setSelectedIndices(new Set());
         }
         break;
+      }
 
       default:
         console.warn('Unknown batch action:', action);

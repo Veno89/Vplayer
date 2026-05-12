@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { log } from '../utils/logger';
 import { nativeConfirm, nativeAlert } from '../utils/nativeDialog';
+import { useToast } from './useToast';
 import type { Track } from '../types';
 import type { PlaylistsAPI } from './usePlaylists';
 
@@ -70,6 +71,8 @@ export function usePlaylistActions({
     setSortConfig,
     onActiveTracksChange,
 }: PlaylistActionsParams) {
+    const toast = useToast();
+
     // Sort handler
     const handleSort = useCallback((key: string) => {
         setSortConfig(current => ({
@@ -177,10 +180,17 @@ export function usePlaylistActions({
         // Check confirmBeforeDelete setting
         const shouldConfirm = useStore.getState().confirmBeforeDelete;
         if (shouldConfirm) {
-            const confirmed = await nativeConfirm(
-                `Remove "${track.title}" from this playlist?`,
-                'Remove Track'
-            );
+            let confirmed = false;
+            try {
+                confirmed = await nativeConfirm(
+                    `Remove "${track.title}" from this playlist?`,
+                    'Remove Track'
+                );
+            } catch {
+                // Dialog error — treat as cancelled
+                closeContextMenu();
+                return;
+            }
             if (!confirmed) {
                 closeContextMenu();
                 return;
@@ -191,6 +201,7 @@ export function usePlaylistActions({
             await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
         } catch (err) {
             console.error('Failed to remove track from playlist:', err);
+            toast.showError(`Failed to remove track: ${err instanceof Error ? err.message : String(err)}`);
             closeContextMenu();
             return;
         }
