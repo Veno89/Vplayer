@@ -1,7 +1,7 @@
 use crate::database::Database;
 use crate::scanner::Track;
 use crate::time_utils::now_millis;
-use rusqlite::{params, Result};
+use rusqlite::{params, OptionalExtension, Result};
 
 impl Database {
     // Playlist operations
@@ -19,9 +19,8 @@ impl Database {
 
     pub fn get_all_playlists(&self) -> Result<Vec<(String, String, i64)>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, created_at FROM playlists ORDER BY created_at DESC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, created_at FROM playlists ORDER BY created_at DESC")?;
 
         let playlists = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
@@ -52,7 +51,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str, position: i32) -> Result<()> {
+    pub fn add_track_to_playlist(
+        &self,
+        playlist_id: &str,
+        track_id: &str,
+        position: i32,
+    ) -> Result<()> {
         let conn = self.conn();
         conn.execute(
             "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
@@ -86,15 +90,39 @@ impl Database {
     }
 
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+
+        let removed_position: Option<i32> = tx
+            .query_row(
+                "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+                params![playlist_id, track_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        let Some(removed_position) = removed_position else {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        };
+
+        tx.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
             params![playlist_id, track_id],
         )?;
+        tx.execute(
+            "UPDATE playlist_tracks SET position = position - 1 WHERE playlist_id = ?1 AND position > ?2",
+            params![playlist_id, removed_position],
+        )?;
+
+        tx.commit()?;
         Ok(())
     }
 
-    pub fn reorder_playlist_tracks(&self, playlist_id: &str, track_positions: Vec<(String, i32)>) -> Result<()> {
+    pub fn reorder_playlist_tracks(
+        &self,
+        playlist_id: &str,
+        track_positions: Vec<(String, i32)>,
+    ) -> Result<()> {
         let mut conn = self.conn();
 
         // Use a transaction for atomic updates

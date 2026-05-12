@@ -1,7 +1,6 @@
+use log::warn;
 use rusqlite::Connection;
 use serde::Deserialize;
-use log::warn;
-use std::path::Path;
 use std::sync::Mutex;
 
 #[derive(Debug, Deserialize)]
@@ -63,12 +62,17 @@ mod tests {
     use super::*;
     use crate::scanner::Track;
     use crate::time_utils::now_millis;
+    use rusqlite::params;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::thread;
-    use std::path::PathBuf;
 
     fn temp_db_path(test_name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("vplayer_db_test_{}_{}.db", test_name, uuid::Uuid::new_v4()))
+        std::env::temp_dir().join(format!(
+            "vplayer_db_test_{}_{}.db",
+            test_name,
+            uuid::Uuid::new_v4()
+        ))
     }
 
     fn cleanup_db_files(path: &Path) {
@@ -116,7 +120,9 @@ mod tests {
             .expect("add_folder_with_tracks failed");
 
         let folders = db.get_all_folders().expect("get_all_folders failed");
-        assert!(folders.iter().any(|(id, path, _, _)| id == folder_id && path == folder_path));
+        assert!(folders
+            .iter()
+            .any(|(id, path, _, _)| id == folder_id && path == folder_path));
 
         let all_tracks = db.get_all_tracks().expect("get_all_tracks failed");
         assert_eq!(all_tracks.len(), 2);
@@ -134,23 +140,130 @@ mod tests {
     }
 
     #[test]
+    fn remove_folder_with_tracks_accepts_path_when_folder_id_is_stale() {
+        let db_path = temp_db_path("folder_stale_id");
+        let db = Database::new(&db_path).expect("db init failed");
+
+        let folder_id = "folder_actual";
+        let folder_path = "C:/Music/TestFolder";
+        let sibling_id = "folder_sibling";
+        let sibling_path = "C:/Music/TestFolder Extended";
+
+        db.add_folder_with_tracks(
+            folder_id,
+            folder_path,
+            "TestFolder",
+            now_millis(),
+            &[sample_track(
+                "track_inside",
+                "C:/Music/TestFolder/track1.mp3",
+            )],
+        )
+        .expect("add folder failed");
+        db.add_folder_with_tracks(
+            sibling_id,
+            sibling_path,
+            "TestFolder Extended",
+            now_millis(),
+            &[sample_track(
+                "track_sibling",
+                "C:/Music/TestFolder Extended/track2.mp3",
+            )],
+        )
+        .expect("add sibling folder failed");
+
+        db.remove_folder_with_tracks("folder_frontend_stale", folder_path)
+            .expect("remove by path fallback failed");
+
+        let folders_after = db.get_all_folders().expect("get_all_folders after failed");
+        assert!(!folders_after.iter().any(|(id, _, _, _)| id == folder_id));
+        assert!(folders_after.iter().any(|(id, _, _, _)| id == sibling_id));
+
+        let tracks_after = db.get_all_tracks().expect("get_all_tracks after failed");
+        assert!(!tracks_after.iter().any(|t| t.id == "track_inside"));
+        assert!(tracks_after.iter().any(|t| t.id == "track_sibling"));
+
+        cleanup_db_files(&db_path);
+    }
+
+    #[test]
     fn delete_playlist_removes_playlist_and_memberships() {
         let db_path = temp_db_path("playlist_delete_tx");
         let db = Database::new(&db_path).expect("db init failed");
 
-        let playlist_id = db.create_playlist("Test Playlist").expect("create_playlist failed");
+        let playlist_id = db
+            .create_playlist("Test Playlist")
+            .expect("create_playlist failed");
         let track = sample_track("track_pl_1", "C:/Music/Playlist/track.mp3");
         db.add_track(&track).expect("add_track failed");
         db.add_track_to_playlist(&playlist_id, &track.id, 0)
             .expect("add_track_to_playlist failed");
 
-        db.delete_playlist(&playlist_id).expect("delete_playlist failed");
+        db.delete_playlist(&playlist_id)
+            .expect("delete_playlist failed");
 
         let playlists = db.get_all_playlists().expect("get_all_playlists failed");
         assert!(!playlists.iter().any(|(id, _, _)| id == &playlist_id));
 
-        let playlist_tracks = db.get_playlist_tracks(&playlist_id).expect("get_playlist_tracks failed");
+        let playlist_tracks = db
+            .get_playlist_tracks(&playlist_id)
+            .expect("get_playlist_tracks failed");
         assert!(playlist_tracks.is_empty());
+
+        cleanup_db_files(&db_path);
+    }
+
+    #[test]
+    fn remove_track_from_playlist_removes_membership_and_compacts_positions() {
+        let db_path = temp_db_path("playlist_remove_track");
+        let db = Database::new(&db_path).expect("db init failed");
+
+        let playlist_id = db
+            .create_playlist("Remove Track")
+            .expect("create_playlist failed");
+        let tracks = vec![
+            sample_track("track_remove_1", "C:/Music/Playlist/one.mp3"),
+            sample_track("track_remove_2", "C:/Music/Playlist/two.mp3"),
+            sample_track("track_remove_3", "C:/Music/Playlist/three.mp3"),
+        ];
+
+        for (idx, track) in tracks.iter().enumerate() {
+            db.add_track(track).expect("add_track failed");
+            db.add_track_to_playlist(&playlist_id, &track.id, idx as i32)
+                .expect("add_track_to_playlist failed");
+        }
+
+        db.remove_track_from_playlist(&playlist_id, "track_remove_2")
+            .expect("remove_track_from_playlist failed");
+
+        let playlist_tracks = db
+            .get_playlist_tracks(&playlist_id)
+            .expect("get_playlist_tracks failed");
+        let ids: Vec<&str> = playlist_tracks.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["track_remove_1", "track_remove_3"]);
+
+        let conn = db.conn();
+        let positions = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+                )
+                .expect("prepare positions query failed");
+            stmt.query_map(params![playlist_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+            })
+            .expect("positions query failed")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("positions collect failed")
+        };
+        assert_eq!(
+            positions,
+            vec![
+                ("track_remove_1".to_string(), 0),
+                ("track_remove_3".to_string(), 1),
+            ]
+        );
+        drop(conn);
 
         cleanup_db_files(&db_path);
     }
@@ -226,7 +339,11 @@ mod tests {
             "track_number",
             "disc_number",
         ] {
-            assert!(columns.iter().any(|c| c == expected), "missing migrated column: {}", expected);
+            assert!(
+                columns.iter().any(|c| c == expected),
+                "missing migrated column: {}",
+                expected
+            );
         }
 
         let album_art_table_exists: i32 = conn
@@ -236,7 +353,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("sqlite_master query failed");
-        assert_eq!(album_art_table_exists, 1, "track_album_art table should exist after migration");
+        assert_eq!(
+            album_art_table_exists, 1,
+            "track_album_art table should exist after migration"
+        );
 
         drop(stmt);
         drop(conn);
@@ -284,6 +404,3 @@ mod tests {
         cleanup_db_files(&db_path);
     }
 }
-
-
-

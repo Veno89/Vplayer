@@ -17,7 +17,15 @@ export async function nativeConfirm(
   msg: string,
   title = 'VPlayer',
 ): Promise<boolean> {
-  return ask(msg, { title, kind: 'warning', parent: getCurrentWindow() });
+  try {
+    return await ask(msg, { title, kind: 'warning', parent: getCurrentWindow() });
+  } catch (err) {
+    console.warn('Native confirmation dialog failed; falling back to browser confirm.', err);
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      return window.confirm(msg);
+    }
+    throw err;
+  }
 }
 
 /**
