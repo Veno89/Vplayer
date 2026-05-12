@@ -61,7 +61,7 @@ use commands::{
     clear_preload, has_preloaded, get_preloaded_path, set_balance, get_balance,
     get_audio_health,
     // Library commands
-    scan_folder, scan_folder_incremental, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
+    scan_folder, scan_folder_incremental, get_track_ids_for_folder, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, remove_duplicate_folders, increment_play_count,
     get_recently_played, get_most_played, get_album_art, get_album_art_batch, extract_and_cache_album_art,
@@ -409,6 +409,7 @@ fn main() {
             set_audio_device,
             scan_folder,
             scan_folder_incremental,
+            get_track_ids_for_folder,
             get_all_tracks,
             get_filtered_tracks,
             get_tracks_page,

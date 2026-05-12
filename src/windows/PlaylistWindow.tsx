@@ -167,15 +167,16 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       const detail = (e as CustomEvent<{ trackIds: string[] }>).detail;
       if (!detail?.trackIds || detail.trackIds.length === 0) return;
       if (!playlists.currentPlaylist) {
-        console.log('No active playlist to add external tracks to');
+        toast.showInfo('Select or create a playlist first to add tracks from a dropped folder.');
         return;
       }
 
       try {
-        console.log('Adding', detail.trackIds.length, 'externally dropped tracks to playlist');
         await playlists.addTracksToPlaylist(playlists.currentPlaylist, detail.trackIds);
+        toast.showSuccess(`Added ${detail.trackIds.length} track(s) to playlist`);
       } catch (err) {
         console.error('Failed to add external tracks to playlist:', err);
+        toast.showError('Failed to add tracks to playlist');
       }
     };
 
@@ -184,7 +185,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     return () => {
       window.removeEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
     };
-  }, [playlists.currentPlaylist, playlists.addTracksToPlaylist]);
+  }, [playlists.currentPlaylist, playlists.addTracksToPlaylist, toast]);
 
   // Filter and Sort tracks
   const displayTracks = useMemo(() => {

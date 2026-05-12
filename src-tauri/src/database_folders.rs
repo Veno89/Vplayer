@@ -150,6 +150,18 @@ impl Database {
         Ok(())
     }
 
+    /// Return just the track IDs whose path starts with `folder_path`.
+    /// Used by the frontend after an incremental scan to discover all tracks
+    /// already registered under a given folder (new and pre-existing).
+    pub fn get_track_ids_for_folder(&self, folder_path: &str) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id FROM tracks WHERE path LIKE ?1")?;
+        let ids = stmt
+            .query_map(params![format!("{}%", folder_path)], |row| row.get(0))?
+            .collect::<Result<Vec<String>>>()?;
+        Ok(ids)
+    }
+
     // Get tracks for a specific folder with their modification times
     pub fn get_folder_tracks(&self, folder_path: &str) -> Result<Vec<(String, String, i64)>> {
         info!("Getting tracks for folder: {}", folder_path);

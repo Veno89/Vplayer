@@ -3,7 +3,8 @@ import { Music, FolderOpen, Search, Image, RefreshCw, FileAudio, Eye, Plus, Tras
 import { TauriAPI } from '../../services/TauriAPI';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../store/useStore';
-import { nativeConfirm } from '../../utils/nativeDialog';
+import { nativeConfirm, nativeError } from '../../utils/nativeDialog';
+import { usePlayerContext } from '../../context/PlayerProvider';
 import { SettingToggle, SettingSelect, SettingCard, SettingInfo, SettingBadge } from './SettingsComponents';
 
 interface LibraryFolder {
@@ -20,7 +21,8 @@ export function LibraryTab() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   
-  // Get settings from store
+  // Global library context — removeFolder keeps global state in sync
+  const { library, toast } = usePlayerContext();
   const autoScanOnStartup = useStore(state => state.autoScanOnStartup);
   const setAutoScanOnStartup = useStore(state => state.setAutoScanOnStartup);
   const watchFolderChanges = useStore(state => state.watchFolderChanges);
@@ -83,16 +85,26 @@ export function LibraryTab() {
   };
 
   const handleRemoveFolder = async (folder: LibraryFolder) => {
-    const path = typeof folder === 'object' ? folder.path : folder;
-    const folderId = typeof folder === 'object' ? folder.id : null;
-    if (!await nativeConfirm(`Remove "${path}" from library? Files will not be deleted.`)) return;
+    const folderId = folder.id;
+    const path = folder.path;
+
+    let confirmed = false;
     try {
-      if (folderId) {
-        await TauriAPI.removeFolder(folderId, path);
-      }
+      confirmed = await nativeConfirm(`Remove "${path}" from library? Files will not be deleted.`);
+    } catch {
+      return; // dialog error — treat as cancelled
+    }
+    if (!confirmed) return;
+
+    try {
+      // Use the global library removeFolder so both the context state and the
+      // local LibraryTab list stay in sync after deletion.
+      await library.removeFolder(folderId, path);
+      toast.showSuccess('Folder removed from library');
       await loadLibraryInfo();
     } catch (err) {
       console.error('Failed to remove folder:', err);
+      await nativeError(`Failed to remove folder: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 

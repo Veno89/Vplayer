@@ -101,3 +101,21 @@ pub async fn scan_folder_incremental(
     .await
     .map_err(|e| AppError::InvalidState(format!("Incremental scan task panicked: {}", e)))?
 }
+
+/// Return the IDs of all tracks whose path starts with `folder_path`.
+/// The frontend calls this after an incremental scan so it can add both newly
+/// scanned tracks AND pre-existing tracks in the same folder to the playlist.
+#[tauri::command]
+pub async fn get_track_ids_for_folder(
+    folder_path: String,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<String>> {
+    crate::validation::validate_path(&folder_path).map_err(|e| AppError::Validation(e.to_string()))?;
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.get_track_ids_for_folder(&folder_path)
+            .map_err(|e| AppError::Database(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(e.to_string()))?
+}

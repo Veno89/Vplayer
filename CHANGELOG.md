@@ -5,6 +5,21 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.35] - 2026-05-12
+
+### Bug Fixes
+- **Delete folder does nothing** — Clicking the delete button in the Library window or the Options › Library tab silently failed in two ways: (1) any exception thrown by the native confirmation dialog (`ask()`) propagated unhandled and swallowed the entire action; (2) deletions made from Options › Library tab called `TauriAPI.removeFolder` directly, so the global library context was never updated and the Library window kept showing the removed folder. Both paths now wrap `nativeConfirm` in `try/catch` (treating a dialog error as a cancel). The Options tab's delete handler now delegates to the shared `library.removeFolder` context method, keeping all panels in sync; a proper error toast/dialog is shown on failure.
+- **Dragging a folder to the playlist window adds nothing** — Three separate issues combined to produce this silent no-op:
+  1. `useDragDrop` used `scanFolderIncremental` and then dispatched only the *newly discovered* track IDs. For any folder already present in the library (no new/modified files), the scan returned an empty list, the `vplayer-external-tracks-added` event was never fired, and no tracks were added to the playlist.
+  2. A `MAX_TRACKS_PER_DROP = 100` hard limit caused an early return (with an error toast) for any folder containing more than 100 tracks, without ever dispatching the event.
+  3. When the event did fire but no playlist was selected, the handler logged to the console and returned silently with no feedback to the user.
+
+  **Fixes applied:**
+  - Added a new `get_track_ids_for_folder` Tauri command (lightweight `SELECT id FROM tracks WHERE path LIKE ?`) that returns all track IDs registered under a given folder path.
+  - `useDragDrop` now calls `scanFolderIncremental` first (to update the library with any new files), then calls `getTrackIdsForFolder` to collect the full set of track IDs — new and pre-existing — so folders already in the library are handled correctly.
+  - Removed the 100-track drop limit.
+  - `PlaylistWindow` now shows an informational toast when a folder is dropped but no playlist is active, instead of silently discarding the event.
+
 ## [0.9.34] - 2026-05-11
 
 ### Installer / Distribution

@@ -84,18 +84,24 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
                 const isFolder = !path.match(/\.(mp3|flac|wav|ogg|m4a|aac|wma|opus)$/i);
 
                 if (isFolder) {
-                  // Scan folder incrementally and collect new track IDs
+                  // 1. Scan for new/modified files so the library is up to date.
+                  // 2. Then fetch ALL track IDs under the folder (new + pre-existing)
+                  //    so every track in the folder is offered to the playlist, not
+                  //    just the ones that were newly discovered.
                   try {
-                    const scannedTracks = await TauriAPI.scanFolderIncremental(path);
-                    if (scannedTracks && Array.isArray(scannedTracks)) {
-                      scannedTracks.forEach(track => {
-                        if (track.id) newTrackIds.push(track.id);
-                      });
-                    }
-                    foldersAdded++;
+                    await TauriAPI.scanFolderIncremental(path);
                   } catch (err) {
                     console.error('Failed to scan folder:', path, err);
                   }
+                  try {
+                    const folderTrackIds = await TauriAPI.getTrackIdsForFolder(path);
+                    folderTrackIds.forEach(id => {
+                      if (id && !newTrackIds.includes(id)) newTrackIds.push(id);
+                    });
+                  } catch (err) {
+                    console.error('Failed to get track IDs for folder:', path, err);
+                  }
+                  foldersAdded++;
                 } else {
                   // For individual files, we could add them to library
                   // For now just count them - full implementation would require single file import
@@ -103,19 +109,12 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
                 }
               }
 
-              // Limit the number of tracks to prevent freezing
-              const MAX_TRACKS_PER_DROP = 100;
-              if (newTrackIds.length > MAX_TRACKS_PER_DROP) {
-                toast?.showError(`Too many tracks (${newTrackIds.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
-                return;
-              }
-
-              // Refresh library to get all tracks
+              // Refresh library so the UI shows newly added tracks
               if (refreshTracks) {
                 await refreshTracks();
               }
 
-              // Emit event with new track IDs for playlist to handle
+              // Emit event with all track IDs so the active playlist can be populated
               if (newTrackIds.length > 0) {
                 window.dispatchEvent(new CustomEvent('vplayer-external-tracks-added', {
                   detail: { trackIds: newTrackIds }

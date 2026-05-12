@@ -254,6 +254,11 @@ class TauriAPIService {
         return this._invoke('scan_folder_incremental', { folderPath });
     }
 
+    /** Return all track IDs whose file path starts with `folderPath`. */
+    async getTrackIdsForFolder(folderPath: string): Promise<string[]> {
+        return this._invoke('get_track_ids_for_folder', { folderPath });
+    }
+
     async getAllTracks(): Promise<Track[]> {
         return this._invoke('get_all_tracks');
     }
