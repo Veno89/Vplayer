@@ -79,26 +79,26 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
-  // Update position when props change
-  useEffect(() => {
-    setPosition({ x, y });
-  }, [x, y]);
-
   useLayoutEffect(() => {
     if (menuRef.current) {
+      const MARGIN = 4;
       const rect = menuRef.current.getBoundingClientRect();
       let newX = x;
       let newY = y;
 
-      // Horizontal check (right edge)
-      if (newX + rect.width > window.innerWidth) {
-        newX = Math.max(0, x - rect.width);
+      // Right edge → flip to left of cursor
+      if (newX + rect.width + MARGIN > window.innerWidth) {
+        newX = x - rect.width;
       }
 
-      // Vertical check (bottom edge)
-      if (newY + rect.height > window.innerHeight) {
-        newY = Math.max(0, y - rect.height);
+      // Bottom edge → flip to above cursor
+      if (newY + rect.height + MARGIN > window.innerHeight) {
+        newY = y - rect.height;
       }
+
+      // Clamp to viewport (prevents going off left/top edge after flipping)
+      newX = Math.max(MARGIN, newX);
+      newY = Math.max(MARGIN, newY);
 
       setPosition({ x: newX, y: newY });
     }

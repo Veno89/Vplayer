@@ -36,6 +36,7 @@
 | A-013 | Rust / Scanner | 🟢 | `WalkDir::follow_links(true)` without root boundary check |
 | A-014 | React / Library | 🟢 | Drag-image cleanup has no error guard |
 | A-015 | UI/UX | 🟢 | Three pre-existing stubs (mini-player, tray, context menu) |
+| A-016 | React / UI | 🟡 | Context menu edge correction undone by async `useEffect` |
 
 ---
 
@@ -242,6 +243,55 @@ These are known gaps, included here for audit completeness:
 
 ---
 
+### A-016 🟡 — Context menu edge correction undone by async `useEffect`
+
+**File:** `src/components/ContextMenu.tsx` — `ContextMenu`
+
+**Problem:**  
+`ContextMenu` uses a `useLayoutEffect` (deps `[x, y, items]`) to measure the rendered menu and flip it away from the right/bottom viewport edge before the browser paints. This is correct. However, there is also a `useEffect` (deps `[x, y]`) that unconditionally resets `position` back to the raw cursor coordinates `{ x, y }`:
+
+```tsx
+useEffect(() => {
+  setPosition({ x, y });
+}, [x, y]);
+```
+
+Because `useEffect` is asynchronous — it fires *after* the browser has painted — it runs after `useLayoutEffect` and overwrites the corrected position. The visible result is that every context menu opened near the right or bottom edge of the window first appears at the corrected position (for one frame), then snaps back to the clipped position. On slower machines the two-frame difference is clearly visible as a jump.
+
+Additionally, the clamp logic did not apply a margin from the window edge (`Math.max(0, ...)` allows the menu to touch pixel 0) and did not protect against the adjusted position going off the left or top edge after a flip.
+
+**Fix:**  
+Remove the redundant `useEffect` entirely — `useLayoutEffect` already re-runs on every `x`/`y` change and handles initialisation. Tighten the clamp:
+
+```tsx
+useLayoutEffect(() => {
+  if (menuRef.current) {
+    const MARGIN = 4;
+    const rect = menuRef.current.getBoundingClientRect();
+    let newX = x;
+    let newY = y;
+
+    // Right edge → flip to left of cursor
+    if (newX + rect.width + MARGIN > window.innerWidth) {
+      newX = x - rect.width;
+    }
+
+    // Bottom edge → flip to above cursor
+    if (newY + rect.height + MARGIN > window.innerHeight) {
+      newY = y - rect.height;
+    }
+
+    // Clamp to viewport (prevents going off left/top edge after flipping)
+    newX = Math.max(MARGIN, newX);
+    newY = Math.max(MARGIN, newY);
+
+    setPosition({ x: newX, y: newY });
+  }
+}, [x, y, items]);
+```
+
+---
+
 ## Implementation Priority
 
 ### Phase 1 — Fix now (affects correctness)
@@ -255,6 +305,7 @@ These are known gaps, included here for audit completeness:
 - **A-003** — Reject malformed `between` values
 - **A-007** — Clear consumed queue items from the array
 - **A-008** — Switch crossfade timer to `requestAnimationFrame`
+- **A-016** — Remove async position reset overriding context menu edge correction
 
 ### Phase 3 — Cleanup (low risk, low urgency)
 - **A-009** — Delete dead `_fn` helpers

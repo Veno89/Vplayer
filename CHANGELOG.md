@@ -5,6 +5,11 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.36] - 2026-05-12
+
+### Bug Fixes
+- **Context menus clipped at window edge** — `ContextMenu` used a `useLayoutEffect` to reposition the menu away from the right/bottom viewport edge before the first paint, but a second `useEffect` with the same `[x, y]` dependency unconditionally reset `position` back to the raw cursor coordinates *after* the paint. The result was a visible snap from the corrected position to the clipped position every time a menu opened near an edge. The redundant `useEffect` has been removed; `useLayoutEffect` alone now owns position state. A 4 px safety margin is also applied on all four edges, and the post-flip clamp prevents the adjusted position from going off the opposite edge. (Audit A-016)
+
 ## [0.9.35] - 2026-05-12
 
 ### Bug Fixes
