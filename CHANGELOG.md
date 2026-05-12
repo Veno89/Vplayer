@@ -5,21 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
-## [0.9.38] - 2026-05-12
+## [0.9.39] - 2026-05-12
 
 ### Bug Fixes
-- **Remove from Playlist actually removes the selected track** - Playlist membership deletion now runs transactionally, verifies that a row was removed, and compacts remaining playlist positions so the visible playlist refreshes from a consistent database state.
-- **Remove Folder handles stale frontend folder IDs** - Folder deletion now falls back to the stored folder path when the UI has a stale optimistic folder ID, removes tracks using escaped path-boundary matching, and reports an error when no folder row is deleted instead of silently succeeding.
-- **Confirmation dialog fallback** - `nativeConfirm()` now falls back to `window.confirm()` if the native Tauri dialog throws, preventing delete actions from turning into silent no-ops when dialog IPC fails.
+- **Remove from Playlist and Remove Folder now confirm reliably** - When the native Tauri dialog command is unavailable or rejected, VPlayer now shows an in-app confirmation modal instead of falling back to `window.confirm()`. This keeps the action inside the app window and lets the remove handlers continue to the actual `remove_track_from_playlist` and `remove_folder` mutations after confirmation.
+- **Dialog fallback also covers alerts and errors** - Native info/error dialogs now fall back to the same in-app modal path, preventing dialog IPC failures from hiding follow-up error messages.
 
-## [0.9.37] - 2026-05-12
-
-### Bug Fixes
-- **Remove from Playlist / Remove Folder do nothing** — The root cause was that native confirmation dialogs (`ask()` from `@tauri-apps/plugin-dialog`) were opened without a `parent` window reference. On Windows (WebView2), this causes the system dialog to appear **behind** the app window — invisible to the user — so the operation silently waited forever for input that could never be given. Fixed by passing `parent: getCurrentWindow()` to every `ask()` and `message()` call in the shared `nativeDialog` utility, ensuring dialogs are always shown in front of the app.
-- **Remove from Playlist — unhandled rejection on dialog error** — `handleRemoveTrack` in `usePlaylistActions` had no `try/catch` around `nativeConfirm()`. If the dialog IPC threw for any reason the entire async handler failed as an unhandled rejection, silently discarding the operation. The block now matches the pattern established in `LibraryWindow` (v0.9.35): wrap in `try/catch`, treat an error as a cancel. Failures in `removeTrackFromPlaylist` itself are now surfaced as an error toast instead of a silent `console.error`.
-- **Batch-delete confirmation in playlist has same unhandled-rejection risk** — The `'delete'` case in `handleBatchAction` (multi-select remove) was calling `await nativeConfirm()` without `try/catch`. Wrapped with the same pattern.
-
-
+## [0.9.36] - 2026-05-12
 
 ### Bug Fixes
 - **Context menus clipped at window edge** — `ContextMenu` used a `useLayoutEffect` to reposition the menu away from the right/bottom viewport edge before the first paint, but a second `useEffect` with the same `[x, y]` dependency unconditionally reset `position` back to the raw cursor coordinates *after* the paint. The result was a visible snap from the corrected position to the clipped position every time a menu opened near an edge. The redundant `useEffect` has been removed; `useLayoutEffect` alone now owns position state. A 4 px safety margin is also applied on all four edges, and the post-flip clamp prevents the adjusted position from going off the opposite edge. (Audit A-016)
