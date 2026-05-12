@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.38] - 2026-05-12
+
+### Bug Fixes
+- **Remove from Playlist actually removes the selected track** - Playlist membership deletion now runs transactionally, verifies that a row was removed, and compacts remaining playlist positions so the visible playlist refreshes from a consistent database state.
+- **Remove Folder handles stale frontend folder IDs** - Folder deletion now falls back to the stored folder path when the UI has a stale optimistic folder ID, removes tracks using escaped path-boundary matching, and reports an error when no folder row is deleted instead of silently succeeding.
+- **Confirmation dialog fallback** - `nativeConfirm()` now falls back to `window.confirm()` if the native Tauri dialog throws, preventing delete actions from turning into silent no-ops when dialog IPC fails.
+
 ## [0.9.37] - 2026-05-12
 
 ### Bug Fixes
