@@ -97,15 +97,51 @@ class TauriAPIService {
     }
 
     /**
-     * Wrapper around invoke with error handling
+     * Helper to wrap a promise with a timeout
      */
-    private async _invoke<T>(command: string, params: Record<string, unknown> = {}): Promise<T> {
+    private _withTimeout<T>(promise: Promise<T>, ms: number, command: string): Promise<T> {
+        return Promise.race([
+            promise,
+            new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Command '${command}' timed out after ${ms}ms`)), ms))
+        ]);
+    }
+
+    /**
+     * Wrapper around invoke with error handling and timeouts
+     */
+    private async _invoke<T>(command: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
+        // Default timeouts based on command type
+        let effectiveTimeout = timeoutMs || 10000; // Default 10s
+        
+        if (!timeoutMs) {
+            // Long-running commands
+            if (command.includes('scan') || command.includes('get_tracks_page') || command.includes('find_duplicates') || command.includes('vacuum') || command.includes('analyze')) {
+                effectiveTimeout = 60000; // 60s for scans and heavy DB operations
+            } else if (command.includes('get_album_art')) {
+                effectiveTimeout = 15000; // 15s for image loading
+            } else if (command.includes('export_playlist') || command.includes('import_playlist')) {
+                effectiveTimeout = 30000; // 30s for playlist IO
+            } else if (command.includes('play') || command.includes('pause') || command.includes('stop') || command.includes('seek')) {
+                effectiveTimeout = 5000; // 5s for playback commands
+            }
+        }
+
         try {
-            const result = await invoke<T>(command, params);
+            const invokePromise = invoke<T>(command, params);
+            const result = await this._withTimeout(invokePromise, effectiveTimeout, command);
             this._log(command, params, result);
             return result;
         } catch (error) {
             this._log(command, params, null, error);
+            
+            // Auto-cancel scans if they time out on the frontend
+            if (command.includes('scan') && String(error).includes('timed out')) {
+                console.warn(`[TauriAPI] Scan command '${command}' timed out. Issuing backend cancellation.`);
+                const scanId = params && 'scanId' in params ? params.scanId : undefined;
+                // Fire and forget cancellation
+                invoke('cancel_scan', scanId ? { scanId } : undefined).catch(err => console.error("Failed to auto-cancel scan:", err));
+            }
+            
             throw this._formatError(command, error);
         }
     }
@@ -115,6 +151,10 @@ class TauriAPIService {
      */
     private _formatError(command: string, error: unknown): Error {
         const errorStr = String(error);
+
+        if (errorStr.includes('timed out')) {
+            return new Error(`Operation timed out. The background task took too long and has been aborted.`);
+        }
 
         // Map common errors to user-friendly messages
         if (errorStr.includes('Decode error')) {
@@ -246,12 +286,16 @@ class TauriAPIService {
 
     // ========== Library Commands ==========
 
-    async scanFolder(folderPath: string): Promise<Track[]> {
-        return this._invoke('scan_folder', { folderPath });
+    async scanFolder(folderPath: string, scanId?: string): Promise<Track[]> {
+        return this._invoke('scan_folder', { folderPath, scanId: scanId || Date.now().toString() });
     }
 
-    async scanFolderIncremental(folderPath: string): Promise<Track[]> {
-        return this._invoke('scan_folder_incremental', { folderPath });
+    async scanFolderIncremental(folderPath: string, scanId?: string): Promise<Track[]> {
+        return this._invoke('scan_folder_incremental', { folderPath, scanId: scanId || Date.now().toString() });
+    }
+
+    async cancelScan(scanId: string): Promise<void> {
+        return this._invoke('cancel_scan', { scanId });
     }
 
     /** Return all track IDs whose file path starts with `folderPath`. */
@@ -569,6 +613,10 @@ class TauriAPIService {
 
     async getPerformanceStats(): Promise<PerformanceStats> {
         return this._invoke('get_performance_stats');
+    }
+
+    async getRuntimeDiagnostics(): Promise<any> {
+        return this._invoke('get_runtime_diagnostics');
     }
 
     async getCacheSize(): Promise<number> {

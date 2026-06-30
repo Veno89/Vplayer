@@ -159,7 +159,6 @@ impl Database {
         Ok(())
     }
 
-    /// Insert folder and scanned tracks atomically.
     pub fn add_folder_with_tracks(
         &self,
         folder_id: &str,
@@ -168,48 +167,63 @@ impl Database {
         date_added: i64,
         tracks: &[Track],
     ) -> Result<()> {
-        let conn = self.conn();
-        let tx = conn.unchecked_transaction()?;
+        // 1. Insert/Update the folder in its own small transaction
+        {
+            let mut conn = self.conn();
+            let tx = conn.transaction()?;
 
-        let mut stmt = tx.prepare("SELECT id FROM folders WHERE path = ?1")?;
-        let existing_id: Option<String> =
-            stmt.query_row(params![folder_path], |row| row.get(0)).ok();
-        drop(stmt);
+            let mut stmt = tx.prepare("SELECT id FROM folders WHERE path = ?1")?;
+            let existing_id: Option<String> =
+                stmt.query_row(params![folder_path], |row| row.get(0)).ok();
+            drop(stmt);
 
-        if let Some(existing_id) = existing_id {
-            tx.execute(
-                "UPDATE folders SET date_added = ?1 WHERE id = ?2",
-                params![date_added, existing_id],
-            )?;
-        } else {
-            tx.execute(
-                "INSERT INTO folders (id, path, name, date_added) VALUES (?1, ?2, ?3, ?4)",
-                params![folder_id, folder_path, folder_name, date_added],
-            )?;
+            if let Some(existing_id) = existing_id {
+                tx.execute(
+                    "UPDATE folders SET date_added = ?1 WHERE id = ?2",
+                    params![date_added, existing_id],
+                )?;
+            } else {
+                tx.execute(
+                    "INSERT INTO folders (id, path, name, date_added) VALUES (?1, ?2, ?3, ?4)",
+                    params![folder_id, folder_path, folder_name, date_added],
+                )?;
+            }
+
+            tx.commit()?;
         }
 
-        for track in tracks {
-            tx.execute(
-                "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
-                params![
-                    track.id,
-                    track.path,
-                    track.name,
-                    track.title,
-                    track.artist,
-                    track.album,
-                    track.genre,
-                    track.year,
-                    track.track_number,
-                    track.disc_number,
-                    track.duration,
-                    track.date_added,
-                ],
-            )?;
+        // 2. Insert tracks in chunks, releasing the database Mutex between chunks
+        // This prevents massive library scans from freezing UI reads for several seconds.
+        for chunk in tracks.chunks(500) {
+            let mut conn = self.conn();
+            let tx = conn.transaction()?;
+
+            for track in chunk {
+                tx.execute(
+                    "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
+                    params![
+                        track.id,
+                        track.path,
+                        track.name,
+                        track.title,
+                        track.artist,
+                        track.album,
+                        track.genre,
+                        track.year,
+                        track.track_number,
+                        track.disc_number,
+                        track.duration,
+                        track.date_added,
+                    ],
+                )?;
+            }
+
+            tx.commit()?;
+            // Explicitly yield to give the OS a chance to let the UI thread acquire the mutex
+            std::thread::yield_now();
         }
 
-        tx.commit()?;
         Ok(())
     }
 

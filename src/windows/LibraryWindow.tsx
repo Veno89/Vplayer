@@ -114,6 +114,7 @@ export function LibraryWindow() {
     addFolder,
     removeFolder,
     refreshTracks,
+    cancelScan,
   } = library;
   const tracksCount = allTracks?.length ?? 0;
   const currentColors = useCurrentColors();
@@ -463,6 +464,16 @@ export function LibraryWindow() {
                 )}
               </div>
             </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                cancelScan();
+              }}
+              className="px-3 py-1 bg-blue-700/50 hover:bg-red-600 text-white text-xs rounded transition-colors flex-shrink-0 flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Cancel
+            </button>
           </div>
           <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
             <div

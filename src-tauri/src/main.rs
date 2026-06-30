@@ -61,7 +61,7 @@ use commands::{
     clear_preload, has_preloaded, get_preloaded_path, set_balance, get_balance,
     get_audio_health,
     // Library commands
-    scan_folder, scan_folder_incremental, get_track_ids_for_folder, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
+    scan_folder, scan_folder_incremental, cancel_scan, get_track_ids_for_folder, get_all_tracks, get_filtered_tracks, get_tracks_page, get_all_folders,
     remove_folder, clear_failed_tracks, set_track_rating, check_missing_files,
     update_track_path, find_duplicates, remove_track, remove_duplicate_folders, increment_play_count,
     get_recently_played, get_most_played, get_album_art, get_album_art_batch, extract_and_cache_album_art,
@@ -83,9 +83,8 @@ use commands::{
     load_lyrics, get_lyric_at_time,
     // ReplayGain commands
     analyze_replaygain, get_track_replaygain, get_album_replaygain, analyze_album_replaygain, set_replaygain, clear_replaygain,
-    // Cache commands
-    clear_album_art_cache, get_cache_size, get_database_size, get_performance_stats,
-    vacuum_database, enforce_cache_limit,
+    // Cache/System commands
+    clear_album_art_cache, get_cache_size, get_database_size, get_performance_stats, get_runtime_diagnostics, vacuum_database, enforce_cache_limit,
     // Tray commands
     set_tray_settings, get_tray_settings,
 };
@@ -97,6 +96,9 @@ pub struct AppState {
     pub watcher: Arc<Mutex<FolderWatcher>>,
     pub visualizer: Arc<Mutex<Visualizer>>,
     pub tray_settings: Arc<Mutex<TraySettings>>,
+    pub scan_cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+    pub current_scan_id: Arc<Mutex<Option<String>>>,
+    pub app_start_time: i64,
 }
 
 /// Settings that control system-tray behaviour.
@@ -164,6 +166,9 @@ fn main() {
                 watcher: Arc::new(Mutex::new(watcher)),
                 visualizer: Arc::new(Mutex::new(visualizer)),
                 tray_settings: Arc::new(Mutex::new(TraySettings::default())),
+                scan_cancel_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                current_scan_id: Arc::new(Mutex::new(None)),
+                app_start_time: crate::time_utils::now_millis(),
             });
             
             // ── Position-broadcast thread (#4) ──────────────────────────
@@ -409,6 +414,7 @@ fn main() {
             set_audio_device,
             scan_folder,
             scan_folder_incremental,
+            cancel_scan,
             get_track_ids_for_folder,
             get_all_tracks,
             get_filtered_tracks,
@@ -460,6 +466,7 @@ fn main() {
             delete_smart_playlist,
             execute_smart_playlist,
             get_performance_stats,
+            get_runtime_diagnostics,
             vacuum_database,
             load_lyrics,
             // get_lyric_at_time is implemented but has no frontend caller yet;

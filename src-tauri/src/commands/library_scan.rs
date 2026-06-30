@@ -8,7 +8,8 @@ use tauri::Window;
 
 #[tauri::command]
 pub async fn scan_folder(
-    folder_path: String, 
+    folder_path: String,
+    scan_id: String,
     window: Window,
     state: tauri::State<'_, AppState>
 ) -> AppResult<Vec<Track>> {
@@ -28,16 +29,22 @@ pub async fn scan_folder(
 
     if existing_folder.is_some() {
         info!("Folder already registered — delegating to incremental scan");
-        return scan_folder_incremental(folder_path, window, state).await;
+        return scan_folder_incremental(folder_path, scan_id, window, state).await;
     }
 
+    // Set current scan ID and clear cancel flag
+    *state.current_scan_id.lock().unwrap() = Some(scan_id);
+    state.scan_cancel_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+    let cancel_flag = state.scan_cancel_flag.clone();
+    let scan_id_ref = state.current_scan_id.clone();
+    
     // Run the blocking I/O (file scanning + DB writes) off the async runtime
     let db = state.db.clone();
     let folder_path_clone = folder_path.clone();
     let window_clone = window.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let tracks = Scanner::scan_directory(&folder_path_clone, Some(&window_clone), None, Some(&db))
+        let tracks = Scanner::scan_directory(&folder_path_clone, Some(&window_clone), Some(cancel_flag), Some(&db))
             .map_err(AppError::Scanner)?;
 
         // Save folder info
@@ -55,6 +62,11 @@ pub async fn scan_folder(
 
         info!("Scan complete, persisted {} tracks in one transaction", tracks.len());
 
+        info!("Scan complete, persisted {} tracks in one transaction", tracks.len());
+
+        // Clear scan ID
+        *scan_id_ref.lock().unwrap() = None;
+
         Ok(tracks)
     })
     .await
@@ -63,12 +75,19 @@ pub async fn scan_folder(
 
 #[tauri::command]
 pub async fn scan_folder_incremental(
-    folder_path: String, 
+    folder_path: String,
+    scan_id: String,
     window: Window,
     state: tauri::State<'_, AppState>
 ) -> AppResult<Vec<Track>> {
     info!("Starting incremental folder scan: {}", folder_path);
     crate::validation::validate_path(&folder_path).map_err(|e| AppError::Validation(e.to_string()))?;
+    
+    // Set current scan ID and clear cancel flag
+    *state.current_scan_id.lock().unwrap() = Some(scan_id);
+    state.scan_cancel_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+    let cancel_flag = state.scan_cancel_flag.clone();
+    let scan_id_ref = state.current_scan_id.clone();
     
     let db = state.db.clone();
     let window_clone = window.clone();
@@ -76,7 +95,7 @@ pub async fn scan_folder_incremental(
 
     tauri::async_runtime::spawn_blocking(move || {
         // Perform incremental scan (only new/modified files)
-        let tracks = Scanner::scan_directory_incremental(&folder_path_clone, Some(&window_clone), None, &db)
+        let tracks = Scanner::scan_directory_incremental(&folder_path_clone, Some(&window_clone), Some(cancel_flag), &db)
             .map_err(AppError::Scanner)?;
 
         info!("Incremental scan complete, updating {} tracks in database", tracks.len());
@@ -95,6 +114,9 @@ pub async fn scan_folder_incremental(
         // Single transaction — same pattern as full scan's add_folder_with_tracks.
         db.add_tracks_incremental_batch(&batch)
             .map_err(|e| AppError::Database(format!("Failed to persist incremental tracks: {}", e)))?;
+
+        // Clear scan ID
+        *scan_id_ref.lock().unwrap() = None;
 
         Ok(tracks)
     })
@@ -118,4 +140,17 @@ pub async fn get_track_ids_for_folder(
     })
     .await
     .map_err(|e| AppError::InvalidState(e.to_string()))?
+}
+
+#[tauri::command]
+pub fn cancel_scan(scan_id: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let mut current = state.current_scan_id.lock().unwrap();
+    if current.as_ref() == Some(&scan_id) {
+        info!("Cancelling library scan {}...", scan_id);
+        state.scan_cancel_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        *current = None; // Avoid multiple cancel spam
+    } else {
+        info!("Ignoring cancel request for stale or inactive scan: {}", scan_id);
+    }
+    Ok(())
 }

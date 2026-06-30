@@ -122,6 +122,33 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
     }))
 }
 
+/// Get runtime diagnostics for the health panel
+#[tauri::command]
+pub fn get_runtime_diagnostics(state: tauri::State<'_, AppState>) -> AppResult<serde_json::Value> {
+    let audio_healthy = state.player.is_device_available();
+    let is_playing = state.player.is_playing();
+    let pid = std::process::id();
+    let scan_cancel_flag = state.scan_cancel_flag.load(std::sync::atomic::Ordering::SeqCst);
+    let uptime_ms = crate::time_utils::now_millis() - state.app_start_time;
+    let inactive_duration_sec = state.player.get_inactive_duration();
+    
+    Ok(serde_json::json!({
+        "pid": pid,
+        "uptime_ms": uptime_ms,
+        "audio": {
+            "device_available": audio_healthy,
+            "playing": is_playing,
+            "inactive_duration_sec": inactive_duration_sec,
+            "needs_reinit": state.player.needs_reinit(),
+            "is_reinitializing": state.player.is_reinitializing(),
+        },
+        "scanning": {
+            "cancel_flag_set": scan_cancel_flag
+        },
+        "timestamp_ms": crate::time_utils::now_millis(),
+    }))
+}
+
 /// Run database vacuum to reclaim space and optimize
 #[tauri::command]
 pub fn vacuum_database(state: tauri::State<'_, AppState>) -> AppResult<()> {

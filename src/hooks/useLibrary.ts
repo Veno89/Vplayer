@@ -48,7 +48,8 @@ export function useLibrary() {
     scanTotal,
     scanCurrentFile,
     refreshFolders,
-    scanNewFolder
+    scanNewFolder,
+    cancelScan
   } = useLibraryScanner({
     libraryFolders,
     loadAllTracks: loadTracks, // Alias for scanner usage
@@ -77,6 +78,7 @@ export function useLibrary() {
     scanCurrent,
     scanTotal,
     scanCurrentFile,
+    cancelScan,
 
     // Filtering & Sorting
     searchQuery,

@@ -14,8 +14,9 @@ impl Database {
 
         // Enable WAL mode for better concurrent read performance,
         // NORMAL synchronous for durability with WAL, and foreign key enforcement.
+        // A busy timeout is CRITICAL since the connection is shared across threads.
         conn.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
         )?;
 
         // Create core tables (includes all columns for fresh installs)

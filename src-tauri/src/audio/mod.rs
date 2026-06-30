@@ -25,7 +25,7 @@ use std::io::BufReader;
 use log::{info, error, warn};
 use crate::context_log::LogContext;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Condvar};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
@@ -129,6 +129,8 @@ pub struct AudioPlayer {
     /// Condvar wake signal for the broadcast thread — play/load signal it to
     /// break out of idle sleep immediately.
     broadcast_wake: Arc<BroadcastWake>,
+    /// Prevents multiple threads from blocking on CPAL initialization concurrently.
+    is_reinitializing: AtomicBool,
 }
 
 impl AudioPlayer {
@@ -156,6 +158,7 @@ impl AudioPlayer {
             visualizer_buffer,
             balance: Arc::new(AtomicU32::new(0.0_f32.to_bits())),
             broadcast_wake: Arc::new(BroadcastWake::new()),
+            is_reinitializing: AtomicBool::new(false),
         })
     }
 
@@ -181,6 +184,10 @@ impl AudioPlayer {
     // ── Track loading ───────────────────────────────────────────────
 
     pub fn load(&self, path: String) -> AppResult<()> {
+        if self.is_reinitializing.load(Ordering::SeqCst) {
+            return Err(AppError::Audio("Audio system is busy recovering. Please try again in a moment.".into()));
+        }
+        
         let ctx = LogContext::new("audio_load").with("path", &path);
         ctx.info("Loading audio file");
         let file = File::open(&path).map_err(|e| {
@@ -250,10 +257,20 @@ impl AudioPlayer {
     /// Reinit device, then reload the current track at the given position.
     /// Returns Ok(()) even if there was no track to reload.
     fn reinit_and_reload(&self) -> AppResult<()> {
+        // Prevent concurrent reinit attempts from spawning blocked WASAPI threads.
+        if self.is_reinitializing.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+            return Err(AppError::Audio("Audio reinitialization already in progress.".into()));
+        }
+
         let current_path = lock_or_recover(&self.playback).current_path.clone();
         let current_position = self.get_position();
 
-        self.reinit_device()?;
+        let res = self.reinit_device();
+        
+        // Always reset the flag, even if reinit failed
+        self.is_reinitializing.store(false, Ordering::SeqCst);
+        
+        res?;
 
         if let Some(path) = current_path {
             info!("Reloading track after reinit: {}", path);
@@ -271,6 +288,10 @@ impl AudioPlayer {
     // ── Playback control ────────────────────────────────────────────
 
     pub fn play(&self) -> AppResult<()> {
+        if self.is_reinitializing.load(Ordering::SeqCst) {
+            return Err(AppError::Audio("Audio system is busy recovering. Please try again in a moment.".into()));
+        }
+        
         info!("Starting playback");
 
         let pause_duration = {
@@ -674,6 +695,12 @@ impl AudioPlayer {
     pub fn is_effects_enabled(&self) -> bool {
         *lock_or_recover(&self.effects_enabled)
     }
+
+    pub fn is_reinitializing(&self) -> bool {
+        self.is_reinitializing.load(Ordering::SeqCst)
+    }
+
+    // ── Preloading (Gapless) ───────────────────────────────────────────
 
     // ── Recovery & health ───────────────────────────────────────────
 

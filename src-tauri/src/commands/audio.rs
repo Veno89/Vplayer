@@ -29,30 +29,44 @@ pub fn get_audio_health(state: tauri::State<AppState>) -> AudioHealthStatus {
 }
 
 #[tauri::command]
-pub fn load_track(path: String, state: tauri::State<AppState>) -> AppResult<()> {
+pub async fn load_track(path: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
     info!("Loading track: {}", path);
     // Validate path exists before loading
     validation::validate_path(&path).map_err(|e| AppError::Validation(e.to_string()))?;
-    state.player.load(path).map_err(|e| AppError::Audio(e.to_string()))
+    
+    // Run blocking audio operations off the main IPC thread
+    let player = state.player.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        player.load(path).map_err(|e| AppError::Audio(e.to_string()))
+    }).await.map_err(|e| AppError::Audio(format!("Thread panic: {}", e)))?
 }
 
 #[tauri::command]
-pub fn play_audio(state: tauri::State<AppState>) -> AppResult<()> {
-    state.player.play().map_err(|e| AppError::Audio(e.to_string()))
+pub async fn play_audio(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let player = state.player.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        player.play().map_err(|e| AppError::Audio(e.to_string()))
+    }).await.map_err(|e| AppError::Audio(format!("Thread panic: {}", e)))?
 }
 
 #[tauri::command]
-pub fn pause_audio(state: tauri::State<AppState>) -> AppResult<()> {
-    state.player.pause().map_err(|e| AppError::Audio(e.to_string()))
+pub async fn pause_audio(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let player = state.player.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        player.pause().map_err(|e| AppError::Audio(e.to_string()))
+    }).await.map_err(|e| AppError::Audio(format!("Thread panic: {}", e)))?
 }
 
 #[tauri::command]
-pub fn stop_audio(state: tauri::State<AppState>) -> AppResult<()> {
-    state.player.stop().map_err(|e| AppError::Audio(e.to_string()))
+pub async fn stop_audio(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let player = state.player.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        player.stop().map_err(|e| AppError::Audio(e.to_string()))
+    }).await.map_err(|e| AppError::Audio(format!("Thread panic: {}", e)))?
 }
 
 #[tauri::command]
-pub fn set_volume(volume: f32, state: tauri::State<AppState>) -> AppResult<()> {
+pub async fn set_volume(volume: f32, state: tauri::State<'_, AppState>) -> AppResult<()> {
     let valid_volume = validation::validate_volume(volume).map_err(|e| AppError::Validation(e.to_string()))?;
     state.player.set_volume(valid_volume).map_err(|e| AppError::Audio(e.to_string()))
 }

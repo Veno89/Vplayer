@@ -27,6 +27,7 @@ export interface LibraryScannerAPI {
   scanCurrentFile: string;
   refreshFolders: () => Promise<number>;
   scanNewFolder: (path: string) => Promise<void>;
+  cancelScan: () => Promise<void>;
 }
 
 /**
@@ -48,9 +49,10 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
     const [scanCurrentFile, setScanCurrentFile] = useState('');
 
     // Auto-scan state ref to avoid dependency issues
-    const autoScanDoneRef = useRef(false);
     // Ref to always hold the latest refreshFolders callback (avoids stale closures in event listeners)
     const refreshFoldersRef = useRef<() => Promise<number>>(async () => 0);
+    // Track the ID of the currently active scan
+    const currentScanIdRef = useRef<string | null>(null);
 
     // Start folder watches and auto-scan when folders are loaded
     useEffect(() => {
@@ -188,12 +190,14 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             setScanCurrentFile('');
 
             let totalNewTracks = 0;
+            const scanId = Date.now().toString();
+            currentScanIdRef.current = scanId;
 
             // Incrementally scan each folder
             // Determine which folders to scan - if we call this during init, we might not have libraryFolders yet
             // so this relies on libraryData keeping them updated.
             for (const folder of libraryFolders) {
-                const scannedTracks = await TauriAPI.scanFolderIncremental(folder.path);
+                const scannedTracks = await TauriAPI.scanFolderIncremental(folder.path, scanId);
                 totalNewTracks += scannedTracks.length;
             }
 
@@ -205,6 +209,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             console.error('Failed to refresh folders:', err);
             throw err;
         } finally {
+            currentScanIdRef.current = null;
             setIsScanning(false);
         }
     }, [libraryFolders, loadAllTracks]);
@@ -218,7 +223,10 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             setScanTotal(0);
             setScanCurrentFile('');
 
-            await TauriAPI.scanFolder(path);
+            const scanId = Date.now().toString();
+            currentScanIdRef.current = scanId;
+
+            await TauriAPI.scanFolder(path, scanId);
 
             // Start watching this folder
             try {
@@ -234,9 +242,24 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         } catch (err) {
             console.error('Failed to scan new folder:', err);
         } finally {
+            currentScanIdRef.current = null;
             setIsScanning(false);
         }
     }, [loadAllTracks]);
+
+    const cancelScan = useCallback(async () => {
+        try {
+            const scanId = currentScanIdRef.current;
+            if (scanId) {
+                await TauriAPI.cancelScan(scanId);
+                log.info(`Requested scan cancellation from UI for ID: ${scanId}`);
+            } else {
+                log.info('No active scan to cancel');
+            }
+        } catch (err) {
+            console.error('Failed to cancel scan:', err);
+        }
+    }, []);
 
     return {
         isScanning,
@@ -246,6 +269,7 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
         scanTotal,
         scanCurrentFile,
         refreshFolders,
-        scanNewFolder
+        scanNewFolder,
+        cancelScan
     };
 }
