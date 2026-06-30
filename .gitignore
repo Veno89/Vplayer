@@ -5,7 +5,7 @@
 *.dll
 *.bin
 *.pak
-*.lock
+
 .DS_Store
 .env
 .vscode/
