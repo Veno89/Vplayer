@@ -3,6 +3,7 @@ import { TauriAPI } from '../../services/TauriAPI';
 import { log } from '../../utils/logger';
 import { useErrorHandler } from '../../services/ErrorHandler';
 import { useToast } from '../useToast';
+import { devCounters } from '../../utils/devCounters';
 import type { Track, TrackFilter } from '../../types';
 
 interface LibraryFolder {
@@ -42,6 +43,7 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
     const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([]);
     const pageCacheRef = useRef<Map<string, Track[]>>(new Map());
     const totalCacheRef = useRef<Map<string, number>>(new Map());
+    const loadRequestIdRef = useRef<number>(0);
 
     const getFilterKey = useCallback((params: TrackFilter | null): string => {
         return JSON.stringify(params || {});
@@ -61,6 +63,9 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
     }, []);
 
     const loadTracks = useCallback(async () => {
+        const requestId = ++loadRequestIdRef.current;
+        const startTime = Date.now();
+        devCounters.incLibrary('loadTracksCount');
         try {
             // Transitional M3 step: fetch in pages to avoid one monolithic IPC payload
             // while keeping existing behavior (full filtered result in memory).
@@ -72,10 +77,14 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
             const allTracks: Track[] = [];
             let firstPageRendered = false;
 
-            // Clear previous filtered view immediately so the UI reflects query changes.
-            setTracks([]);
+            // Intentionally NOT clearing tracks here `setTracks([])` to act as stale-while-revalidate
+            // and prevent UI flicker while typing in the search box.
 
             while (offset < total) {
+                if (loadRequestIdRef.current !== requestId) {
+                    devCounters.incLibrary('staleSearchResultsIgnored');
+                    return; // Abort if superseded
+                }
                 const pageKey = getPageKey(filterKey, offset, pageSize);
                 let pageTracks = pageCacheRef.current.get(pageKey);
 
@@ -94,6 +103,10 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
                         return;
                     }
 
+                    if (loadRequestIdRef.current !== requestId) {
+                        devCounters.incLibrary('staleSearchResultsIgnored');
+                        return;
+                    }
                     pageTracks = page.tracks;
                     pageCacheRef.current.set(pageKey, pageTracks);
                     const pageTotal = typeof page.total === 'number' && page.total >= 0
@@ -110,6 +123,10 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
 
                 allTracks.push(...pageTracks);
                 if (!firstPageRendered) {
+                    if (loadRequestIdRef.current !== requestId) {
+                        devCounters.incLibrary('staleSearchResultsIgnored');
+                        return;
+                    }
                     setTracks([...allTracks]);
                     firstPageRendered = true;
                 }
@@ -119,13 +136,21 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
                 if (pageTracks.length === 0) break;
             }
 
+            if (loadRequestIdRef.current !== requestId) {
+                devCounters.incLibrary('staleSearchResultsIgnored');
+                return;
+            }
             setTracks(allTracks);
+            const duration = Date.now() - startTime;
+            devCounters.setLibraryValue('lastSearchDurationMs', duration);
+            devCounters.setLibraryValue('lastTrackQueryDurationMs', duration);
         } catch (err) {
             errorHandler.handle(err, 'Library - Load Tracks');
         }
     }, [clearPageCache, errorHandler, filterParams, getFilterKey, getPageKey, normalizeTracks]);
 
     const loadAllFolders = useCallback(async () => {
+        devCounters.incLibrary('loadAllFoldersCount');
         try {
             const dbFolders = await TauriAPI.getAllFolders();
             // Transform from database format: (id, path, name, dateAdded)
@@ -141,27 +166,15 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
         }
     }, [errorHandler]);
 
-    // Initial load and re-load when filters change
+    // Load tracks whenever filterParams change
     useEffect(() => {
-        const initLibrary = async () => {
-            await loadTracks();
-            await loadAllFolders(); // We might want to separate this from filter changes?
-            // If filters change, we only need to reload tracks, not folders.
-            // But useEffect runs on any dependency change.
-            // We can split effects if optimal.
-        };
-        initLibrary();
+        loadTracks();
     }, [loadTracks]); // loadTracks depends on filterParams
 
-    // Separate effect for folders if we want to avoid reloading folders on filter change?
-    // Current loadAllFolders is stable (depends only on errorHandler).
-    // But initLibrary calls both.
-    // Ideally:
-    /*
-    useEffect(() => { loadAllFolders(); }, [loadAllFolders]);
-    useEffect(() => { loadTracks(); }, [loadTracks]);
-    */
-    // But `initLibrary` pattern is simple. Loading folders is cheap (few folders).
+    // Load folders separately so search keystrokes do not trigger redundant DB queries
+    useEffect(() => {
+        loadAllFolders();
+    }, [loadAllFolders]);
 
     const addFolder = useCallback(async (): Promise<AddFolderResult | null> => {
         try {

@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
 import { TauriAPI } from '../services/TauriAPI';
 import { useReplayGain } from './useReplayGain';
+import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
+import { devCounters } from '../utils/devCounters';
 import { confirm as nativeConfirm } from '@tauri-apps/plugin-dialog';
 import type { Track, AudioService, ToastService } from '../types';
 
@@ -52,6 +54,9 @@ export function useTrackLoading({
   // Load track when currentTrack changes
   useEffect(() => {
     const loadTrack = async () => {
+      devCounters.setAudioValue('lastTrackClickToUiUpdateMs', 0); // Synchronous UI update
+      devCounters.setAudioValue('pendingPlaybackStartTime', Date.now());
+
       // CRITICAL FIX: Get fresh tracks from store to avoid React render race conditions.
       const state = useStore.getState();
       const activeTracks = state.activePlaybackTracks;
@@ -131,6 +136,7 @@ export function useTrackLoading({
         // In that case, we MUST ABORT. "Latest wins" logic.
         if (freshCurrentIndex !== targetTrackIndex) {
           console.warn(`[useTrackLoading] Aborted load for "${track.name}" - user switched track to index ${freshCurrentIndex}`);
+          devCounters.incAudio('stalePlaybackRequestsIgnored');
           return;
         }
 

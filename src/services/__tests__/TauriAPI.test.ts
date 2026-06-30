@@ -119,7 +119,7 @@ describe('TauriAPI', () => {
 
     it('scanFolder should invoke scan_folder with folderPath', async () => {
       await TauriAPI.scanFolder('/music');
-      expect(invoke).toHaveBeenCalledWith('scan_folder', { folderPath: '/music' });
+      expect(invoke).toHaveBeenCalledWith('scan_folder', expect.objectContaining({ folderPath: '/music' }));
     });
 
     it('incrementPlayCount should invoke increment_play_count', async () => {

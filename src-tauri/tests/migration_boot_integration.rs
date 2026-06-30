@@ -110,7 +110,7 @@ fn legacy_database_boot_runs_migrations() {
     let schema_version: i32 = conn
         .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| row.get(0))
         .expect("schema_version query should succeed");
-    assert_eq!(schema_version, 8);
+    assert_eq!(schema_version, 9);
 
     drop(stmt);
     drop(conn);

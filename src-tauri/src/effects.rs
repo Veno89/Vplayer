@@ -938,7 +938,7 @@ mod tests {
 
         assert_eq!(c44, 1116, "44.1 kHz capacity should equal delay_samples");
         assert_eq!(c48, 1215, "48 kHz capacity should be ⌈1116×48000/44100⌉=1215");
-        assert_eq!(c96, 2431, "96 kHz capacity should be ⌈1116×96000/44100⌉=2431");
+        assert_eq!(c96, 2430, "96 kHz capacity should be ⌈1116×96000/44100⌉=2430");
         // 48 kHz must be larger than 44.1 kHz
         assert!(c48 > c44, "48 kHz buffer must be larger than 44.1 kHz buffer");
         assert!(c96 > c48, "96 kHz buffer must be larger than 48 kHz buffer");

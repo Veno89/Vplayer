@@ -15,7 +15,6 @@ use log::{info, warn};
  * Uses EBU R128 standard for consistent loudness measurement
  * Target loudness: -18 LUFS (streaming standard)
  */
-
 /// ReplayGain data for a track
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayGainData {
@@ -86,11 +85,7 @@ pub fn analyze_track(path: &str) -> Result<ReplayGainData, String> {
     let mut peak = 0.0_f64;
     
     // Decode and analyze all packets
-    loop {
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(_) => break, // End of stream
-        };
+    while let Ok(packet) = format.next_packet() {
         
         // Skip packets from other tracks
         if packet.track_id() != track_id {

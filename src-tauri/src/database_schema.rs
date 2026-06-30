@@ -43,7 +43,7 @@ impl Database {
                 disc_number INTEGER
             )",
             [],
-        )?;;
+        )?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS track_album_art (

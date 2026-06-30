@@ -781,7 +781,7 @@ impl AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::BroadcastWake;
+    use super::{BroadcastWake, AudioPlayer};
     use std::sync::{mpsc, Arc};
     use std::thread;
     use std::time::{Duration, Instant};

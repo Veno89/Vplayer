@@ -45,3 +45,19 @@ getAllFolderHandles: async () => [],
 removeFolderHandle: async () => {}
 }
 });
+
+vi.mock('@tauri-apps/api/window', () => ({
+  LogicalSize: class LogicalSize {
+    type = 'Logical';
+    constructor(width, height) {
+      this.width = width;
+      this.height = height;
+    }
+  },
+  getCurrentWindow: vi.fn().mockReturnValue({
+    listen: vi.fn().mockResolvedValue(() => {}),
+    onDragDropEvent: vi.fn().mockResolvedValue(() => {}),
+    innerSize: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
+    setSize: vi.fn().mockResolvedValue(),
+  })
+}));

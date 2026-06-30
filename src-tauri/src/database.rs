@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use serde::Deserialize;
 use std::sync::Mutex;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackFilter {
     pub search_query: Option<String>,
@@ -21,24 +21,7 @@ pub struct TrackFilter {
     pub folder_id: Option<String>,
 }
 
-impl Default for TrackFilter {
-    fn default() -> Self {
-        Self {
-            search_query: None,
-            artist: None,
-            album: None,
-            genre: None,
-            sort_by: None,
-            sort_desc: false,
-            play_count_min: None,
-            play_count_max: None,
-            min_rating: None,
-            duration_from: None,
-            duration_to: None,
-            folder_id: None,
-        }
-    }
-}
+
 
 pub struct Database {
     pub conn: Mutex<Connection>,

@@ -14,6 +14,7 @@ pub struct QueryBuilder {
 }
 
 impl QueryBuilder {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             where_clauses: Vec::new(),

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
+import { AlbumArtLoader } from '../services/AlbumArtLoader';
+import { devCounters } from '../utils/devCounters';
 import { useStore } from '../store/useStore';
 
 interface AlbumArtProps {
@@ -54,12 +56,15 @@ export function AlbumArt({
 
     let mounted = true;
 
+    let timerFired = false;
+    const abortController = new AbortController();
+
     const loadAlbumArt = async () => {
       try {
         setLoading(true);
         setError(false);
         
-        const base64Data = await TauriAPI.extractAndCacheAlbumArt(trackId, trackPath);
+        const base64Data = await AlbumArtLoader.loadArt(trackId, trackPath, abortController.signal);
         
         if (mounted) {
           if (base64Data) {
@@ -70,18 +75,29 @@ export function AlbumArt({
           setLoading(false);
         }
       } catch (err) {
-        console.error('Failed to load album art:', err);
-        if (mounted) {
-          setError(true);
-          setLoading(false);
+        if (!abortController.signal.aborted) {
+          console.error('Failed to load album art:', err);
+          if (mounted) {
+            setError(true);
+            setLoading(false);
+          }
         }
       }
     };
 
-    loadAlbumArt();
+    const timerId = setTimeout(() => {
+      timerFired = true;
+      devCounters.incAlbumArt('requestsScheduled');
+      loadAlbumArt();
+    }, 250);
 
     return () => {
       mounted = false;
+      abortController.abort();
+      if (!timerFired) {
+        devCounters.incAlbumArt('requestsCancelledBeforeStart');
+      }
+      clearTimeout(timerId);
     };
   }, [trackId, trackPath, autoFetch, prefetchedDataUri, deferAutoFetch]);
 

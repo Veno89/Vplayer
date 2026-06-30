@@ -120,8 +120,8 @@ impl Database {
     pub fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "{} FROM tracks WHERE last_played > 0 ORDER BY last_played DESC LIMIT ?1",
-            format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS)
+            "SELECT {} FROM tracks WHERE last_played > 0 ORDER BY last_played DESC LIMIT ?1",
+            crate::scanner::TRACK_SELECT_COLUMNS
         ))?;
 
         let tracks = stmt
@@ -134,8 +134,8 @@ impl Database {
     pub fn get_most_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "{} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
-            format!("SELECT {}", crate::scanner::TRACK_SELECT_COLUMNS)
+            "SELECT {} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
+            crate::scanner::TRACK_SELECT_COLUMNS
         ))?;
 
         let tracks = stmt
@@ -148,7 +148,7 @@ impl Database {
     // Star rating for tracks
     pub fn set_track_rating(&self, track_id: &str, rating: i32) -> Result<()> {
         let conn = self.conn();
-        let clamped_rating = rating.max(0).min(5); // 0-5 stars
+        let clamped_rating = rating.clamp(0, 5); // 0-5 stars
         conn.execute(
             "UPDATE tracks SET rating = ?1 WHERE id = ?2",
             params![clamped_rating, track_id],
@@ -178,6 +178,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn update_track_metadata(
         &self,
         track_id: &str,

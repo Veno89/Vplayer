@@ -44,8 +44,7 @@ impl Database {
             return Ok(Vec::new());
         }
 
-        let placeholders = std::iter::repeat("?")
-            .take(track_ids.len())
+        let placeholders = std::iter::repeat_n("?", track_ids.len())
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(

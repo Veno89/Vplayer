@@ -5,6 +5,7 @@ import { log } from '../utils/logger';
 import { useErrorHandler } from '../services/ErrorHandler';
 import { useToast } from './useToast';
 import { useStore } from '../store/useStore';
+import { devCounters } from '../utils/devCounters';
 import type { Track, AudioHookParams, AudioService } from '../types';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
@@ -20,7 +21,10 @@ const BACKEND_TIMEOUT_MS = 5000;
 const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation timed out'): Promise<T> =>
   Promise.race([
     promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms)),
+    new Promise<T>((_, reject) => setTimeout(() => {
+        devCounters.incAudio('playbackTimeoutCount');
+        reject(new Error(errorMsg));
+    }, ms)),
   ]);
 
 /** Playback-tick payload emitted by the Rust broadcast thread. */
@@ -100,8 +104,16 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
         if (isSeekingRef.current || isRecoveringRef.current) return;
 
-        const { position, duration } = event.payload;
+        const { position, duration, isPlaying } = event.payload;
         const clamped = duration > 0 ? Math.min(position, duration) : position;
+        
+        if (isPlaying) {
+          const pendingTime = devCounters.counters.audio.pendingPlaybackStartTime;
+          if (pendingTime > 0) {
+            devCounters.setAudioValue('lastTrackClickToPlaybackStartMs', Date.now() - pendingTime);
+            devCounters.setAudioValue('pendingPlaybackStartTime', 0);
+          }
+        }
 
         // Write directly to Zustand – single source of truth
         useStore.getState().setProgress(clamped);
