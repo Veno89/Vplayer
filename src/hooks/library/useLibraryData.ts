@@ -26,7 +26,7 @@ export interface LibraryDataAPI {
   loadTracks: () => Promise<void>;
   loadAllTracks: () => Promise<void>;
   loadAllFolders: () => Promise<void>;
-  addFolder: () => Promise<AddFolderResult | null>;
+  addFolder: (selectedPath?: string) => Promise<AddFolderResult | null>;
   removeFolder: (folderId: string, folderPath: string) => Promise<void>;
   removeTrack: (trackId: string) => Promise<void>;
 }
@@ -176,9 +176,9 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
         loadAllFolders();
     }, [loadAllFolders]);
 
-    const addFolder = useCallback(async (): Promise<AddFolderResult | null> => {
+    const addFolder = useCallback(async (selectedPath?: string): Promise<AddFolderResult | null> => {
         try {
-            const selected = await TauriAPI.selectFolder();
+            const selected = selectedPath ?? await TauriAPI.selectFolder();
 
             if (!selected) return null;
 
@@ -186,7 +186,10 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
             const exists = libraryFolders.some(f => f.path === selected);
             if (exists) {
                 toast.showInfo('Folder already in library');
-                return null;
+                return {
+                    path: selected,
+                    newFolder: libraryFolders.find(folder => folder.path === selected)!,
+                };
             }
 
             // We return the selected path so the scanner can start scanning immediately

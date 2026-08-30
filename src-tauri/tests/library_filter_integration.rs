@@ -98,7 +98,9 @@ fn get_filtered_tracks_respects_artist_search_and_rating() {
         .expect("filtered tracks query should succeed");
 
     assert_eq!(filtered.len(), 2);
-    assert!(filtered.iter().all(|t| t.artist.as_deref() == Some("Band A")));
+    assert!(filtered
+        .iter()
+        .all(|t| t.artist.as_deref() == Some("Band A")));
     assert!(filtered.iter().all(|t| t.rating >= 4));
 
     let ids: Vec<&str> = filtered.iter().map(|t| t.id.as_str()).collect();

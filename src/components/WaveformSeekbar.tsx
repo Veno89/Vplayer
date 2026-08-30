@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 
 interface WaveformSeekbarProps {
+  trackId: string | undefined;
   trackPath: string | undefined;
   progressPercent: number;
   accentHex: string;
@@ -11,6 +12,7 @@ const NUM_BARS = 200;
 
 export const WaveformSeekbar = memo(function WaveformSeekbar({
   trackPath,
+  trackId,
   progressPercent,
   accentHex,
 }: WaveformSeekbarProps) {
@@ -20,18 +22,18 @@ export const WaveformSeekbar = memo(function WaveformSeekbar({
 
   // Fetch waveform data when track changes
   useEffect(() => {
-    if (!trackPath || trackPath === lastPathRef.current) return;
+    if (!trackId || !trackPath || trackPath === lastPathRef.current) return;
     lastPathRef.current = trackPath;
     let cancelled = false;
 
-    TauriAPI.getTrackWaveform(trackPath, NUM_BARS).then((data) => {
+    TauriAPI.getTrackWaveform(trackId, trackPath, NUM_BARS).then((data) => {
       if (!cancelled) setBars(data);
     }).catch(() => {
       if (!cancelled) setBars(null);
     });
 
     return () => { cancelled = true; };
-  }, [trackPath]);
+  }, [trackId, trackPath]);
 
   // Clear waveform when no track
   useEffect(() => {

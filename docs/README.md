@@ -282,12 +282,12 @@ const { handleNextTrack, audio } = usePlayerContext();
 ### Testing
 
 ```bash
-npm test                # Run vitest (watch mode)
-npx vitest run          # Single run (CI-style)
+npm test                # Deterministic single run (CI-style)
+npm run test:watch      # Interactive watch mode
 cd src-tauri && cargo test  # Rust tests
 ```
 
-Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. As of v0.9.15: **159 tests across 10 files**.
+Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. The v0.9.44 release gate runs **177 tests across 14 files**.
 
 ### Building
 
@@ -295,7 +295,7 @@ Test files live next to the code they test or in `__tests__/` subdirectories. Th
 npm run tauri:build     # Production build
 ```
 
-**Output**: `src-tauri/target/release/bundle/` (MSI/NSIS installer on Windows)
+**Output**: `src-tauri/target/release/bundle/nsis/` (NSIS installer on Windows)
 
 ---
 
@@ -312,7 +312,7 @@ npm run tauri:build     # Production build
 - **`get_all_tracks` cache investigation**: no backend TTL query cache currently; relies on SQLite WAL/indexing, with further caching considered as a future enhancement
 - **Incremental scanning**: Only processes new or modified files (mtime comparison)
 - **Event debouncing**: Batch file system changes via `notify` crate
-- **Schema migrations**: Versioned, idempotent migrations (v1–v7)
+- **Schema migrations**: Versioned, idempotent migrations (v1–v11)
 
 ---
 
@@ -331,8 +331,8 @@ conn.execute("INSERT INTO tracks (path) VALUES (?1)", params![path])?;
 
 ### File Access
 - **User-initiated only**: Tauri dialog for folder selection
-- **Tauri v2 capabilities**: Filesystem, dialog, shell permissions configured in `src-tauri/capabilities/`
-- **No arbitrary access**: Restricted to user-chosen folders
+- **Tauri v2 capabilities**: Dialog, updater, and process permissions are explicitly scoped in `src-tauri/capabilities/`; unused filesystem and shell plugins are not registered
+- **Track-bound access**: File-sensitive IPC resolves a registered track ID and verifies its canonical database path before reading or modifying media
 
 ---
 
@@ -401,4 +401,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.26 | **Updated**: March 2026
+**Version**: 0.9.44 | **Updated**: August 2026

@@ -74,16 +74,39 @@ fn create_db_at_version(path: &Path, version: i32) {
 
     // Apply column additions for each version up to `version`
     let migrations: &[(i32, &[(&str, &str)])] = &[
-        (1, &[("play_count", "INTEGER DEFAULT 0"), ("last_played", "INTEGER DEFAULT 0")]),
+        (
+            1,
+            &[
+                ("play_count", "INTEGER DEFAULT 0"),
+                ("last_played", "INTEGER DEFAULT 0"),
+            ],
+        ),
         (2, &[("rating", "INTEGER DEFAULT 0")]),
         (3, &[("file_modified", "INTEGER DEFAULT 0")]),
         (4, &[("album_art", "BLOB")]),
-        (5, &[("track_gain", "REAL"), ("track_peak", "REAL"), ("loudness", "REAL")]),
-        (6, &[("genre", "TEXT"), ("year", "INTEGER"), ("track_number", "INTEGER"), ("disc_number", "INTEGER")]),
+        (
+            5,
+            &[
+                ("track_gain", "REAL"),
+                ("track_peak", "REAL"),
+                ("loudness", "REAL"),
+            ],
+        ),
+        (
+            6,
+            &[
+                ("genre", "TEXT"),
+                ("year", "INTEGER"),
+                ("track_number", "INTEGER"),
+                ("disc_number", "INTEGER"),
+            ],
+        ),
     ];
 
     for &(v, cols) in migrations {
-        if v > version { break; }
+        if v > version {
+            break;
+        }
         for &(col, col_type) in cols {
             let sql = format!("ALTER TABLE tracks ADD COLUMN {} {}", col, col_type);
             let _ = conn.execute(&sql, []); // ignore "duplicate column"
@@ -120,8 +143,11 @@ fn create_db_at_version(path: &Path, version: i32) {
         .expect("v8 table");
     }
 
-    conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [version])
-        .expect("set version");
+    conn.execute(
+        "INSERT INTO schema_version (version) VALUES (?1)",
+        [version],
+    )
+    .expect("set version");
 }
 
 fn get_track_columns(path: &Path) -> Vec<String> {
@@ -133,10 +159,23 @@ fn get_track_columns(path: &Path) -> Vec<String> {
         .expect("collect")
 }
 
+fn get_table_columns(path: &Path, table: &str) -> Vec<String> {
+    let conn = Connection::open(path).expect("open");
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .expect("pragma");
+    stmt.query_map([], |row| row.get::<_, String>(1))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("collect")
+}
+
 fn get_schema_version(path: &Path) -> i32 {
     let conn = Connection::open(path).expect("open");
-    conn.query_row("SELECT version FROM schema_version LIMIT 1", [], |row| row.get(0))
-        .unwrap_or(0)
+    conn.query_row("SELECT version FROM schema_version LIMIT 1", [], |row| {
+        row.get(0)
+    })
+    .unwrap_or(0)
 }
 
 fn table_exists(path: &Path, table: &str) -> bool {
@@ -154,8 +193,8 @@ fn table_exists(path: &Path, table: &str) -> bool {
 // ----- Migration step tests -----
 
 #[test]
-fn migration_v0_to_v8_adds_all_columns() {
-    let path = temp_db_path("v0_to_v8");
+fn migration_v0_to_latest_adds_all_columns() {
+    let path = temp_db_path("v0_to_latest");
     create_legacy_db(&path);
 
     let db = Database::new(&path).expect("boot should succeed");
@@ -163,21 +202,32 @@ fn migration_v0_to_v8_adds_all_columns() {
 
     let cols = get_track_columns(&path);
     for expected in [
-        "play_count", "last_played", "rating", "file_modified",
-        "track_gain", "track_peak", "loudness",
-        "genre", "year", "track_number", "disc_number",
+        "play_count",
+        "last_played",
+        "rating",
+        "file_modified",
+        "track_gain",
+        "track_peak",
+        "loudness",
+        "genre",
+        "year",
+        "track_number",
+        "disc_number",
     ] {
         assert!(cols.iter().any(|c| c == expected), "missing: {}", expected);
     }
     assert!(table_exists(&path, "track_album_art"));
     assert!(table_exists(&path, "album_replaygain"));
-    assert_eq!(get_schema_version(&path), 8);
+    assert_eq!(get_schema_version(&path), 11);
+    assert!(get_table_columns(&path, "track_album_art")
+        .iter()
+        .any(|column| column == "cached_at"));
     cleanup_db_files(&path);
 }
 
 #[test]
-fn migration_v3_to_v8_adds_remaining_columns() {
-    let path = temp_db_path("v3_to_v8");
+fn migration_v3_to_latest_adds_remaining_columns() {
+    let path = temp_db_path("v3_to_latest");
     create_db_at_version(&path, 3);
 
     let db = Database::new(&path).expect("boot from v3");
@@ -185,26 +235,40 @@ fn migration_v3_to_v8_adds_remaining_columns() {
 
     let cols = get_track_columns(&path);
     // v4+
-    for expected in ["track_gain", "track_peak", "loudness", "genre", "year", "track_number", "disc_number"] {
+    for expected in [
+        "track_gain",
+        "track_peak",
+        "loudness",
+        "genre",
+        "year",
+        "track_number",
+        "disc_number",
+    ] {
         assert!(cols.iter().any(|c| c == expected), "missing: {}", expected);
     }
     assert!(table_exists(&path, "track_album_art"));
     assert!(table_exists(&path, "album_replaygain"));
-    assert_eq!(get_schema_version(&path), 8);
+    assert_eq!(get_schema_version(&path), 11);
     cleanup_db_files(&path);
 }
 
 #[test]
-fn migration_v6_to_v8_creates_new_tables() {
-    let path = temp_db_path("v6_to_v8");
+fn migration_v6_to_latest_creates_new_tables() {
+    let path = temp_db_path("v6_to_latest");
     create_db_at_version(&path, 6);
 
     let db = Database::new(&path).expect("boot from v6");
     drop(db);
 
-    assert!(table_exists(&path, "track_album_art"), "v7 table should be created");
-    assert!(table_exists(&path, "album_replaygain"), "v8 table should be created");
-    assert_eq!(get_schema_version(&path), 8);
+    assert!(
+        table_exists(&path, "track_album_art"),
+        "v7 table should be created"
+    );
+    assert!(
+        table_exists(&path, "album_replaygain"),
+        "v8 table should be created"
+    );
+    assert_eq!(get_schema_version(&path), 11);
     cleanup_db_files(&path);
 }
 
@@ -221,7 +285,8 @@ fn migration_v7_album_art_data_is_moved() {
             "INSERT INTO tracks (id, path, name, duration, date_added, album_art)
              VALUES ('t1', '/music/song.mp3', 'song.mp3', 180.0, 1000, X'DEADBEEF')",
             [],
-        ).expect("insert track");
+        )
+        .expect("insert track");
     }
 
     let db = Database::new(&path).expect("boot from v6 with data");
@@ -230,15 +295,19 @@ fn migration_v7_album_art_data_is_moved() {
     // Verify the art was migrated to track_album_art
     let conn = Connection::open(&path).expect("reopen");
     let art: Vec<u8> = conn
-        .query_row("SELECT data FROM track_album_art WHERE track_id = 't1'", [], |row| row.get(0))
+        .query_row(
+            "SELECT data FROM track_album_art WHERE track_id = 't1'",
+            [],
+            |row| row.get(0),
+        )
         .expect("art should exist in new table");
     assert_eq!(art, vec![0xDE, 0xAD, 0xBE, 0xEF]);
 
-    // Old column should be nulled out
-    let old_art: Option<Vec<u8>> = conn
-        .query_row("SELECT album_art FROM tracks WHERE id = 't1'", [], |row| row.get(0))
-        .expect("query old column");
-    assert!(old_art.is_none(), "old album_art column should be NULL after migration");
+    let track_columns = get_track_columns(&path);
+    assert!(
+        !track_columns.iter().any(|column| column == "album_art"),
+        "obsolete album_art column should be removed after migration"
+    );
 
     drop(conn);
     cleanup_db_files(&path);
@@ -255,7 +324,7 @@ fn migration_is_idempotent() {
     let db = Database::new(&path).expect("second boot");
     drop(db);
 
-    assert_eq!(get_schema_version(&path), 8);
+    assert_eq!(get_schema_version(&path), 11);
 
     // Verify all tables are intact
     assert!(table_exists(&path, "tracks"));
@@ -273,10 +342,13 @@ fn fresh_database_starts_at_latest_version() {
     let db = Database::new(&path).expect("fresh db");
     drop(db);
 
-    assert_eq!(get_schema_version(&path), 8);
+    assert_eq!(get_schema_version(&path), 11);
 
     let cols = get_track_columns(&path);
-    assert!(cols.iter().any(|c| c == "disc_number"), "fresh DB should have all columns");
+    assert!(
+        cols.iter().any(|c| c == "disc_number"),
+        "fresh DB should have all columns"
+    );
     assert!(table_exists(&path, "track_album_art"));
     assert!(table_exists(&path, "album_replaygain"));
 
@@ -300,11 +372,22 @@ fn indexes_are_created() {
         .expect("collect");
 
     let expected = [
-        "idx_tracks_genre", "idx_tracks_artist", "idx_tracks_album",
-        "idx_tracks_path", "idx_tracks_title_artist_album",
-        "idx_tracks_rating", "idx_tracks_play_count", "idx_tracks_last_played",
-        "idx_tracks_date_added", "idx_tracks_duration", "idx_tracks_year",
-        "idx_folders_path", "idx_playlist_tracks_playlist", "idx_playlist_tracks_track",
+        "idx_tracks_genre",
+        "idx_tracks_artist",
+        "idx_tracks_album",
+        "idx_tracks_path",
+        "idx_tracks_title_artist_album",
+        "idx_tracks_rating",
+        "idx_tracks_play_count",
+        "idx_tracks_last_played",
+        "idx_tracks_date_added",
+        "idx_tracks_duration",
+        "idx_tracks_year",
+        "idx_folders_path",
+        "idx_playlist_tracks_playlist",
+        "idx_playlist_tracks_track",
+        "idx_folders_path_unique",
+        "idx_playlist_tracks_position_unique",
     ];
 
     for name in expected {

@@ -31,7 +31,7 @@ export function PlayerWindow() {
 
   // ── Derived ───────────────────────────────────────────────────────
   const currentColors = useCurrentColors();
-  const isMuted = false; // TODO: wire up properly when mute state is in store
+  const isMuted = volume === 0;
   const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
   const currentTrackData = useStore(s => s.getCurrentTrackData)();
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
@@ -63,6 +63,19 @@ export function PlayerWindow() {
     e.stopPropagation();
     const percent = getPercentFromEvent(e);
     seekToPercent(percent);
+  };
+
+  const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isDisabled || duration <= 0) return;
+    let nextSeconds = progress;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') nextSeconds += 5;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') nextSeconds -= 5;
+    else if (e.key === 'Home') nextSeconds = 0;
+    else if (e.key === 'End') nextSeconds = duration;
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    seekToPercent((Math.max(0, Math.min(duration, nextSeconds)) / duration) * 100);
   };
 
   // Handle progress bar mouse down (start dragging)
@@ -209,6 +222,14 @@ export function PlayerWindow() {
       <div>
         <div 
           ref={progressBarRef}
+          role="slider"
+          tabIndex={isDisabled || duration <= 0 ? -1 : 0}
+          aria-label="Playback position"
+          aria-valuemin={0}
+          aria-valuemax={Math.max(0, duration)}
+          aria-valuenow={Math.max(0, Math.min(duration, progress))}
+          aria-valuetext={`${formatDuration(progress)} of ${formatDuration(duration)}`}
+          aria-disabled={isDisabled || duration <= 0}
           className={`relative w-full bg-slate-700/50 rounded-full h-2 transition-all ${
             isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:h-3 group'
           }`}
@@ -216,10 +237,12 @@ export function PlayerWindow() {
           onMouseDown={isDisabled ? undefined : handleProgressMouseDown}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
+          onKeyDown={handleProgressKeyDown}
           title={`${formatDuration(progress)} / ${formatDuration(duration)}`}
         >
           {/* Waveform visualization */}
           <WaveformSeekbar
+            trackId={currentTrackData?.id}
             trackPath={currentTrackData?.path}
             progressPercent={progressPercent}
             accentHex={currentColors.accentHex ?? '#22d3ee'}
@@ -301,6 +324,8 @@ export function PlayerWindow() {
               : 'hover:bg-slate-800 text-slate-400'
           } ${isDisabled ? 'opacity-30 cursor-not-allowed' : ''}`}
           title={shuffle ? 'Shuffle: On' : 'Shuffle: Off'}
+          aria-label="Shuffle playback"
+          aria-pressed={shuffle}
         >
           <Shuffle className="w-4 h-4" />
         </button>
@@ -314,6 +339,7 @@ export function PlayerWindow() {
           disabled={!tracks?.length || isDisabled}
           className="p-2 hover:bg-slate-800 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Previous Track"
+          aria-label="Previous track"
         >
           <SkipBack className="w-5 h-5 text-slate-400" />
         </button>
@@ -327,6 +353,8 @@ export function PlayerWindow() {
           disabled={!tracks?.length || currentTrack === null || isDisabled}
           className={`p-4 bg-gradient-to-r ${currentColors.primary} hover:opacity-90 rounded-full transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed`}
           title={playing ? 'Pause' : 'Play'}
+          aria-label={playing ? 'Pause' : 'Play'}
+          aria-pressed={playing}
         >
           {playing ? (
             <Pause className="w-6 h-6 text-white" />
@@ -344,6 +372,7 @@ export function PlayerWindow() {
           disabled={!tracks?.length || isDisabled}
           className="p-2 hover:bg-slate-800 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Next Track"
+          aria-label="Next track"
         >
           <SkipForward className="w-5 h-5 text-slate-400" />
         </button>
@@ -365,6 +394,8 @@ export function PlayerWindow() {
             repeatMode === 'all' ? 'Repeat: All' :
             'Repeat: One'
           }
+          aria-label={`Repeat mode: ${repeatMode}`}
+          aria-pressed={repeatMode !== 'off'}
         >
           <Repeat className="w-4 h-4" />
           {repeatMode === 'one' && (
@@ -383,6 +414,8 @@ export function PlayerWindow() {
           disabled={isDisabled}
           className="p-1 hover:bg-slate-800 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title={isMuted ? 'Unmute' : 'Mute'}
+          aria-label={isMuted ? 'Unmute' : 'Mute'}
+          aria-pressed={isMuted}
         >
           {isMuted || volume === 0 ? (
             <VolumeX className="w-5 h-5 text-slate-400" />
@@ -401,6 +434,7 @@ export function PlayerWindow() {
           disabled={isDisabled}
           className="flex-1 h-1 accent-cyan-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           title={`Volume: ${Math.round(localVolume)}%`}
+          aria-label="Volume"
         />
         <span className="text-slate-400 text-sm w-10 text-right">
           {Math.round(localVolume)}%

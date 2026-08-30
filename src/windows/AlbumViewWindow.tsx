@@ -25,6 +25,8 @@ export function AlbumViewWindow() {
   const { playbackTracks: tracks } = usePlayerContext();
   const currentColors = useCurrentColors();
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
+  const setActivePlaybackTracks = useStore(s => s.setActivePlaybackTracks);
+  const setPlaying = useStore(s => s.setPlaying);
   const [selectedAlbum, setSelectedAlbum] = useState<AlbumData | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,20 +148,29 @@ export function AlbumViewWindow() {
   };
 
   const handleTrackClick = (track: Track & { originalIndex: number }) => {
-    setCurrentTrack(track.originalIndex);
+    const source = selectedAlbum?.tracks ?? [track];
+    setActivePlaybackTracks(source);
+    setCurrentTrack(source.findIndex(item => item.id === track.id));
+    setPlaying(true);
   };
 
   const handleTrackSelect = (index: number) => {
     const track = selectedAlbum?.tracks[index];
-    if (track) setCurrentTrack(track.originalIndex);
+    if (track && selectedAlbum) {
+      setActivePlaybackTracks(selectedAlbum.tracks);
+      setCurrentTrack(index);
+      setPlaying(true);
+    }
   };
 
   const handlePlayAlbum = useCallback((album: AlbumData, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (album.tracks.length > 0) {
-      setCurrentTrack(album.tracks[0].originalIndex);
+      setActivePlaybackTracks(album.tracks);
+      setCurrentTrack(0);
+      setPlaying(true);
     }
-  }, [setCurrentTrack]);
+  }, [setActivePlaybackTracks, setCurrentTrack, setPlaying]);
 
   const formatAlbumDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

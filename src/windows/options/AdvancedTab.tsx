@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Trash2, RotateCw, Download, Upload, Bug, HardDrive, FileJson, AlertTriangle, CheckCircle, Loader, Copy } from 'lucide-react';
 import { getVersion } from '@tauri-apps/api/app';
-import { useStore } from '../../store/useStore';
+import { STORE_RESET_PENDING_KEY, useStore } from '../../store/useStore';
+import type { AppStore } from '../../store/types';
 import { useMaintenanceActions } from '../../hooks/useMaintenanceActions';
 import { formatBytes } from '../../utils/formatters';
 import { nativeConfirm, nativeAlert, nativeError } from '../../utils/nativeDialog';
@@ -10,6 +11,56 @@ import { SettingCard, SettingButton, SettingInfo, SettingToggle, SettingDivider 
 interface AdvancedTabProps {
   debugVisible: boolean;
   setDebugVisible: (visible: boolean) => void;
+}
+
+const SETTINGS_SCHEMA_VERSION = 1;
+const IMPORTABLE_SETTING_KEYS = new Set([
+  'colorScheme', 'backgroundBlur', 'backgroundOpacity', 'windowOpacity', 'fontSize',
+  'gaplessPlayback', 'autoPlayOnStartup', 'resumeLastTrack', 'replayGainMode',
+  'replayGainPreamp', 'playbackSpeed', 'fadeOnPause', 'fadeDuration', 'defaultVolume',
+  'autoScanOnStartup', 'watchFolderChanges', 'duplicateSensitivity', 'autoFetchAlbumArt',
+  'minimizeToTray', 'closeToTray', 'startMinimized', 'rememberWindowPositions',
+  'rememberTrackPosition', 'confirmBeforeDelete', 'showNotifications', 'snapToGrid',
+  'gridSize', 'autoResizeWindow', 'playlistAutoScroll', 'cacheSizeLimit', 'eqBands',
+  'effectOrder', 'crossfadeEnabled', 'crossfadeDuration', 'backgroundImage',
+  'stopAfterCurrent', 'sleepTimerMinutes', 'seekStepSize', 'volumeStep', 'rememberQueue',
+  'doubleClickAction', 'trackChangeNotification', 'titleBarFormat',
+]);
+
+function sanitizeImportedSettings(
+  candidate: unknown,
+  current: AppStore,
+): Partial<AppStore> {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('Settings must be a JSON object');
+  }
+  const safe: Record<string, unknown> = {};
+  const currentRecord = current as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(candidate)) {
+    if (!IMPORTABLE_SETTING_KEYS.has(key)) continue;
+    const fallback = currentRecord[key];
+    const compatible = Array.isArray(fallback)
+      ? Array.isArray(value)
+      : fallback === null
+        ? value === null || typeof value === 'string'
+        : typeof fallback === 'number'
+          ? typeof value === 'number' && Number.isFinite(value)
+          : typeof value === typeof fallback;
+    if (!compatible) {
+      throw new Error(`Invalid value for setting: ${key}`);
+    }
+    if (key === 'eqBands') {
+      const validBands = (value as unknown[]).length === 10 && (value as unknown[]).every(band =>
+        band && typeof band === 'object'
+        && typeof (band as Record<string, unknown>).freq === 'string'
+        && typeof (band as Record<string, unknown>).value === 'number'
+        && Number.isFinite((band as Record<string, number>).value)
+      );
+      if (!validBands) throw new Error('Equalizer settings are malformed');
+    }
+    safe[key] = value;
+  }
+  return safe as Partial<AppStore>;
 }
 
 export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps) {
@@ -57,6 +108,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
       // Get all settings from store
       const state = useStore.getState();
       const settings = {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
         version: appVersion,
         exportedAt: new Date().toISOString(),
         settings: {
@@ -91,6 +143,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
           playlistAutoScroll: state.playlistAutoScroll,
           cacheSizeLimit: state.cacheSizeLimit,
           eqBands: state.eqBands,
+          effectOrder: state.effectOrder,
           crossfadeEnabled: state.crossfadeEnabled,
           crossfadeDuration: state.crossfadeDuration,
           backgroundImage: state.backgroundImage,
@@ -144,21 +197,17 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
         
         try {
           const contents = await file.text();
-          const imported = JSON.parse(contents) as { settings?: Record<string, unknown> };
+          const imported = JSON.parse(contents) as {
+            schemaVersion?: number;
+            settings?: Record<string, unknown>;
+          };
           
-          if (!imported.settings) {
+          if (imported.schemaVersion !== SETTINGS_SCHEMA_VERSION || !imported.settings) {
             throw new Error('Invalid settings file format');
           }
 
-          // Apply settings to store
-          const store = useStore.getState() as unknown as Record<string, unknown>;
-          Object.entries(imported.settings).forEach(([key, value]) => {
-            const setterName = `set${key.charAt(0).toUpperCase() + key.slice(1)}`;
-            const setter = store[setterName];
-            if (typeof setter === 'function' && value !== undefined) {
-              (setter as (v: unknown) => void)(value);
-            }
-          });
+          const safeSettings = sanitizeImportedSettings(imported.settings, useStore.getState());
+          useStore.setState(safeSettings);
 
           await nativeAlert('Settings imported successfully! Some changes may require a restart.');
         } catch (err) {
@@ -184,7 +233,8 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
     
     try {
       setResetting(true);
-      localStorage.removeItem('vplayer-storage');
+      localStorage.setItem(STORE_RESET_PENDING_KEY, '1');
+      useStore.persist.clearStorage();
       await nativeAlert('Settings reset! The app will now reload.');
       window.location.reload();
     } catch (err) {

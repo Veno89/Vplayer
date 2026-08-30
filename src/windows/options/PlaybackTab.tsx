@@ -246,7 +246,7 @@ export function PlaybackTab({ crossfade }: PlaybackTabProps) {
           options={[
             { value: 'off', label: 'Off - No normalization' },
             { value: 'track', label: 'Track Gain - Normalize each track individually' },
-            { value: 'album', label: 'Album Gain - Preserve album dynamics (coming soon)' },
+            { value: 'album', label: 'Album Gain - Preserve album dynamics' },
           ]}
         />
 
@@ -300,7 +300,7 @@ export function PlaybackTab({ crossfade }: PlaybackTabProps) {
 
                   for (const track of needsAnalysis) {
                     try {
-                      await TauriAPI.analyzeReplayGain(track.path);
+                      await TauriAPI.analyzeReplayGain(track.id, track.path);
                       analyzed++;
                     } catch (err) {
                       console.warn(`Failed to analyze ${track.path}:`, err);

@@ -73,8 +73,11 @@ fn analyze_album_replaygain_derives_and_caches_album_data() {
         .expect("album analysis should succeed")
         .expect("album data should be present");
 
-    // Duration-weighted gain: (-4*100 + -2*200) / 300 = -2.666...
-    assert!((derived.album_gain + 2.666_666).abs() < 0.01);
+    let expected_loudness = 10.0
+        * ((10_f64.powf(-20.0 / 10.0) * 100.0 + 10_f64.powf(-18.0 / 10.0) * 200.0) / 300.0).log10();
+    let expected_gain = -18.0 - expected_loudness;
+    assert!((derived.loudness - expected_loudness).abs() < 0.0001);
+    assert!((derived.album_gain - expected_gain).abs() < 0.0001);
     assert_eq!(derived.track_count, 2);
     assert!((derived.album_peak - 0.90).abs() < 0.0001);
 

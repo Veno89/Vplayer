@@ -1,13 +1,13 @@
+use crate::database::Database;
+use crate::time_utils::now_millis;
+use lofty::TaggedFileExt;
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tauri::{Emitter, Window};
 use walkdir::WalkDir;
-use log::{info, warn, error};
-use lofty::TaggedFileExt;
-use tauri::{Window, Emitter};
-use crate::database::Database;
-use crate::time_utils::now_millis;
 
 /// Standard SELECT column list for Track::from_row.
 /// Every query that uses Track::from_row MUST select exactly these columns in this order.
@@ -80,40 +80,39 @@ impl Scanner {
         let root_path = std::path::Path::new(path);
         // Canonicalize once so symlink resolution comparisons are consistent.
         // Falls back to the original path on error (e.g. unusual Windows paths).
-        let canonical_root = root_path.canonicalize().unwrap_or_else(|_| root_path.to_path_buf());
+        let canonical_root = root_path
+            .canonicalize()
+            .unwrap_or_else(|_| root_path.to_path_buf());
 
         WalkDir::new(path)
             .follow_links(true)
             .into_iter()
-            .filter_map(|e| e.ok())
-            // Symlink boundary guard: if an entry is itself a symlink, verify that
-            // it resolves inside the scan root. This prevents a symlink like
-            // `Music/link -> C:\Windows\System32` from walking outside the intended
-            // directory. We only canonicalize symlinks (not every entry) so the
-            // per-file syscall overhead is negligible on normal libraries.
-            .filter(|e| {
-                if e.path_is_symlink() {
-                    match e.path().canonicalize() {
-                        Ok(resolved) => {
-                            if resolved.starts_with(&canonical_root) {
-                                true
-                            } else {
-                                warn!("Scanner: skipping out-of-root symlink {:?} -> {:?}", e.path(), resolved);
-                                false
-                            }
-                        }
-                        Err(_) => {
-                            warn!("Scanner: skipping broken symlink {:?}", e.path());
-                            false
-                        }
+            .filter_entry(|entry| {
+                if !entry.path_is_symlink() {
+                    return true;
+                }
+
+                match entry.path().canonicalize() {
+                    Ok(resolved) if resolved.starts_with(&canonical_root) => true,
+                    Ok(resolved) => {
+                        warn!(
+                            "Scanner: skipping out-of-root symlink {:?} -> {:?}",
+                            entry.path(),
+                            resolved
+                        );
+                        false
                     }
-                } else {
-                    true
+                    Err(_) => {
+                        warn!("Scanner: skipping broken symlink {:?}", entry.path());
+                        false
+                    }
                 }
             })
+            .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .filter(|e| {
-                e.path().extension()
+                e.path()
+                    .extension()
                     .and_then(|ext| ext.to_str())
                     .map(|ext| AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
                     .unwrap_or(false)
@@ -156,7 +155,10 @@ impl Scanner {
             if let Some(database) = db {
                 if database.is_failed_track(&path_str) {
                     if let Some(win) = window {
-                        let _ = win.emit("scan-skip", format!("Skipping previously failed: {:?}", path_buf.file_name()));
+                        let _ = win.emit(
+                            "scan-skip",
+                            format!("Skipping previously failed: {:?}", path_buf.file_name()),
+                        );
                     }
                     continue;
                 }
@@ -167,7 +169,8 @@ impl Scanner {
                 let progress = ScanProgress {
                     current: processed,
                     total,
-                    current_file: path_buf.file_name()
+                    current_file: path_buf
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("Unknown")
                         .to_string(),
@@ -176,20 +179,40 @@ impl Scanner {
             }
 
             match Self::extract_track_info(path_buf) {
-                Ok(track) => tracks.push(track),
+                Ok(mut track) => {
+                    // Track IDs are durable foreign keys. Preserve the ID already
+                    // assigned to a path so rescans update the row in place instead
+                    // of deleting/recreating it and cascading playlist/art data.
+                    if let Some(database) = db {
+                        if let Ok(Some(existing)) = database.get_track_by_path(&track.path) {
+                            track.id = existing.id;
+                            track.date_added = existing.date_added;
+                            track.rating = existing.rating;
+                            track.play_count = existing.play_count;
+                            track.last_played = existing.last_played;
+                        }
+                    }
+                    tracks.push(track)
+                }
                 Err(e) => {
                     error!("Failed to extract info from {:?}: {}", path_buf, e);
                     if let Some(database) = db {
                         let _ = database.add_failed_track(&path_str, &e);
                     }
                     if let Some(win) = window {
-                        let _ = win.emit("scan-error", format!("Failed to read: {:?}", path_buf.file_name()));
+                        let _ = win.emit(
+                            "scan-error",
+                            format!("Failed to read: {:?}", path_buf.file_name()),
+                        );
                     }
                 }
             }
         }
 
-        info!("Scan completed: {} tracks successfully extracted", tracks.len());
+        info!(
+            "Scan completed: {} tracks successfully extracted",
+            tracks.len()
+        );
         if let Some(win) = window {
             let _ = win.emit("scan-complete", tracks.len());
         }
@@ -198,7 +221,12 @@ impl Scanner {
     }
 
     /// Perform incremental scan: only process new or modified files
-    pub fn scan_directory_incremental(path: &str, window: Option<&Window>, cancel_flag: Option<Arc<AtomicBool>>, db: &Database) -> Result<Vec<Track>, String> {
+    pub fn scan_directory_incremental(
+        path: &str,
+        window: Option<&Window>,
+        cancel_flag: Option<Arc<AtomicBool>>,
+        db: &Database,
+    ) -> Result<Vec<Track>, String> {
         info!("Starting incremental directory scan: {}", path);
 
         // Check for cancellation before starting
@@ -210,7 +238,8 @@ impl Scanner {
         }
 
         // Get existing tracks with their modification times
-        let existing_tracks_list = db.get_folder_tracks(path)
+        let existing_tracks_list = db
+            .get_folder_tracks(path)
             .map_err(|e| format!("Failed to get existing tracks: {}", e))?;
         use std::collections::HashMap;
         let existing_tracks: HashMap<String, i64> = existing_tracks_list
@@ -226,10 +255,12 @@ impl Scanner {
                 let path_str = path_buf.to_string_lossy().to_string();
                 if let Some(&stored_mtime) = existing_tracks.get(&path_str) {
                     // File exists in DB — check if modified
-                    std::fs::metadata(path_buf).ok()
+                    std::fs::metadata(path_buf)
+                        .ok()
                         .and_then(|m| m.modified().ok())
                         .map(|modified| {
-                            let current_mtime = modified.duration_since(std::time::UNIX_EPOCH)
+                            let current_mtime = modified
+                                .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_secs() as i64;
                             current_mtime > stored_mtime
@@ -241,12 +272,20 @@ impl Scanner {
             })
             .collect();
 
-        info!("Incremental scan: {} files need processing (new or modified)", files_to_scan.len());
+        info!(
+            "Incremental scan: {} files need processing (new or modified)",
+            files_to_scan.len()
+        );
 
         Self::process_files(&files_to_scan, window, &cancel_flag, Some(db))
     }
 
-    pub fn scan_directory(path: &str, window: Option<&Window>, cancel_flag: Option<Arc<AtomicBool>>, db: Option<&Database>) -> Result<Vec<Track>, String> {
+    pub fn scan_directory(
+        path: &str,
+        window: Option<&Window>,
+        cancel_flag: Option<Arc<AtomicBool>>,
+        db: Option<&Database>,
+    ) -> Result<Vec<Track>, String> {
         info!("Starting directory scan: {}", path);
 
         // Check for cancellation before starting
@@ -262,18 +301,19 @@ impl Scanner {
 
         Self::process_files(&files, window, &cancel_flag, db)
     }
-    
+
     pub fn extract_track_info(path: &Path) -> Result<Track, String> {
-        use lofty::{Probe, Accessor, AudioFile};
-        
+        use lofty::{Accessor, AudioFile, Probe};
+
         let tagged_file = Probe::open(path)
             .map_err(|e| e.to_string())?
             .read()
             .map_err(|e| e.to_string())?;
-        
-        let tags = tagged_file.primary_tag()
+
+        let tags = tagged_file
+            .primary_tag()
             .or_else(|| tagged_file.first_tag());
-        
+
         let title = tags.and_then(|t| t.title().map(|s| s.to_string()));
         let artist = tags.and_then(|t| t.artist().map(|s| s.to_string()));
         let album = tags.and_then(|t| t.album().map(|s| s.to_string()));
@@ -281,19 +321,20 @@ impl Scanner {
         let year = tags.and_then(|t| t.year()).map(|y| y as i32);
         let track_number = tags.and_then(|t| t.track()).map(|n| n as i32);
         let disc_number = tags.and_then(|t| t.disk()).map(|n| n as i32);
-        
+
         let duration = tagged_file.properties().duration().as_secs_f64();
-        
-        let file_name = path.file_name()
+
+        let file_name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
-        
+
         let path_str = path.to_string_lossy().to_string();
-        let id = format!("track_{}", path_str.replace(['/', '\\'], "_"));
-        
+        let id = Self::track_id_for_path(path);
+
         let now = now_millis();
-        
+
         Ok(Track {
             id,
             path: path_str,
@@ -312,25 +353,48 @@ impl Scanner {
             last_played: 0,
         })
     }
-    
+
+    /// Produce a compact, deterministic ID without embedding a potentially
+    /// sensitive full path. Two independently-seeded FNV-1a passes provide a
+    /// 128-bit namespace; an existing database row still wins during rescans.
+    fn track_id_for_path(path: &Path) -> String {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let mut normalized = canonical.to_string_lossy().replace('/', "\\");
+        if cfg!(windows) {
+            normalized.make_ascii_lowercase();
+        }
+
+        fn fnv1a(bytes: &[u8], seed: u64) -> u64 {
+            bytes.iter().fold(seed, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+        }
+
+        let bytes = normalized.as_bytes();
+        let high = fnv1a(bytes, 0xcbf2_9ce4_8422_2325);
+        let low = fnv1a(bytes, 0x8422_2325_cbf2_9ce4);
+        format!("track_{high:016x}{low:016x}")
+    }
+
     /// Extract album art from audio file
     pub fn extract_album_art(path: &str) -> Result<Option<Vec<u8>>, String> {
         use lofty::Probe;
-        
+
         let tagged_file = Probe::open(path)
             .map_err(|e| format!("Failed to open file: {}", e))?
             .read()
             .map_err(|e| format!("Failed to read file: {}", e))?;
-        
-        let tags = tagged_file.primary_tag()
+
+        let tags = tagged_file
+            .primary_tag()
             .or_else(|| tagged_file.first_tag());
-        
+
         if let Some(tag) = tags {
             if let Some(pictures) = tag.pictures().first() {
                 return Ok(Some(pictures.data().to_vec()));
             }
         }
-        
+
         Ok(None)
     }
 }
@@ -386,17 +450,27 @@ mod tests {
         fs::write(&candidate, b"dummy").expect("write candidate file failed");
 
         let cancel_flag = Arc::new(AtomicBool::new(true));
-        let tracks = Scanner::scan_directory(
-            &dir.to_string_lossy(),
-            None,
-            Some(cancel_flag),
-            None,
-        )
-        .expect("scan_directory should return Ok when pre-cancelled");
+        let tracks = Scanner::scan_directory(&dir.to_string_lossy(), None, Some(cancel_flag), None)
+            .expect("scan_directory should return Ok when pre-cancelled");
 
         assert!(tracks.is_empty());
 
         let _ = fs::remove_file(candidate);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn track_ids_do_not_collide_when_separator_replacement_would() {
+        let first = std::path::Path::new(r"C:\\Music\\A_B\\song.mp3");
+        let second = std::path::Path::new(r"C:\\Music\\A\\B_song.mp3");
+
+        assert_ne!(
+            Scanner::track_id_for_path(first),
+            Scanner::track_id_for_path(second)
+        );
+        assert_eq!(
+            Scanner::track_id_for_path(first),
+            Scanner::track_id_for_path(first)
+        );
     }
 }

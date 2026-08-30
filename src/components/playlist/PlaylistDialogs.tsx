@@ -1,5 +1,7 @@
 import { createPortal } from 'react-dom';
+import { useId } from 'react';
 import { StarRating } from '../StarRating';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 import type { Track, Playlist } from '../../types';
 import type { ColorScheme } from '../../store/types';
 
@@ -44,12 +46,14 @@ export function NewPlaylistDialog({
     onClose,
     currentColors
 }: NewPlaylistDialogProps) {
+    const titleId = useId();
+    const { dialogRef, onKeyDown } = useDialogFocus(isOpen, onClose);
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl">
-                <h3 className="text-white font-semibold mb-3">New Playlist</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onMouseDown={onClose}>
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKeyDown} onMouseDown={event => event.stopPropagation()} className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl">
+                <h3 id={titleId} className="text-white font-semibold mb-3">New Playlist</h3>
                 <input
                     type="text"
                     value={name}
@@ -87,6 +91,8 @@ export function PlaylistPickerDialog({
     onAdd,
     onClose
 }: PlaylistPickerDialogProps) {
+    const titleId = useId();
+    const { dialogRef, onKeyDown } = useDialogFocus(Boolean(track), onClose);
     if (!track) return null;
 
     return createPortal(
@@ -95,10 +101,16 @@ export function PlaylistPickerDialog({
             onClick={onClose}
         >
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
                 className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl max-h-96 overflow-hidden flex flex-col"
                 onClick={e => e.stopPropagation()}
+                onKeyDown={onKeyDown}
             >
-                <h3 className="text-white font-semibold mb-3">Add to Playlist</h3>
+                <h3 id={titleId} className="text-white font-semibold mb-3">Add to Playlist</h3>
                 <p className="text-slate-400 text-sm mb-3 truncate">
                     "{track.title || track.name}"
                 </p>
@@ -139,6 +151,8 @@ export function RatingDialog({
     onRate,
     onClose
 }: RatingDialogProps) {
+    const titleId = useId();
+    const { dialogRef, onKeyDown } = useDialogFocus(Boolean(track), onClose);
     if (!track) return null;
 
     return createPortal(
@@ -147,10 +161,16 @@ export function RatingDialog({
             onClick={onClose}
         >
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
                 className="bg-slate-800 rounded-lg p-4 w-72 shadow-xl"
                 onClick={e => e.stopPropagation()}
+                onKeyDown={onKeyDown}
             >
-                <h3 className="text-white font-semibold mb-3">Set Rating</h3>
+                <h3 id={titleId} className="text-white font-semibold mb-3">Set Rating</h3>
                 <p className="text-slate-400 text-sm mb-4 truncate">
                     "{track.title || track.name}"
                 </p>
@@ -185,6 +205,8 @@ export function BatchPlaylistPickerDialog({
     onAdd,
     onClose
 }: BatchPlaylistPickerDialogProps) {
+    const titleId = useId();
+    const { dialogRef, onKeyDown } = useDialogFocus(isOpen && selectedCount > 0, onClose);
     if (!isOpen || selectedCount === 0) return null;
 
     return createPortal(
@@ -193,10 +215,16 @@ export function BatchPlaylistPickerDialog({
             onClick={onClose}
         >
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
                 className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl max-h-96 overflow-hidden flex flex-col"
                 onClick={e => e.stopPropagation()}
+                onKeyDown={onKeyDown}
             >
-                <h3 className="text-white font-semibold mb-3">
+                <h3 id={titleId} className="text-white font-semibold mb-3">
                     Add {selectedCount} Tracks to Playlist
                 </h3>
                 <div className="flex-1 overflow-y-auto space-y-1">

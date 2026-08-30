@@ -44,7 +44,8 @@ export interface LibraryContextValue {
   setSortBy: (sort: string) => void;
   setSortOrder: (order: string) => void;
   setAdvancedFilters: Dispatch<SetStateAction<any>>;
-  addFolder: () => Promise<any>;
+  addFolder: (selectedPath?: string) => Promise<any>;
+  cancelScan: () => Promise<void>;
   removeFolder: (id: string, path: string) => Promise<void>;
   refreshFolders: () => Promise<number>;
   removeTrack: (id: string) => Promise<void>;

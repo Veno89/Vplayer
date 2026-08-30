@@ -69,7 +69,11 @@ impl PlaybackState {
         self.start_time = Some(Instant::now());
         self.seek_offset = Duration::from_secs_f64(position);
         self.paused_duration = Duration::ZERO;
-        self.pause_start = if is_paused { Some(Instant::now()) } else { None };
+        self.pause_start = if is_paused {
+            Some(Instant::now())
+        } else {
+            None
+        };
     }
 
     /// Calculate current playback position in seconds.
@@ -137,7 +141,10 @@ mod tests {
         state.reset_for_load("a.mp3".into(), Duration::from_secs(60));
 
         let pause_dur = state.mark_playing();
-        assert!(pause_dur.is_none(), "first play should not return a pause duration");
+        assert!(
+            pause_dur.is_none(),
+            "first play should not return a pause duration"
+        );
         assert!(state.start_time.is_some());
     }
 
@@ -210,6 +217,9 @@ mod tests {
         std::thread::sleep(Duration::from_millis(80));
 
         let pos = state.get_position(false, false);
-        assert!(pos <= 0.05 + 0.01, "position should be clamped near total_duration");
+        assert!(
+            pos <= 0.05 + 0.01,
+            "position should be clamped near total_duration"
+        );
     }
 }

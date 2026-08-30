@@ -3,10 +3,43 @@ use crate::query_builder::QueryBuilder;
 use crate::scanner::Track;
 use crate::time_utils::now_millis;
 use log::info;
-use rusqlite::{params, Result};
+use rusqlite::{params, OptionalExtension, Result};
+
+pub(crate) const TRACK_UPSERT_SQL: &str =
+    "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+     ON CONFLICT(id) DO UPDATE SET
+       path = excluded.path,
+       name = excluded.name,
+       title = excluded.title,
+       artist = excluded.artist,
+       album = excluded.album,
+       genre = excluded.genre,
+       year = excluded.year,
+       track_number = excluded.track_number,
+       disc_number = excluded.disc_number,
+       duration = excluded.duration,
+       file_modified = excluded.file_modified";
+
+pub(crate) fn file_modified_seconds(path: &str) -> i64 {
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .map(|modified| {
+            modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64
+        })
+        .unwrap_or(0)
+}
 
 impl Database {
-    pub fn get_tracks_page(&self, filter: TrackFilter, offset: usize, limit: usize) -> Result<(Vec<Track>, usize)> {
+    pub fn get_tracks_page(
+        &self,
+        filter: TrackFilter,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<Track>, usize)> {
         let mut qb = QueryBuilder::new();
         qb.apply_track_filter(&filter);
 
@@ -30,7 +63,10 @@ impl Database {
 
         let mut stmt = conn.prepare(&query_sql)?;
         let tracks = stmt
-            .query_map(rusqlite::params_from_iter(qb.params().iter()), Track::from_row)?
+            .query_map(
+                rusqlite::params_from_iter(qb.params().iter()),
+                Track::from_row,
+            )?
             .collect::<Result<Vec<_>>>()?;
 
         Ok((tracks, total as usize))
@@ -39,8 +75,7 @@ impl Database {
     pub fn add_track(&self, track: &Track) -> Result<()> {
         let conn = self.conn();
         conn.execute(
-            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
+            TRACK_UPSERT_SQL,
             params![
                 track.id,
                 track.path,
@@ -54,8 +89,13 @@ impl Database {
                 track.disc_number,
                 track.duration,
                 track.date_added,
+                track.play_count,
+                track.last_played,
+                track.rating,
+                file_modified_seconds(&track.path),
             ],
         )?;
+        conn.execute("DELETE FROM album_replaygain", [])?;
         Ok(())
     }
 
@@ -67,7 +107,9 @@ impl Database {
             crate::scanner::TRACK_SELECT_COLUMNS
         ))?;
 
-        let tracks = stmt.query_map([], Track::from_row)?.collect::<Result<Vec<_>>>()?;
+        let tracks = stmt
+            .query_map([], Track::from_row)?
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(tracks)
     }
@@ -201,7 +243,7 @@ impl Database {
     pub fn get_track_by_path(&self, path: &str) -> Result<Option<Track>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {} FROM tracks WHERE path = ?1",
+            "SELECT {} FROM tracks WHERE path = ?1 COLLATE NOCASE",
             crate::scanner::TRACK_SELECT_COLUMNS
         ))?;
 
@@ -211,6 +253,16 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn get_track_path(&self, track_id: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        conn.query_row(
+            "SELECT path FROM tracks WHERE id = ?1",
+            params![track_id],
+            |row| row.get(0),
+        )
+        .optional()
     }
 
     // Find duplicate tracks based on metadata similarity
@@ -260,7 +312,8 @@ impl Database {
                  ORDER BY title, artist, album, duration",
                 cols = crate::scanner::TRACK_SELECT_COLUMNS
             ))?;
-            let rows: Vec<Track> = stmt.query_map([], Track::from_row)?
+            let rows: Vec<Track> = stmt
+                .query_map([], Track::from_row)?
                 .collect::<Result<Vec<_>>>()?;
             rows
         };
@@ -326,8 +379,7 @@ impl Database {
     pub fn add_track_with_mtime(&self, track: &Track, file_modified: i64) -> Result<()> {
         let conn = self.conn();
         conn.execute(
-            "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?13)",
+            TRACK_UPSERT_SQL,
             params![
                 track.id,
                 track.path,
@@ -341,9 +393,13 @@ impl Database {
                 track.disc_number,
                 track.duration,
                 track.date_added,
+                track.play_count,
+                track.last_played,
+                track.rating,
                 file_modified,
             ],
         )?;
+        conn.execute("DELETE FROM album_replaygain", [])?;
         Ok(())
     }
 
@@ -356,17 +412,16 @@ impl Database {
         if tracks.is_empty() {
             return Ok(0);
         }
-        
+
         let mut count = 0;
-        
+
         for chunk in tracks.chunks(500) {
             let mut conn = self.conn();
             let tx = conn.transaction()?;
-            
+
             for (track, file_modified) in chunk {
                 tx.execute(
-                    "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0), ?13)",
+                    TRACK_UPSERT_SQL,
                     params![
                         track.id,
                         track.path,
@@ -380,11 +435,15 @@ impl Database {
                         track.disc_number,
                         track.duration,
                         track.date_added,
+                        track.play_count,
+                        track.last_played,
+                        track.rating,
                         file_modified,
                     ],
                 )?;
                 count += 1;
             }
+            tx.execute("DELETE FROM album_replaygain", [])?;
             tx.commit()?;
             // Explicitly yield to give the OS a chance to let the UI thread acquire the mutex
             std::thread::yield_now();

@@ -176,14 +176,14 @@ pub fn analyze_album_replaygain(
         return Ok(None);
     }
 
-    let mut weighted_gain_sum = 0.0_f64;
-    let mut weighted_loudness_sum = 0.0_f64;
+    let mut weighted_energy_sum = 0.0_f64;
     let mut total_duration = 0.0_f64;
     let mut peak = 0.0_f64;
 
-    for (gain, track_peak, loudness, duration) in &rows {
-        weighted_gain_sum += gain * duration;
-        weighted_loudness_sum += loudness * duration;
+    for (_gain, track_peak, loudness, duration) in &rows {
+        // Loudness values are logarithmic. Convert LUFS to linear energy,
+        // duration-weight that energy, then convert the album total back.
+        weighted_energy_sum += 10_f64.powf(loudness / 10.0) * duration;
         total_duration += duration;
         if *track_peak > peak {
             peak = *track_peak;
@@ -194,10 +194,11 @@ pub fn analyze_album_replaygain(
         return Ok(None);
     }
 
+    let album_loudness = 10.0 * (weighted_energy_sum / total_duration).log10();
     let data = AlbumReplayGainData {
-        album_gain: weighted_gain_sum / total_duration,
+        album_gain: -18.0 - album_loudness,
         album_peak: peak,
-        loudness: weighted_loudness_sum / total_duration,
+        loudness: album_loudness,
         track_count: rows.len() as i64,
     };
 

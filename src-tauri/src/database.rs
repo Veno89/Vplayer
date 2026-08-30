@@ -21,8 +21,6 @@ pub struct TrackFilter {
     pub folder_id: Option<String>,
 }
 
-
-
 pub struct Database {
     pub conn: Mutex<Connection>,
 }
@@ -170,6 +168,40 @@ mod tests {
     }
 
     #[test]
+    fn remove_folder_with_tracks_rejects_mismatched_id_and_path() {
+        let db_path = temp_db_path("folder_identity_mismatch");
+        let db = Database::new(&db_path).expect("db init failed");
+
+        db.add_folder_with_tracks(
+            "folder_a",
+            "C:/Music/A",
+            "A",
+            now_millis(),
+            &[sample_track("track_a", "C:/Music/A/track.mp3")],
+        )
+        .expect("add folder A failed");
+        db.add_folder_with_tracks(
+            "folder_b",
+            "C:/Music/B",
+            "B",
+            now_millis(),
+            &[sample_track("track_b", "C:/Music/B/track.mp3")],
+        )
+        .expect("add folder B failed");
+
+        assert!(db
+            .remove_folder_with_tracks("folder_a", "C:/Music/B")
+            .is_err());
+
+        let folders = db.get_all_folders().expect("get folders failed");
+        assert_eq!(folders.len(), 2);
+        let tracks = db.get_all_tracks().expect("get tracks failed");
+        assert_eq!(tracks.len(), 2);
+
+        cleanup_db_files(&db_path);
+    }
+
+    #[test]
     fn delete_playlist_removes_playlist_and_memberships() {
         let db_path = temp_db_path("playlist_delete_tx");
         let db = Database::new(&db_path).expect("db init failed");
@@ -204,7 +236,7 @@ mod tests {
         let playlist_id = db
             .create_playlist("Remove Track")
             .expect("create_playlist failed");
-        let tracks = vec![
+        let tracks = [
             sample_track("track_remove_1", "C:/Music/Playlist/one.mp3"),
             sample_track("track_remove_2", "C:/Music/Playlist/two.mp3"),
             sample_track("track_remove_3", "C:/Music/Playlist/three.mp3"),
@@ -382,6 +414,67 @@ mod tests {
             .expect("seed track missing after concurrent updates");
 
         assert_eq!(updated.play_count, thread_count * increments_per_thread);
+
+        drop(db);
+        cleanup_db_files(&db_path);
+    }
+
+    #[test]
+    fn track_rescan_upsert_preserves_user_state_and_relations() {
+        let db_path = temp_db_path("track_rescan_preserves_state");
+        let db = Database::new(&db_path).expect("db init failed");
+        let mut original = sample_track("track_stable", "C:/Music/Test/stable.mp3");
+        original.date_added = 1_000;
+        original.play_count = 7;
+        original.last_played = 2_000;
+        original.rating = 5;
+        db.add_track(&original).expect("seed track failed");
+        let playlist_id = db.create_playlist("Stable").expect("create playlist");
+        db.add_track_to_playlist(&playlist_id, &original.id, 0)
+            .expect("add membership");
+        {
+            let conn = db.conn();
+            conn.execute(
+                "INSERT INTO track_album_art (track_id, data, cached_at) VALUES (?1, ?2, ?3)",
+                params![original.id, vec![1u8, 2, 3], 3_000i64],
+            )
+            .expect("seed art");
+        }
+
+        let mut rescanned = original.clone();
+        rescanned.title = Some("Refreshed Metadata".to_string());
+        rescanned.date_added = 9_999;
+        rescanned.play_count = 0;
+        rescanned.last_played = 0;
+        rescanned.rating = 0;
+        db.add_track(&rescanned).expect("rescan upsert failed");
+
+        let stored = db
+            .get_track_by_path(&original.path)
+            .expect("query track")
+            .expect("track missing");
+        assert_eq!(stored.id, original.id);
+        assert_eq!(stored.title.as_deref(), Some("Refreshed Metadata"));
+        assert_eq!(stored.date_added, 1_000);
+        assert_eq!(stored.play_count, 7);
+        assert_eq!(stored.last_played, 2_000);
+        assert_eq!(stored.rating, 5);
+        assert_eq!(
+            db.get_playlist_tracks(&playlist_id)
+                .expect("playlist query")
+                .len(),
+            1
+        );
+        let conn = db.conn();
+        let art: Vec<u8> = conn
+            .query_row(
+                "SELECT data FROM track_album_art WHERE track_id = ?1",
+                params![original.id],
+                |row| row.get(0),
+            )
+            .expect("art should survive upsert");
+        assert_eq!(art, vec![1, 2, 3]);
+        drop(conn);
 
         drop(db);
         cleanup_db_files(&db_path);

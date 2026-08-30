@@ -57,8 +57,8 @@ export function useLibrary() {
   });
 
   // 4. Composed addFolder: select folder → add to state → scan → persist
-  const addFolder = useCallback(async () => {
-    const result = await addFolderData();
+  const addFolder = useCallback(async (selectedPath?: string) => {
+    const result = await addFolderData(selectedPath);
     if (result) {
       // Trigger scan which also adds the folder to DB and loads tracks
       await scanNewFolder(result.path);

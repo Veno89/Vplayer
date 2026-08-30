@@ -129,9 +129,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   const getCurrentTrackData = useStore(state => state.getCurrentTrackData);
   const activePlaybackTracks = useStore(state => state.activePlaybackTracks);
 
-  // Track the previous displayTracks to detect sort/filter changes
-  const prevDisplayTracksRef = useRef<Track[] | null>(null);
-
   // Listen for global track drop events from VPlayer (internal library drops)
   useEffect(() => {
     const handleGlobalDrop = (e: Event) => {
@@ -342,37 +339,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
     }
   }, [displayCurrentTrack, playlistAutoScroll]);
-
-  // CRITICAL: Sync activePlaybackTracks when displayTracks changes (sorting/filtering)
-  // This ensures next/previous navigation respects the visible playlist order.
-  // The store's setActivePlaybackTracks handles index remapping via currentTrackId.
-  useEffect(() => {
-    if (!onActiveTracksChange) return;
-
-    // Check if displayTracks actually changed (not just a re-render)
-    const prevTracks = prevDisplayTracksRef.current;
-
-    // On first render (prevTracks is null), just initialize and return
-    if (prevTracks === null) {
-      prevDisplayTracksRef.current = displayTracks;
-      return;
-    }
-
-    const tracksChanged = prevTracks !== displayTracks &&
-      (prevTracks.length !== displayTracks.length ||
-        prevTracks.some((t: Track, i: number) => t?.id !== displayTracks[i]?.id));
-
-    if (!tracksChanged) {
-      prevDisplayTracksRef.current = displayTracks;
-      return;
-    }
-
-    // Update the active playback tracks — the store remaps currentTrack
-    // by currentTrackId automatically, no manual index fix needed.
-    onActiveTracksChange(displayTracks);
-
-    prevDisplayTracksRef.current = displayTracks;
-  }, [displayTracks, onActiveTracksChange]);
 
   // Manual scroll to current track
   const scrollToCurrentTrack = useCallback(() => {

@@ -5,8 +5,8 @@
 //! (connected to a now-dead mixer after a device change) are
 //! automatically rejected on swap.
 
-use rodio::Sink;
 use log::warn;
+use rodio::Sink;
 use std::time::Duration;
 
 /// Manages preloaded tracks for gapless playback.
@@ -42,9 +42,7 @@ impl PreloadManager {
     /// the sink is connected to the old (dead) mixer — discard it and
     /// return None so the caller falls back to a full load.
     pub fn take_if_current(&mut self, current_generation: u64) -> Option<(Sink, String, Duration)> {
-        if self.sink.is_none() {
-            return None;
-        }
+        self.sink.as_ref()?;
 
         if self.device_generation != current_generation {
             warn!(

@@ -1,13 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use vplayer::scanner::Scanner;
 
 fn temp_dir(test_name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "vplayer_scanner_test_{}_{}", test_name, uuid::Uuid::new_v4()
+        "vplayer_scanner_test_{}_{}",
+        test_name,
+        uuid::Uuid::new_v4()
     ));
     fs::create_dir_all(&dir).expect("create temp dir");
     dir
@@ -30,7 +32,7 @@ fn scan_empty_directory_returns_no_tracks() {
 fn scan_directory_with_no_audio_files_returns_empty() {
     let dir = temp_dir("non_audio");
     fs::write(dir.join("readme.txt"), "hello").unwrap();
-    fs::write(dir.join("image.png"), &[0x89, 0x50, 0x4E, 0x47]).unwrap();
+    fs::write(dir.join("image.png"), [0x89, 0x50, 0x4E, 0x47]).unwrap();
     fs::write(dir.join("data.json"), r#"{"key":"value"}"#).unwrap();
 
     let tracks = Scanner::scan_directory(dir.to_str().unwrap(), None, None, None)
@@ -54,9 +56,13 @@ fn scan_nonexistent_directory_returns_empty() {
 fn scan_corrupt_mp3_records_failure_but_does_not_crash() {
     let dir = temp_dir("corrupt");
     // Write garbage bytes with an .mp3 extension
-    fs::write(dir.join("corrupt.mp3"), b"this is not a valid mp3 file at all").unwrap();
+    fs::write(
+        dir.join("corrupt.mp3"),
+        b"this is not a valid mp3 file at all",
+    )
+    .unwrap();
     // Write another corrupt file with .flac extension
-    fs::write(dir.join("bad.flac"), &[0x00; 64]).unwrap();
+    fs::write(dir.join("bad.flac"), [0x00; 64]).unwrap();
 
     let tracks = Scanner::scan_directory(dir.to_str().unwrap(), None, None, None)
         .expect("scan with corrupt files should not crash");
@@ -75,14 +81,13 @@ fn scan_with_cancel_flag_stops_early() {
 
     // Set cancel flag immediately
     let cancel = Arc::new(AtomicBool::new(true));
-    let tracks = Scanner::scan_directory(
-        dir.to_str().unwrap(),
-        None,
-        Some(cancel),
-        None,
-    ).expect("cancelled scan should succeed");
+    let tracks = Scanner::scan_directory(dir.to_str().unwrap(), None, Some(cancel), None)
+        .expect("cancelled scan should succeed");
 
-    assert!(tracks.is_empty(), "immediately cancelled scan should return no tracks");
+    assert!(
+        tracks.is_empty(),
+        "immediately cancelled scan should return no tracks"
+    );
     cleanup(&dir);
 }
 

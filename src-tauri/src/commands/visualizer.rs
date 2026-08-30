@@ -1,7 +1,7 @@
 // Visualizer commands
-use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::visualizer::{VisualizerData, VisualizerMode};
+use crate::AppState;
 use rodio::{Decoder, Source};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
@@ -59,20 +59,29 @@ fn write_cached_waveform(path: &str, bars: usize, data: &[f32]) {
 pub fn get_visualizer_data(state: tauri::State<'_, AppState>) -> AppResult<VisualizerData> {
     // Get samples from the audio player's visualizer buffer
     let samples = state.player.get_visualizer_samples();
-    
+
     // Process samples with the visualizer (FFT analysis)
-    let mut vis = state.visualizer.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
-    
+    let mut vis = state
+        .visualizer
+        .lock()
+        .map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
+
     // Use a fixed delta time (~33ms for 30fps)
     let delta_time = 0.033;
-    
+
     Ok(vis.process(&samples, delta_time))
 }
 
 /// Set visualizer mode
 #[tauri::command]
-pub fn set_visualizer_mode(mode: VisualizerMode, state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let mut vis = state.visualizer.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
+pub fn set_visualizer_mode(
+    mode: VisualizerMode,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<()> {
+    let mut vis = state
+        .visualizer
+        .lock()
+        .map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
     vis.set_mode(mode);
     Ok(())
 }
@@ -80,7 +89,10 @@ pub fn set_visualizer_mode(mode: VisualizerMode, state: tauri::State<'_, AppStat
 /// Set beat detection sensitivity
 #[tauri::command]
 pub fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let mut vis = state.visualizer.lock().map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
+    let mut vis = state
+        .visualizer
+        .lock()
+        .map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
     vis.set_beat_sensitivity(sensitivity);
     Ok(())
 }
@@ -90,43 +102,40 @@ pub fn set_beat_sensitivity(sensitivity: f32, state: tauri::State<'_, AppState>)
 /// Decodes the file and returns `num_bars` peak amplitude values (0.0–1.0).
 /// Intended for rendering a static waveform behind the seekbar.
 #[tauri::command]
-pub fn get_track_waveform(path: String, num_bars: Option<usize>) -> AppResult<Vec<f32>> {
-    let bars = num_bars.unwrap_or(200);
+pub fn get_track_waveform(
+    track_id: String,
+    path: String,
+    num_bars: Option<usize>,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<f32>> {
+    let path = super::path_authority::authorize_track_path(&state.db, &track_id, &path)?;
+    let bars = num_bars.unwrap_or(200).clamp(16, 2048);
 
     // Check file-system cache first
     if let Some(cached) = read_cached_waveform(&path, bars) {
         return Ok(cached);
     }
 
-    let file = File::open(&path).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open file: {}", e))))?;
+    let file = File::open(&path)
+        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to open file: {}", e))))?;
     let source = Decoder::new(BufReader::new(file))
         .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
-
-    // Decoder<BufReader<File>> yields i16 by default in rodio 0.21;
-    // collect as f32 by mapping.
     let channels = source.channels() as usize;
-    let samples: Vec<f32> = source.map(|s| s as f32 / i16::MAX as f32).collect();
-
-    if samples.is_empty() || bars == 0 {
-        return Ok(vec![0.0; bars]);
+    let sample_rate = source.sample_rate() as usize;
+    let estimated_frames = source
+        .total_duration()
+        .map(|duration| (duration.as_secs_f64() * sample_rate as f64) as usize)
+        .unwrap_or(sample_rate * 60 * 60 * 8);
+    let frames_per_bar = (estimated_frames / bars).max(1);
+    let max_samples = sample_rate
+        .saturating_mul(channels)
+        .saturating_mul(60 * 60 * 8);
+    let mut peaks = vec![0.0_f32; bars];
+    for (sample_index, sample) in source.take(max_samples).enumerate() {
+        let frame = sample_index / channels.max(1);
+        let bucket = (frame / frames_per_bar).min(bars - 1);
+        peaks[bucket] = peaks[bucket].max((sample / i16::MAX as f32).abs());
     }
-
-    // Mono-mix: average every `channels` samples into one
-    let mono: Vec<f32> = samples
-        .chunks(channels)
-        .map(|ch| ch.iter().map(|s| s.abs()).sum::<f32>() / channels as f32)
-        .collect();
-
-    // Downsample to `bars` buckets using peak-per-bucket
-    let chunk_size = (mono.len() / bars).max(1);
-    let mut peaks: Vec<f32> = mono
-        .chunks(chunk_size)
-        .take(bars)
-        .map(|chunk| chunk.iter().cloned().fold(0.0_f32, f32::max))
-        .collect();
-
-    // Pad if we got fewer bars than requested
-    peaks.resize(bars, 0.0);
 
     // Normalize to 0.0–1.0
     let max_peak = peaks.iter().cloned().fold(0.0_f32, f32::max);

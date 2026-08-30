@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
 /// Parsed LRC lyric line
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,8 +29,8 @@ pub struct Lrc {
 impl Lrc {
     /// Parse LRC file from path
     pub fn from_file(path: &Path) -> Result<Self, String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read LRC file: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read LRC file: {}", e))?;
         Self::from_str(&content)
     }
 
@@ -86,7 +86,7 @@ impl Lrc {
                                 let text_start = pos + end_pos + 1;
                                 let remaining: String = chars[text_start..].iter().collect();
                                 let text = remaining.trim_start_matches('[').trim().to_string();
-                                
+
                                 if !text.is_empty() || lines.is_empty() {
                                     lines.push(LyricLine {
                                         timestamp: timestamp + (metadata.offset as f64 / 1000.0),
@@ -117,11 +117,9 @@ impl Lrc {
     }
 
     /// Get lyric at specific time
+    #[cfg(test)]
     pub fn get_lyric_at(&self, time: f64) -> Option<&LyricLine> {
-        self.lines
-            .iter()
-            .rev()
-            .find(|line| line.timestamp <= time)
+        self.lines.iter().rev().find(|line| line.timestamp <= time)
     }
 }
 
@@ -131,9 +129,10 @@ mod tests {
 
     #[test]
     fn test_parse_lrc() {
-        let content = "[ti:Test Song]\n[ar:Test Artist]\n[00:12.00]First line\n[00:17.20]Second line";
+        let content =
+            "[ti:Test Song]\n[ar:Test Artist]\n[00:12.00]First line\n[00:17.20]Second line";
         let lrc = Lrc::from_str(content).unwrap();
-        
+
         assert_eq!(lrc.metadata.title, Some("Test Song".to_string()));
         assert_eq!(lrc.metadata.artist, Some("Test Artist".to_string()));
         assert_eq!(lrc.lines.len(), 2);
@@ -145,7 +144,7 @@ mod tests {
     fn test_get_lyric_at() {
         let content = "[00:10.00]Line 1\n[00:20.00]Line 2\n[00:30.00]Line 3";
         let lrc = Lrc::from_str(content).unwrap();
-        
+
         assert_eq!(lrc.get_lyric_at(15.0).unwrap().text, "Line 1");
         assert_eq!(lrc.get_lyric_at(25.0).unwrap().text, "Line 2");
         assert!(lrc.get_lyric_at(5.0).is_none());

@@ -6,7 +6,6 @@
 //!
 //! let ctx = LogContext::new("library_scan").with("folder", "/music");
 //! ctx.info("Scan started");
-//! ctx.warn("Skipped unsupported file");
 //! ```
 
 use std::fmt;
@@ -52,15 +51,7 @@ impl LogContext {
         log::info!("{} {}", self.prefix(), msg);
     }
 
-    pub fn warn(&self, msg: &str) {
-        log::warn!("{} {}", self.prefix(), msg);
-    }
-
     pub fn error(&self, msg: &str) {
         log::error!("{} {}", self.prefix(), msg);
-    }
-
-    pub fn debug(&self, msg: &str) {
-        log::debug!("{} {}", self.prefix(), msg);
     }
 }

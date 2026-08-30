@@ -168,8 +168,7 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             if (position === 'end') {
                 newQueue = [...state.queue, ...tracksArray];
             } else if (position === 'next') {
-                newQueue = [...state.queue];
-                newQueue.splice(state.queueIndex + 1, 0, ...tracksArray);
+                newQueue = [...tracksArray, ...state.queue];
             } else if (position === 'start') {
                 newQueue = [...tracksArray, ...state.queue];
             } else {
@@ -183,37 +182,24 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
         set((state) => {
             const newQueue = [...state.queue];
             newQueue.splice(index, 1);
-            const newQueueIndex = index < state.queueIndex
-                ? Math.max(0, state.queueIndex - 1)
-                : state.queueIndex;
-            return { queue: newQueue, queueIndex: newQueueIndex };
+            return { queue: newQueue, queueIndex: 0 };
         }),
 
     clearQueue: () => set({ queue: [], queueIndex: 0 }),
 
     nextInQueue: () => {
         const state = get();
-        // The queue is treated as a FIFO dequeue:
-        //   queue[queueIndex]     = item currently being played from the queue
-        //   queue[queueIndex + 1] = the next item to advance to
-        //
-        // When consuming, remove the played item from the array so that the UI
-        // queue panel never shows already-consumed entries. queueIndex stays the
-        // same — after removal the "next" item slides into the current slot.
-        if (state.queueIndex + 1 >= state.queue.length) {
+        // The queue is a pending FIFO. Dequeue the front item so the UI never
+        // shows an entry that has already been selected for playback.
+        if (state.queue.length === 0) {
             return null;
         }
-        const consumed = state.queue[state.queueIndex];
-        const next = state.queue[state.queueIndex + 1];
+        const next = state.queue[0];
         set((s) => ({
-            queue: [
-                ...s.queue.slice(0, s.queueIndex),
-                ...s.queue.slice(s.queueIndex + 1),
-            ],
-            // queueIndex intentionally unchanged — after removing the consumed item
-            // the next entry now occupies the same index position.
-            queueHistory: consumed
-                ? [...s.queueHistory, consumed]
+            queue: s.queue.slice(1),
+            queueIndex: 0,
+            queueHistory: next
+                ? [...s.queueHistory.slice(-199), next]
                 : s.queueHistory,
         }));
         return next;
@@ -221,10 +207,7 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
 
     previousInQueue: () => {
         const state = get();
-        if (state.queueIndex > 0) {
-            set({ queueIndex: state.queueIndex - 1 });
-            return state.queue[state.queueIndex - 1];
-        } else if (state.queueHistory.length > 0) {
+        if (state.queueHistory.length > 0) {
             const lastHistoryTrack = state.queueHistory[state.queueHistory.length - 1];
             set((state) => ({
                 queueHistory: state.queueHistory.slice(0, -1)
@@ -240,25 +223,27 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
 
     getCurrentQueueTrack: () => {
         const state = get();
-        return state.queue[state.queueIndex] || null;
+        return state.queue[0] || null;
     },
 
     peekNextInQueue: () => {
         const state = get();
-        return state.queue[state.queueIndex + 1] || null;
+        return state.queue[0] || null;
     },
 
     replaceQueue: (newTracks, startIndex = 0) =>
         set({
-            queue: newTracks,
-            queueIndex: startIndex,
+            queue: [
+                ...newTracks.slice(startIndex),
+                ...newTracks.slice(0, startIndex),
+            ],
+            queueIndex: 0,
             queueHistory: []
         }),
 
     shuffleQueue: () => {
         const state = get();
-        const currentTrack = state.queue[state.queueIndex];
-        const otherTracks = state.queue.filter((_, i) => i !== state.queueIndex);
+        const otherTracks = [...state.queue];
 
         // Fisher-Yates shuffle
         for (let i = otherTracks.length - 1; i > 0; i--) {
@@ -266,8 +251,7 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             [otherTracks[i], otherTracks[j]] = [otherTracks[j], otherTracks[i]];
         }
 
-        const newQueue = currentTrack ? [currentTrack, ...otherTracks] : otherTracks;
-        set({ queue: newQueue, queueIndex: 0 });
+        set({ queue: otherTracks, queueIndex: 0 });
     },
 
     moveInQueue: (fromIndex, toIndex) => {
@@ -277,16 +261,7 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             const [movedTrack] = newQueue.splice(fromIndex, 1);
             newQueue.splice(toIndex, 0, movedTrack);
 
-            let newQueueIndex = state.queueIndex;
-            if (fromIndex === state.queueIndex) {
-                newQueueIndex = toIndex;
-            } else if (fromIndex < state.queueIndex && toIndex >= state.queueIndex) {
-                newQueueIndex = state.queueIndex - 1;
-            } else if (fromIndex > state.queueIndex && toIndex <= state.queueIndex) {
-                newQueueIndex = state.queueIndex + 1;
-            }
-
-            return { queue: newQueue, queueIndex: newQueueIndex };
+            return { queue: newQueue, queueIndex: 0 };
         });
     }
 });

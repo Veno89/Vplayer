@@ -53,6 +53,8 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
     const refreshFoldersRef = useRef<() => Promise<number>>(async () => 0);
     // Track the ID of the currently active scan
     const currentScanIdRef = useRef<string | null>(null);
+    const autoScanDoneRef = useRef(false);
+    const watchScanChainRef = useRef<Promise<void>>(Promise.resolve());
 
     // Start folder watches and auto-scan when folders are loaded
     useEffect(() => {
@@ -67,6 +69,14 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
                         log.info(`Started watching folder: ${folder.path}`);
                     } catch (err) {
                         console.error(`Failed to start watching ${folder.path}:`, err);
+                    }
+                }
+            } else {
+                for (const folder of libraryFolders) {
+                    try {
+                        await TauriAPI.stopFolderWatch(folder.path);
+                    } catch (err) {
+                        console.error(`Failed to stop watching ${folder.path}:`, err);
                     }
                 }
             }
@@ -88,17 +98,21 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Listen for folder changes (file watcher)
         unlistenPromises.push(
-            listen('folder-changed', async (event) => {
-                log.info('File system change detected:', event.payload);
-                // Use ref to call the latest refreshFolders (avoids stale closure)
-                try {
-                    const newTracksCount = await refreshFoldersRef.current();
-                    if (newTracksCount > 0) {
-                        log.info(`Auto-detected ${newTracksCount} new/modified track(s)`);
+            listen<string>('folder-changed', (event) => {
+                const folderPath = event.payload;
+                log.info('File system change detected for root:', folderPath);
+                watchScanChainRef.current = watchScanChainRef.current.then(async () => {
+                    try {
+                        const scanId = `watch-${Date.now()}-${crypto.randomUUID()}`;
+                        const changed = await TauriAPI.scanFolderIncremental(folderPath, scanId);
+                        if (changed.length > 0) {
+                            await loadAllTracks();
+                            log.info(`Auto-detected ${changed.length} new/modified track(s)`);
+                        }
+                    } catch (err) {
+                        console.error('Auto-scan failed:', err);
                     }
-                } catch (err) {
-                    console.error('Auto-scan failed:', err);
-                }
+                });
             })
         );
 
@@ -168,13 +182,14 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
 
         // Cleanup listeners on unmount
         return () => {
-            Promise.all(unlistenPromises).then((unlistenFns) => {
-                unlistenFns.forEach((fn) => fn());
-            }).catch(err => {
-                console.warn('Failed to cleanup event listeners:', err);
+            Promise.allSettled(unlistenPromises).then((results) => {
+                results.forEach((result) => {
+                    if (result.status === 'fulfilled') result.value();
+                    else console.warn('Failed to register event listener:', result.reason);
+                });
             });
         };
-    }, []);
+    }, [loadAllTracks]);
 
     // Keep the ref in sync with the latest refreshFolders callback
     useEffect(() => {
@@ -241,11 +256,13 @@ export function useLibraryScanner({ libraryFolders, loadAllTracks, loadAllFolder
             if (loadAllFolders) await loadAllFolders();
         } catch (err) {
             console.error('Failed to scan new folder:', err);
+            if (loadAllFolders) await loadAllFolders();
+            throw err;
         } finally {
             currentScanIdRef.current = null;
             setIsScanning(false);
         }
-    }, [loadAllTracks]);
+    }, [loadAllTracks, loadAllFolders]);
 
     const cancelScan = useCallback(async () => {
         try {

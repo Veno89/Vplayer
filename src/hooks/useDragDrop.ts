@@ -6,7 +6,7 @@ import { useStore } from '../store/useStore';
 import type { ToastService, Track } from '../types';
 
 interface DragDropParams {
-  addFolder?: () => Promise<{ path: string } | null>;
+  addFolder?: (selectedPath?: string) => Promise<{ path: string } | null>;
   refreshTracks?: () => Promise<void>;
   toast?: ToastService;
 }
@@ -54,6 +54,7 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
   // Listen for Tauri file drop events
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
 
     const setupDropListener = async () => {
       try {
@@ -89,7 +90,11 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
                   //    so every track in the folder is offered to the playlist, not
                   //    just the ones that were newly discovered.
                   try {
-                    await TauriAPI.scanFolderIncremental(path);
+                    if (addFolder) {
+                      await addFolder(path);
+                    } else {
+                      throw new Error('Library folder workflow is unavailable');
+                    }
                   } catch (err) {
                     console.error('Failed to scan folder:', path, err);
                   }
@@ -132,6 +137,10 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
             setIsDraggingExternal(false);
           }
         });
+        if (disposed) {
+          unlisten();
+          unlisten = undefined;
+        }
       } catch (err) {
         log.debug('Tauri drag-drop not available:', err);
       }
@@ -140,11 +149,12 @@ export function useDragDrop({ addFolder, refreshTracks, toast }: DragDropParams)
     setupDropListener();
 
     return () => {
+      disposed = true;
       if (unlisten) {
         unlisten();
       }
     };
-  }, [refreshTracks, toast]);
+  }, [addFolder, refreshTracks, toast]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();

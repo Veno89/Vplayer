@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "VPlayer",
-  "version": "0.9.43",
+  "version": "0.9.44",
   "identifier": "com.vplayer.dev",
   "build": {
     "frontendDist": "../dist",
@@ -10,7 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "VPlayer",
@@ -55,7 +55,7 @@
       "icons/icon.ico"
     ],
     "publisher": "VPlayer",
-    "copyright": "Copyright © 2025 VPlayer. All rights reserved.",
+    "copyright": "Copyright (c) 2025-2026 VPlayer. All rights reserved.",
     "category": "Music",
     "shortDescription": "Modern desktop music player",
     "longDescription": "VPlayer is a powerful, feature-rich desktop music player with smart playlists, equalizer, tag editing, and more."

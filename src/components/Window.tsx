@@ -59,10 +59,53 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
   };
   const handleTitleBarMouseDown = useDraggable({ id, windowData, setWindows: hookSetWindows, bringToFront });
   const handleResizeMouseDown = useResizable({ id, windowData, setWindows: hookSetWindows, bringToFront, minSizes });
+  const titleId = `window-${id}-title`;
+  const handleTitleBarKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('.window-controls')) return;
+    const step = event.shiftKey ? 50 : 10;
+    let deltaX = 0;
+    let deltaY = 0;
+    if (event.key === 'ArrowLeft') deltaX = -step;
+    else if (event.key === 'ArrowRight') deltaX = step;
+    else if (event.key === 'ArrowUp') deltaY = -step;
+    else if (event.key === 'ArrowDown') deltaY = step;
+    else return;
+    event.preventDefault();
+    setWindows(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        x: Math.max(0, prev[id].x + deltaX),
+        y: Math.max(0, prev[id].y + deltaY),
+      },
+    }));
+  };
+  const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const step = event.shiftKey ? 50 : 10;
+    let deltaWidth = 0;
+    let deltaHeight = 0;
+    if (event.key === 'ArrowLeft') deltaWidth = -step;
+    else if (event.key === 'ArrowRight') deltaWidth = step;
+    else if (event.key === 'ArrowUp') deltaHeight = -step;
+    else if (event.key === 'ArrowDown') deltaHeight = step;
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    setWindows(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        width: Math.max(minSizes.width, prev[id].width + deltaWidth),
+        height: Math.max(minSizes.height, prev[id].height + deltaHeight),
+      },
+    }));
+  };
 
   if (windowData.minimized) {
     return (
       <div
+        role="region"
+        aria-labelledby={titleId}
         style={{
           left: windowData.x,
           top: windowData.y,
@@ -75,16 +118,20 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
         <div
           className="flex items-center justify-between px-3 py-2 cursor-move select-none"
           onMouseDown={handleTitleBarMouseDown}
+          onKeyDown={handleTitleBarKeyDown}
+          tabIndex={0}
+          aria-label={`Move ${title} window with arrow keys`}
         >
           <div className="flex items-center gap-2">
             <Icon className={`w-4 h-4 ${colors.accent}`} />
-            <span className="text-sm font-medium" style={{ color: colors.text || '#f8fafc' }}>{title}</span>
+            <span id={titleId} className="text-sm font-medium" style={{ color: colors.text || '#f8fafc' }}>{title}</span>
           </div>
           <div className="window-controls flex gap-1">
             <button
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: false } }))}
               className="p-1 hover:bg-white/10 rounded transition-colors"
+              aria-label={`Restore ${title} window`}
             >
               <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#9633;</span>
             </button>
@@ -96,6 +143,8 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
 
   return (
     <div
+      role="region"
+      aria-labelledby={titleId}
       style={{
         left: windowData.x,
         top: windowData.y,
@@ -126,16 +175,21 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           borderColor: colors.windowBorder || 'rgba(51, 65, 85, 0.8)',
         }}
         onMouseDown={handleTitleBarMouseDown}
+        onDoubleClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: true } }))}
+        onKeyDown={handleTitleBarKeyDown}
+        tabIndex={0}
+        aria-label={`Move ${title} window with arrow keys`}
       >
         <div className="flex items-center gap-2">
           <Icon className={`w-4 h-4 ${colors.accent}`} />
-          <span className="text-sm font-medium" style={{ color: colors.text || '#f8fafc' }}>{title}</span>
+          <span id={titleId} className="text-sm font-medium" style={{ color: colors.text || '#f8fafc' }}>{title}</span>
         </div>
         <div className="window-controls flex gap-1">
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: true } }))}
             className="p-1 hover:bg-white/10 rounded transition-colors"
+            aria-label={`Minimize ${title} window`}
           >
             <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#8211;</span>
           </button>
@@ -143,6 +197,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => toggleWindow(id)}
             className="p-1 hover:bg-red-500/20 rounded transition-colors"
+            aria-label={`Close ${title} window`}
           >
             <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#10005;</span>
           </button>
@@ -160,9 +215,12 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           {children}
         </ErrorBoundary>
       </div>
-      <div
+      <button
+        type="button"
+        aria-label={`Resize ${title} window with arrow keys`}
         className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize transition-colors hover:opacity-80"
         onMouseDown={handleResizeMouseDown}
+        onKeyDown={handleResizeKeyDown}
         style={{
           clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
           borderBottomRightRadius: '0.5rem',
@@ -174,7 +232,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           borderRight: `2px solid ${colors.textSubtle || '#64748b'}`,
           transform: 'rotate(45deg)'
         }} />
-      </div>
+      </button>
     </div>
   );
 });

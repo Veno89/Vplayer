@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 9;
+const SCHEMA_VERSION: i32 = 11;
 
 impl Database {
     pub fn new(db_path: &Path) -> Result<Self> {
@@ -48,7 +48,8 @@ impl Database {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS track_album_art (
                 track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-                data BLOB NOT NULL
+                data BLOB NOT NULL,
+                cached_at INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )?;
@@ -137,7 +138,9 @@ impl Database {
 
         // Get current version (0 if table is empty = legacy database)
         let current_version: i32 = conn
-            .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| row.get(0))
+            .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| {
+                row.get(0)
+            })
             .unwrap_or(0);
 
         if current_version >= SCHEMA_VERSION {
@@ -211,7 +214,10 @@ impl Database {
             )?;
             // Null out the old column to reclaim page space on next VACUUM.
             // (SQLite < 3.35 doesn't support DROP COLUMN, so we just clear it.)
-            conn.execute("UPDATE tracks SET album_art = NULL WHERE album_art IS NOT NULL", [])?;
+            conn.execute(
+                "UPDATE tracks SET album_art = NULL WHERE album_art IS NOT NULL",
+                [],
+            )?;
             info!("Migration v7 complete: album art moved to track_album_art table");
         }
 
@@ -263,8 +269,75 @@ impl Database {
                     }
                 }
             } else {
-                info!("Migration v9 skipped: SQLite {} does not support DROP COLUMN", sqlite_ver);
+                info!(
+                    "Migration v9 skipped: SQLite {} does not support DROP COLUMN",
+                    sqlite_ver
+                );
             }
+        }
+
+        // Migration v10: normalize playlist positions and enforce the two
+        // uniqueness rules relied upon by transactional playlist operations.
+        if current_version < 10 {
+            conn.execute(
+                "DELETE FROM folders
+                 WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM folders GROUP BY path COLLATE NOCASE
+                 )",
+                [],
+            )?;
+
+            let mut playlist_stmt = conn.prepare("SELECT id FROM playlists")?;
+            let playlist_ids = playlist_stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>>>()?;
+            drop(playlist_stmt);
+            for playlist_id in playlist_ids {
+                let mut track_stmt = conn.prepare(
+                    "SELECT track_id FROM playlist_tracks
+                     WHERE playlist_id = ?1 ORDER BY position, rowid",
+                )?;
+                let track_ids = track_stmt
+                    .query_map(params![&playlist_id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>>>()?;
+                drop(track_stmt);
+                conn.execute(
+                    "UPDATE playlist_tracks SET position = -rowid WHERE playlist_id = ?1",
+                    params![&playlist_id],
+                )?;
+                for (position, track_id) in track_ids.iter().enumerate() {
+                    conn.execute(
+                        "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND track_id = ?3",
+                        params![position as i32, &playlist_id, track_id],
+                    )?;
+                }
+            }
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_path_unique
+                 ON folders(path COLLATE NOCASE)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlist_tracks_position_unique
+                 ON playlist_tracks(playlist_id, position)",
+                [],
+            )?;
+            info!("Migration v10 complete: playlist positions and folder paths constrained");
+        }
+
+        if current_version < 11 {
+            Self::migrate_add_column(
+                conn,
+                "track_album_art",
+                "cached_at",
+                "INTEGER NOT NULL DEFAULT 0",
+                11,
+            )?;
+            conn.execute(
+                "UPDATE track_album_art SET cached_at = ?1 WHERE cached_at = 0",
+                params![crate::time_utils::now_millis()],
+            )?;
+            info!("Migration v11 complete: album-art cache timestamps added");
         }
 
         // Update stored schema version
@@ -313,7 +386,10 @@ impl Database {
             ("idx_tracks_artist", "tracks(artist)"),
             ("idx_tracks_album", "tracks(album)"),
             ("idx_tracks_path", "tracks(path)"),
-            ("idx_tracks_title_artist_album", "tracks(title, artist, album)"),
+            (
+                "idx_tracks_title_artist_album",
+                "tracks(title, artist, album)",
+            ),
             ("idx_tracks_rating", "tracks(rating)"),
             ("idx_tracks_play_count", "tracks(play_count)"),
             ("idx_tracks_last_played", "tracks(last_played)"),
@@ -321,7 +397,10 @@ impl Database {
             ("idx_tracks_duration", "tracks(duration)"),
             ("idx_tracks_year", "tracks(year)"),
             ("idx_folders_path", "folders(path)"),
-            ("idx_playlist_tracks_playlist", "playlist_tracks(playlist_id)"),
+            (
+                "idx_playlist_tracks_playlist",
+                "playlist_tracks(playlist_id)",
+            ),
             ("idx_playlist_tracks_track", "playlist_tracks(track_id)"),
         ];
 

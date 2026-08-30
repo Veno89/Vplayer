@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { List, X, Trash2, Shuffle, PlayCircle, MoveUp, MoveDown, ListX, Search, Target } from 'lucide-react';
+import { List, X, Shuffle, MoveUp, MoveDown, ListX, Search } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { usePlayerContext } from '../context/PlayerProvider';
@@ -8,9 +8,10 @@ import type { Track } from '../types';
 export function QueueWindow() {
   const currentColors = useCurrentColors();
   const setCurrentTrack = useStore((state) => state.setCurrentTrack);
-  const { playbackTracks: tracks } = usePlayerContext();
+  const { library } = usePlayerContext();
+  const setActivePlaybackTracks = useStore((state) => state.setActivePlaybackTracks);
+  const setPlaying = useStore((state) => state.setPlaying);
   const queue = useStore((state) => state.queue);
-  const queueIndex = useStore((state) => state.queueIndex);
   const queueHistory = useStore((state) => state.queueHistory);
   const removeFromQueue = useStore((state) => state.removeFromQueue);
   const clearQueue = useStore((state) => state.clearQueue);
@@ -40,15 +41,18 @@ export function QueueWindow() {
   }, [queue, searchQuery]);
 
   // Calculate upcoming tracks (after current)
-  const upcomingCount = Math.max(0, queue.length - queueIndex - 1);
+  const upcomingCount = queue.length;
 
   const handleTrackClick = (index: number) => {
     const track = queue[index];
     if (track) {
       // Find track in main tracks list and play it
-      const trackIndex = tracks.findIndex((t: Track) => t.id === track.id);
+      const trackIndex = library.tracks.findIndex((t: Track) => t.id === track.id);
       if (trackIndex !== -1) {
+        setActivePlaybackTracks(library.tracks);
         setCurrentTrack(trackIndex);
+        setPlaying(true);
+        removeFromQueue(index);
       }
     }
   };
@@ -155,7 +159,7 @@ export function QueueWindow() {
       )}
 
       {/* Queue List */}
-      <div className="flex-1 overflow-y-auto space-y-1">
+      <div className="flex-1 overflow-y-auto space-y-1" role="listbox" aria-label="Playback queue">
         {queue.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
             <List className="w-12 h-12 text-slate-600 mb-3" />
@@ -174,16 +178,16 @@ export function QueueWindow() {
           </div>
         ) : (
           filteredQueue.map(({ track, originalIndex }) => {
-            const isCurrent = originalIndex === queueIndex;
             const isSelected = originalIndex === selectedIndex;
 
             return (
               <div
                 key={`${track.id}-${originalIndex}`}
+                role="option"
+                tabIndex={0}
+                aria-selected={isSelected}
                 className={`group flex items-center gap-3 p-2 rounded transition-all cursor-pointer ${
-                  isCurrent
-                    ? `bg-gradient-to-r ${currentColors.primary} text-white`
-                    : isSelected
+                  isSelected
                     ? 'bg-slate-700 text-white'
                     : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300'
                 }`}
@@ -192,14 +196,17 @@ export function QueueWindow() {
                   handleTrackClick(originalIndex);
                 }}
                 onMouseDown={e => e.stopPropagation()}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setSelectedIndex(originalIndex);
+                    handleTrackClick(originalIndex);
+                  }
+                }}
               >
                 {/* Track Number / Play Icon */}
                 <div className="flex-shrink-0 w-6 text-center">
-                  {isCurrent ? (
-                    <PlayCircle className="w-5 h-5 inline-block" />
-                  ) : (
-                    <span className="text-slate-500 text-sm">{originalIndex + 1}</span>
-                  )}
+                  <span className="text-slate-500 text-sm">{originalIndex + 1}</span>
                 </div>
 
                 {/* Track Info */}
@@ -213,7 +220,7 @@ export function QueueWindow() {
                 </div>
 
                 {/* Controls */}
-                <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <button
                     onClick={e => {
                       e.stopPropagation();
@@ -222,6 +229,7 @@ export function QueueWindow() {
                     disabled={originalIndex === 0}
                     className="p-1 hover:bg-slate-700 rounded disabled:opacity-30"
                     title="Move Up"
+                    aria-label={`Move ${track.title || track.name} up`}
                   >
                     <MoveUp className="w-3 h-3" />
                   </button>
@@ -233,6 +241,7 @@ export function QueueWindow() {
                     disabled={originalIndex === queue.length - 1}
                     className="p-1 hover:bg-slate-700 rounded disabled:opacity-30"
                     title="Move Down"
+                    aria-label={`Move ${track.title || track.name} down`}
                   >
                     <MoveDown className="w-3 h-3" />
                   </button>
@@ -243,6 +252,7 @@ export function QueueWindow() {
                     }}
                     className="p-1 hover:bg-red-500/20 text-red-400 rounded"
                     title="Remove from Queue"
+                    aria-label={`Remove ${track.title || track.name} from queue`}
                   >
                     <X className="w-3 h-3" />
                   </button>

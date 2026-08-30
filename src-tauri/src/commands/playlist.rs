@@ -1,8 +1,8 @@
 // Playlist commands
-use crate::AppState;
 use crate::error::{AppError, AppResult};
-use crate::scanner::{Scanner, Track};
 use crate::playlist_io::PlaylistIO;
+use crate::scanner::{Scanner, Track};
+use crate::AppState;
 use log::{info, warn};
 
 #[tauri::command]
@@ -32,7 +32,11 @@ pub fn delete_playlist(playlist_id: String, state: tauri::State<AppState>) -> Ap
 }
 
 #[tauri::command]
-pub fn rename_playlist(playlist_id: String, new_name: String, state: tauri::State<AppState>) -> AppResult<()> {
+pub fn rename_playlist(
+    playlist_id: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> AppResult<()> {
     let validated_name = crate::validation::validate_playlist_name(&new_name)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     state
@@ -42,7 +46,11 @@ pub fn rename_playlist(playlist_id: String, new_name: String, state: tauri::Stat
 }
 
 #[tauri::command]
-pub fn add_track_to_playlist(playlist_id: String, track_id: String, state: tauri::State<AppState>) -> AppResult<()> {
+pub fn add_track_to_playlist(
+    playlist_id: String,
+    track_id: String,
+    state: tauri::State<AppState>,
+) -> AppResult<()> {
     let position = state
         .db
         .get_playlist_track_count(&playlist_id)
@@ -55,22 +63,36 @@ pub fn add_track_to_playlist(playlist_id: String, track_id: String, state: tauri
 
 /// Batch add multiple tracks to a playlist in a single transaction
 #[tauri::command]
-pub fn add_tracks_to_playlist(playlist_id: String, track_ids: Vec<String>, state: tauri::State<AppState>) -> AppResult<usize> {
-    info!("Adding {} tracks to playlist {}", track_ids.len(), playlist_id);
+pub fn add_tracks_to_playlist(
+    playlist_id: String,
+    track_ids: Vec<String>,
+    state: tauri::State<AppState>,
+) -> AppResult<usize> {
+    info!(
+        "Adding {} tracks to playlist {}",
+        track_ids.len(),
+        playlist_id
+    );
     let starting_position = state
         .db
         .get_playlist_track_count(&playlist_id)
         .map_err(|e| AppError::Database(e.to_string()))?;
-    
-    let count = state.db.add_tracks_to_playlist_batch(&playlist_id, &track_ids, starting_position)
+
+    let count = state
+        .db
+        .add_tracks_to_playlist_batch(&playlist_id, &track_ids, starting_position)
         .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     info!("Successfully added {} tracks to playlist", count);
     Ok(count)
 }
 
 #[tauri::command]
-pub fn remove_track_from_playlist(playlist_id: String, track_id: String, state: tauri::State<AppState>) -> AppResult<()> {
+pub fn remove_track_from_playlist(
+    playlist_id: String,
+    track_id: String,
+    state: tauri::State<AppState>,
+) -> AppResult<()> {
     state
         .db
         .remove_track_from_playlist(&playlist_id, &track_id)
@@ -79,9 +101,9 @@ pub fn remove_track_from_playlist(playlist_id: String, track_id: String, state: 
 
 #[tauri::command]
 pub fn reorder_playlist_tracks(
-    playlist_id: String, 
-    track_positions: Vec<(String, i32)>, 
-    state: tauri::State<AppState>
+    playlist_id: String,
+    track_positions: Vec<(String, i32)>,
+    state: tauri::State<AppState>,
 ) -> AppResult<()> {
     state
         .db
@@ -103,7 +125,11 @@ pub fn get_playlist_tracks(
 }
 
 #[tauri::command]
-pub fn export_playlist(playlist_id: String, output_path: String, state: tauri::State<'_, AppState>) -> AppResult<()> {
+pub fn export_playlist(
+    playlist_id: String,
+    output_path: String,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<()> {
     use std::io::Write;
     info!("Exporting playlist {} to {}", playlist_id, output_path);
 
@@ -111,12 +137,36 @@ pub fn export_playlist(playlist_id: String, output_path: String, state: tauri::S
     crate::validation::validate_path(&output_path)
         .map_err(|e| AppError::Validation(format!("Invalid output path: {}", e)))?;
 
-    let file = std::fs::File::create(&output_path)
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to create playlist file: {}", e))))?;
+    let destination = std::path::Path::new(&output_path);
+    let parent = destination.parent().ok_or_else(|| {
+        AppError::Validation("Playlist destination must have a parent directory".to_string())
+    })?;
+    let temporary_path = parent.join(format!(
+        ".{}.{}.tmp",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("playlist"),
+        uuid::Uuid::new_v4()
+    ));
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary_path)
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to create playlist file: {}",
+                e
+            )))
+        })?;
     let mut writer = std::io::BufWriter::new(file);
 
-    writeln!(writer, "#EXTM3U")
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write playlist header: {}", e))))?;
+    writeln!(writer, "#EXTM3U").map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to write playlist header: {}",
+            e
+        )))
+    })?;
 
     // Fetch and write in pages of 1000 so a 10,000-track playlist does not
     // allocate all Track structs at once and does not hold the DB guard for
@@ -126,17 +176,27 @@ pub fn export_playlist(playlist_id: String, output_path: String, state: tauri::S
     let mut total_written = 0usize;
 
     loop {
-        let page = state.db.get_playlist_tracks_page(&playlist_id, Some(offset), Some(PAGE_SIZE))
+        let page = state
+            .db
+            .get_playlist_tracks_page(&playlist_id, Some(offset), Some(PAGE_SIZE))
             .map_err(|e| AppError::Database(format!("Failed to get playlist tracks: {}", e)))?;
 
         let is_last = page.len() < PAGE_SIZE;
 
         for track in &page {
             let title = track.title.as_ref().unwrap_or(&track.name);
-            writeln!(writer, "#EXTINF:-1,{}", title)
-                .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write track info: {}", e))))?;
-            writeln!(writer, "{}", track.path)
-                .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to write track path: {}", e))))?;
+            writeln!(writer, "#EXTINF:-1,{}", title).map_err(|e| {
+                AppError::Io(std::io::Error::other(format!(
+                    "Failed to write track info: {}",
+                    e
+                )))
+            })?;
+            writeln!(writer, "{}", track.path).map_err(|e| {
+                AppError::Io(std::io::Error::other(format!(
+                    "Failed to write track path: {}",
+                    e
+                )))
+            })?;
         }
 
         total_written += page.len();
@@ -147,35 +207,62 @@ pub fn export_playlist(playlist_id: String, output_path: String, state: tauri::S
         }
     }
 
-    writer.flush()
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to flush playlist file: {}", e))))?;
+    writer.flush().map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to flush playlist file: {}",
+            e
+        )))
+    })?;
+    writer.get_ref().sync_all().map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to sync playlist file: {}",
+            e
+        )))
+    })?;
+    drop(writer);
+
+    std::fs::rename(&temporary_path, destination).map_err(|e| {
+        let _ = std::fs::remove_file(&temporary_path);
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to atomically publish playlist (choose a new filename if it already exists): {}",
+            e
+        )))
+    })?;
 
     info!("Successfully exported {} tracks", total_written);
     Ok(())
 }
 
 #[tauri::command]
-pub fn import_playlist(playlist_name: String, input_path: String, state: tauri::State<'_, AppState>) -> AppResult<Vec<String>> {
-    info!("Importing playlist from {} as {}", input_path, playlist_name);
+pub fn import_playlist(
+    playlist_name: String,
+    input_path: String,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<String>> {
+    info!(
+        "Importing playlist from {} as {}",
+        input_path, playlist_name
+    );
 
     let validated_name = crate::validation::validate_playlist_name(&playlist_name)
         .map_err(|e| AppError::Validation(e.to_string()))?;
-    
+
     // Validate the source file path to prevent directory traversal.
     // validate_path checks existence and rejects ".." sequences.
     crate::validation::validate_path(&input_path)
         .map_err(|e| AppError::Validation(format!("Invalid input path: {}", e)))?;
-    
+
     // Import M3U file
-    let tracks = PlaylistIO::import_m3u(&input_path)
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to import playlist: {}", e))))?;
-    
-    // Create playlist in database
-    let playlist_id = state.db.create_playlist(&validated_name)
-        .map_err(|e| AppError::Database(format!("Failed to create playlist: {}", e)))?;
-    
+    let tracks = PlaylistIO::import_m3u(&input_path).map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to import playlist: {}",
+            e
+        )))
+    })?;
+
     let mut imported_track_ids = Vec::new();
-    
+    let mut new_tracks = Vec::new();
+
     // Add tracks to database and playlist
     for (_title, path) in tracks {
         // Check if track exists in library
@@ -185,32 +272,30 @@ pub fn import_playlist(playlist_name: String, input_path: String, state: tauri::
                 // Track not in library, scan it
                 match Scanner::extract_track_info(std::path::Path::new(&path)) {
                     Ok(track) => {
-                        state.db.add_track(&track)
-                            .map_err(|e| AppError::Database(format!("Failed to add track: {}", e)))?;
-                        track.id
-                    },
+                        let id = track.id.clone();
+                        new_tracks.push(track);
+                        id
+                    }
                     Err(e) => {
                         warn!("Failed to scan {}: {}", path, e);
                         continue;
                     }
                 }
-            },
+            }
             Err(e) => {
                 warn!("Database error for {}: {}", path, e);
                 continue;
             }
         };
-        
+
         imported_track_ids.push(track_id);
     }
-    
-    // Batch-insert all resolved tracks in a single transaction.
-    // This is atomic (all-or-nothing) and avoids N separate SQLite commits.
-    if !imported_track_ids.is_empty() {
-        state.db.add_tracks_to_playlist_batch(&playlist_id, &imported_track_ids, 0)
-            .map_err(|e| AppError::Database(format!("Failed to add tracks to playlist: {}", e)))?;
-    }
-    
+
+    state
+        .db
+        .import_playlist_atomic(&validated_name, &new_tracks, &imported_track_ids)
+        .map_err(|e| AppError::Database(format!("Failed to commit imported playlist: {}", e)))?;
+
     info!("Successfully imported {} tracks", imported_track_ids.len());
     Ok(imported_track_ids)
 }

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { X, Save, Disc, Mic, Music, Calendar } from 'lucide-react';
 import { TauriAPI } from '../services/TauriAPI';
 import type { TagUpdate } from '../services/TauriAPI';
 import { formatDuration } from '../utils/formatters';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 interface TrackInfoTrack {
     id: string;
@@ -25,6 +26,8 @@ interface TrackInfoDialogProps {
 }
 
 export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps) {
+    const id = useId();
+    const { dialogRef, onKeyDown } = useDialogFocus(Boolean(track), onClose);
     const [formData, setFormData] = useState({
         title: '',
         artist: '',
@@ -80,16 +83,22 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[10002] backdrop-blur-sm" onClick={onClose}>
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={`${id}-title`}
+                tabIndex={-1}
                 className="bg-slate-800 rounded-xl w-full max-w-lg shadow-2xl border border-slate-700 overflow-hidden flex flex-col max-h-[90vh]"
                 onClick={e => e.stopPropagation()}
+                onKeyDown={onKeyDown}
             >
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-                    <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                    <h2 id={`${id}-title`} className="text-xl font-semibold text-white flex items-center gap-2">
                         <Music className="w-5 h-5 text-cyan-400" />
                         Track Info & Editor
                     </h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+                    <button onClick={onClose} aria-label="Close track editor" className="text-slate-400 hover:text-white transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -97,7 +106,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                 {/* Content */}
                 <div className="p-6 overflow-y-auto custom-scrollbar">
                     {error && (
-                        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded text-red-200 text-sm">
+                        <div role="alert" className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded text-red-200 text-sm">
                             {error}
                         </div>
                     )}
@@ -105,8 +114,9 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                     <form id="tag-form" onSubmit={handleSubmit} className="space-y-4">
                         {/* Title */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Title</label>
+                            <label htmlFor={`${id}-track-title`} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Title</label>
                             <input
+                                id={`${id}-track-title`}
                                 type="text"
                                 value={formData.title}
                                 onChange={e => setFormData({ ...formData, title: e.target.value })}
@@ -118,10 +128,11 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                         {/* Artist & Album */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <label htmlFor={`${id}-artist`} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
                                     <Mic className="w-3 h-3" /> Artist
                                 </label>
                                 <input
+                                    id={`${id}-artist`}
                                     type="text"
                                     value={formData.artist}
                                     onChange={e => setFormData({ ...formData, artist: e.target.value })}
@@ -130,10 +141,11 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <label htmlFor={`${id}-album`} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
                                     <Disc className="w-3 h-3" /> Album
                                 </label>
                                 <input
+                                    id={`${id}-album`}
                                     type="text"
                                     value={formData.album}
                                     onChange={e => setFormData({ ...formData, album: e.target.value })}
@@ -146,8 +158,9 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                         {/* Genre & Year */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Genre</label>
+                                <label htmlFor={`${id}-genre`} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Genre</label>
                                 <input
+                                    id={`${id}-genre`}
                                     type="text"
                                     value={formData.genre}
                                     onChange={e => setFormData({ ...formData, genre: e.target.value })}
@@ -156,10 +169,11 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <label htmlFor={`${id}-year`} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
                                     <Calendar className="w-3 h-3" /> Year
                                 </label>
                                 <input
+                                    id={`${id}-year`}
                                     type="text"
                                     value={formData.year}
                                     onChange={e => setFormData({ ...formData, year: e.target.value })}

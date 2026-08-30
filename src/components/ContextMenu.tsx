@@ -105,19 +105,15 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   }, [x, y, items]);
 
   useEffect(() => {
-    // ... (existing handlers)
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusTimer = window.setTimeout(() => {
+      menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    }, 0);
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
     };
-    // ...
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
     // Block scroll on body while menu is open to prevent detaching
     // or we can attach listener to reposition? For now, close on scroll.
     const handleScroll = () => {
@@ -125,15 +121,38 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
     window.addEventListener('scroll', handleScroll, true);
 
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
       window.removeEventListener('scroll', handleScroll, true);
+      previouslyFocused?.focus();
     };
   }, [onClose]);
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const buttons = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [],
+    );
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || buttons.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex = currentIndex;
+    if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = buttons.length - 1;
+    else if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1 + buttons.length) % buttons.length;
+    else nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+    buttons[nextIndex]?.focus();
+  };
 
   return createPortal(
     <div
@@ -146,11 +165,14 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         overflowY: 'auto'
       }}
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={handleMenuKeyDown}
+      role="menu"
+      aria-label="Actions"
     >
       {items.map((item: MenuItem, index: number) => {
         // ... (existing items map)
         if (item.type === 'separator') {
-          return <div key={index} className="h-px bg-slate-700 my-2" />;
+          return <div key={index} role="separator" className="h-px bg-slate-700 my-2" />;
         }
 
         const Icon = item.icon;
@@ -163,6 +185,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               onClose();
             }}
             disabled={item.disabled}
+            role="menuitem"
             className={`
               w-full flex items-center gap-3 px-4 py-2 text-sm text-left
               transition-colors
@@ -246,7 +269,7 @@ export function getTrackContextMenuItems({
       label: 'Show in Folder',
       onClick: async () => {
         try {
-          await TauriAPI.showInFolder(track.path);
+          await TauriAPI.showInFolder(track.id, track.path);
         } catch (err) {
           console.error('Failed to show in folder:', err);
         }

@@ -8,7 +8,7 @@
  * - musicBrainzSlice: MusicBrainz integration and discography matching
  */
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 import type { AppStore } from './types';
 import {
   createPlayerSlice,
@@ -23,6 +23,66 @@ import {
 } from './slices';
 import { pruneExpiredDiscographyData } from './slices/musicBrainzSlice';
 
+export const STORE_RESET_PENDING_KEY = 'vplayer-reset-pending';
+
+try {
+  if (localStorage.getItem(STORE_RESET_PENDING_KEY) === '1') {
+    localStorage.removeItem('vplayer-storage');
+    localStorage.removeItem(STORE_RESET_PENDING_KEY);
+  }
+} catch { /* storage can be unavailable in hardened WebViews */ }
+
+let lastPersistedValue: string | null = null;
+const deduplicatingStorage: StateStorage = {
+  getItem(name) {
+    const value = localStorage.getItem(name);
+    lastPersistedValue = value;
+    return value;
+  },
+  setItem(name, value) {
+    if (localStorage.getItem(STORE_RESET_PENDING_KEY) === '1' || value === lastPersistedValue) {
+      return;
+    }
+    localStorage.setItem(name, value);
+    lastPersistedValue = value;
+  },
+  removeItem(name) {
+    localStorage.removeItem(name);
+    lastPersistedValue = null;
+  },
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function compatiblePersistedValue(value: unknown, fallback: unknown): boolean {
+  if (fallback === null) {
+    return value === null || typeof value === 'string' || isPlainObject(value);
+  }
+  if (Array.isArray(fallback)) return Array.isArray(value);
+  if (typeof fallback === 'number') return typeof value === 'number' && Number.isFinite(value);
+  if (typeof fallback === 'object') return isPlainObject(value);
+  return typeof value === typeof fallback;
+}
+
+function sanitizePersistedState(value: unknown, current: AppStore): Partial<AppStore> {
+  if (!isPlainObject(value)) return {};
+  const safe: Record<string, unknown> = {};
+  for (const [key, candidate] of Object.entries(value)) {
+    if (!(key in current)) continue;
+    const fallback = (current as unknown as Record<string, unknown>)[key];
+    if (typeof fallback === 'function' || !compatiblePersistedValue(candidate, fallback)) continue;
+    if (key === 'queue') {
+      safe[key] = (candidate as unknown[]).filter(item =>
+        isPlainObject(item) && typeof item.id === 'string' && typeof item.path === 'string'
+      ).slice(0, 5000);
+    } else {
+      safe[key] = candidate;
+    }
+  }
+  return safe as Partial<AppStore>;
+}
+
 export const useStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -34,6 +94,9 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: 'vplayer-storage',
+      version: 2,
+      storage: createJSONStorage(() => deduplicatingStorage),
+      migrate: (persistedState) => persistedState,
       partialize: (state) => {
         const persisted = {
           // Combine persisted state from all slices
@@ -52,7 +115,7 @@ export const useStore = create<AppStore>()(
       },
       // Merge persisted state with fresh defaults to add new windows
       merge: (persistedState, currentState) => {
-        const persisted = persistedState as Partial<AppStore>;
+        const persisted = sanitizePersistedState(persistedState, currentState);
         const merged = { ...currentState, ...persisted };
 
         // Shuffle order/history are session-only and should never survive restarts.
@@ -63,10 +126,15 @@ export const useStore = create<AppStore>()(
         // If rememberWindowPositions was disabled, discard persisted window positions
         if (persisted?.rememberWindowPositions === false) {
           merged.windows = getInitialWindows();
-        } else if (persisted?.windows) {
+        } else if (isPlainObject(persisted?.windows)) {
           // Ensure new windows from layouts are added to existing persisted windows
           const defaultWindows = getInitialWindows();
-          merged.windows = { ...defaultWindows, ...persisted.windows };
+          const safeWindows = Object.fromEntries(
+            Object.entries(persisted.windows).filter(([id, value]) =>
+              id in defaultWindows && isPlainObject(value)
+            ),
+          );
+          merged.windows = { ...defaultWindows, ...safeWindows };
         }
 
         // Prune expired discography cache entries on hydration

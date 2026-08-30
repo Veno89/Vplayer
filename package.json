@@ -1,15 +1,23 @@
 {
   "name": "vplayer",
-  "version": "0.9.43",
+  "version": "0.9.44",
   "description": "Fast, lightweight, and fully customizable music player for your desktop",
   "author": "Veno",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Veno89/Vplayer.git"
+  },
   "private": true,
   "scripts": {
     "dev": "vite",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "test": "vitest run",
+    "test": "vitest run --pool=threads --maxWorkers=1 --no-file-parallelism",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "check:versions": "node scripts/check-version.mjs",
+    "verify:frontend": "npm run typecheck && npm test && npm run build",
     "build": "vite build",
     "tauri:build": "tauri build",
     "preview": "vite preview"

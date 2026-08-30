@@ -1,20 +1,77 @@
-use rusqlite::{Connection, Result, params};
 use rusqlite::types::Value;
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 
 /// Allowed column names for smart playlist queries.
 /// This whitelist prevents SQL injection through the `field` parameter.
 const ALLOWED_FIELDS: &[&str] = &[
-    "title", "artist", "album", "genre", "year", "track_number", "disc_number",
-    "duration", "rating", "play_count", "last_played", "date_added", "name", "path",
-    "track_gain", "track_peak", "loudness", "file_modified",
+    "title",
+    "artist",
+    "album",
+    "genre",
+    "year",
+    "track_number",
+    "disc_number",
+    "duration",
+    "rating",
+    "play_count",
+    "last_played",
+    "date_added",
+    "name",
+    "path",
+    "track_gain",
+    "track_peak",
+    "loudness",
+    "file_modified",
 ];
 
 /// Allowed column names for ORDER BY clauses.
 const ALLOWED_SORT_FIELDS: &[&str] = &[
-    "title", "artist", "album", "genre", "year", "track_number", "disc_number",
-    "duration", "rating", "play_count", "last_played", "date_added", "name", "path",
+    "title",
+    "artist",
+    "album",
+    "genre",
+    "year",
+    "track_number",
+    "disc_number",
+    "duration",
+    "rating",
+    "play_count",
+    "last_played",
+    "date_added",
+    "name",
+    "path",
 ];
+
+const NUMERIC_FIELDS: &[&str] = &[
+    "year",
+    "track_number",
+    "disc_number",
+    "duration",
+    "rating",
+    "play_count",
+    "last_played",
+    "date_added",
+    "track_gain",
+    "track_peak",
+    "loudness",
+    "file_modified",
+];
+
+fn comparison_value(field: &str, value: &str) -> Result<Value> {
+    if NUMERIC_FIELDS.contains(&field) {
+        let number = value
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        if !number.is_finite() {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        Ok(Value::Real(number))
+    } else {
+        Ok(Value::Text(value.to_string()))
+    }
+}
 
 /// Validate that a field name is an allowed column. Returns an error if not.
 fn validate_field(field: &str) -> Result<()> {
@@ -42,8 +99,8 @@ fn validate_sort_field(field: &str) -> Result<()> {
 /// `starts_with`, `ends_with`) call this before building their pattern.
 fn escape_like(s: &str) -> String {
     s.replace('\\', "\\\\")
-     .replace('%', "\\%")
-     .replace('_', "\\_")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,9 +119,9 @@ pub struct SmartPlaylist {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rule {
-    pub field: String,      // "artist", "album", "genre", "rating", "play_count", "duration", etc.
-    pub operator: String,   // "equals", "contains", "greater_than", "less_than", "between", "in_last", etc.
-    pub value: String,      // The comparison value(s)
+    pub field: String, // "artist", "album", "genre", "rating", "play_count", "duration", etc.
+    pub operator: String, // "equals", "contains", "greater_than", "less_than", "between", "in_last", etc.
+    pub value: String,    // The comparison value(s)
 }
 
 impl SmartPlaylist {
@@ -73,17 +130,17 @@ impl SmartPlaylist {
     pub fn to_sql(&self) -> Result<(String, Vec<Value>)> {
         let mut conditions = Vec::new();
         let mut sql_params: Vec<Value> = Vec::new();
-        
+
         for rule in &self.rules {
             validate_field(&rule.field)?;
-            
+
             let condition = match rule.operator.as_str() {
                 "equals" => {
-                    sql_params.push(Value::Text(rule.value.clone()));
+                    sql_params.push(comparison_value(&rule.field, &rule.value)?);
                     format!("{} = ?", rule.field)
                 }
                 "not_equals" => {
-                    sql_params.push(Value::Text(rule.value.clone()));
+                    sql_params.push(comparison_value(&rule.field, &rule.value)?);
                     format!("{} != ?", rule.field)
                 }
                 "contains" => {
@@ -103,19 +160,19 @@ impl SmartPlaylist {
                     format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
                 }
                 "greater_than" => {
-                    sql_params.push(Value::Text(rule.value.clone()));
+                    sql_params.push(comparison_value(&rule.field, &rule.value)?);
                     format!("{} > ?", rule.field)
                 }
                 "less_than" => {
-                    sql_params.push(Value::Text(rule.value.clone()));
+                    sql_params.push(comparison_value(&rule.field, &rule.value)?);
                     format!("{} < ?", rule.field)
                 }
                 "greater_equal" => {
-                    sql_params.push(Value::Text(rule.value.clone()));
+                    sql_params.push(comparison_value(&rule.field, &rule.value)?);
                     format!("{} >= ?", rule.field)
                 }
                 "less_equal" => {
-                    sql_params.push(Value::Text(rule.value.clone()));
+                    sql_params.push(comparison_value(&rule.field, &rule.value)?);
                     format!("{} <= ?", rule.field)
                 }
                 "between" => {
@@ -126,40 +183,59 @@ impl SmartPlaylist {
                         // Both bounds must be non-empty and parseable as numbers.
                         // Silently using 0 for a malformed bound would produce wrong
                         // query results without any user-visible error.
-                        if low.is_empty() || high.is_empty()
+                        if low.is_empty()
+                            || high.is_empty()
                             || low.parse::<f64>().is_err()
                             || high.parse::<f64>().is_err()
                         {
                             return Err(rusqlite::Error::InvalidQuery);
                         }
-                        sql_params.push(Value::Text(low.to_string()));
-                        sql_params.push(Value::Text(high.to_string()));
+                        sql_params.push(comparison_value(&rule.field, low)?);
+                        sql_params.push(comparison_value(&rule.field, high)?);
                         format!("{} BETWEEN ? AND ?", rule.field)
                     } else {
                         return Err(rusqlite::Error::InvalidQuery);
                     }
                 }
                 "in_last" => {
+                    if !matches!(
+                        rule.field.as_str(),
+                        "last_played" | "date_added" | "file_modified"
+                    ) {
+                        return Err(rusqlite::Error::InvalidQuery);
+                    }
                     // Value should be in format "7:days" or "30:days" or "1:weeks"
                     let parts: Vec<&str> = rule.value.split(':').collect();
                     if parts.len() == 2 {
                         // Propagate parse error instead of silently using 0,
                         // which would match all tracks since the Unix epoch.
-                        let num: i64 = parts[0].parse()
+                        let num: i64 = parts[0]
+                            .parse()
                             .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                        if num <= 0 {
+                            return Err(rusqlite::Error::InvalidQuery);
+                        }
                         let unit = parts[1];
-                        let seconds = match unit {
-                            "minutes" => num * 60,
-                            "hours" => num * 60 * 60,
-                            "days" => num * 60 * 60 * 24,
-                            "weeks" => num * 60 * 60 * 24 * 7,
-                            "months" => num * 60 * 60 * 24 * 30,
-                            _ => num,
+                        let unit_seconds = match unit {
+                            "minutes" => 60,
+                            "hours" => 60 * 60,
+                            "days" => 60 * 60 * 24,
+                            "weeks" => 60 * 60 * 24 * 7,
+                            "months" => 60 * 60 * 24 * 30,
+                            _ => return Err(rusqlite::Error::InvalidQuery),
                         };
-                        let threshold = std::time::SystemTime::now()
+                        let seconds = num
+                            .checked_mul(unit_seconds)
+                            .ok_or(rusqlite::Error::InvalidQuery)?;
+                        let now_seconds = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
-                            .as_secs() as i64 - seconds;
+                            .as_secs() as i64;
+                        let threshold = if rule.field == "file_modified" {
+                            now_seconds.saturating_sub(seconds)
+                        } else {
+                            now_seconds.saturating_sub(seconds).saturating_mul(1000)
+                        };
                         sql_params.push(Value::Integer(threshold));
                         format!("{} > ?", rule.field)
                     } else {
@@ -170,28 +246,33 @@ impl SmartPlaylist {
                 "not_null" => format!("{} IS NOT NULL AND {} != ''", rule.field, rule.field),
                 _ => return Err(rusqlite::Error::InvalidQuery),
             };
-            conditions.push(condition);
+            conditions.push(format!("({condition})"));
         }
-        
+
         let join_operator = if self.match_all { " AND " } else { " OR " };
         let where_clause = if conditions.is_empty() {
             String::from("1=1")
         } else {
             conditions.join(join_operator)
         };
-        
-        let mut query = format!("SELECT {} FROM tracks WHERE {}", crate::scanner::TRACK_SELECT_COLUMNS, where_clause);
-        
+
+        let mut query = format!(
+            "SELECT {} FROM tracks WHERE {}",
+            crate::scanner::TRACK_SELECT_COLUMNS,
+            where_clause
+        );
+
         if let Some(sort_field) = &self.sort_by {
             validate_sort_field(sort_field)?;
             let direction = if self.sort_desc { "DESC" } else { "ASC" };
             query.push_str(&format!(" ORDER BY {} {}", sort_field, direction));
         }
-        
+
         if let Some(limit) = self.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
+            query.push_str(" LIMIT ?");
+            sql_params.push(Value::Integer(limit.clamp(1, 10_000) as i64));
         }
-        
+
         Ok((query, sql_params))
     }
 }
@@ -218,7 +299,7 @@ pub fn create_smart_playlist_table(conn: &Connection) -> Result<()> {
 pub fn save_smart_playlist(conn: &Connection, playlist: &SmartPlaylist) -> Result<()> {
     let rules_json = serde_json::to_string(&playlist.rules)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    
+
     conn.execute(
         "INSERT OR REPLACE INTO smart_playlists (id, name, description, rules, match_all, limit_count, sort_by, sort_desc, live_update, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -243,18 +324,14 @@ pub fn load_smart_playlist(conn: &Connection, id: &str) -> Result<SmartPlaylist>
         "SELECT id, name, description, rules, match_all, limit_count, sort_by, sort_desc, live_update, created_at
          FROM smart_playlists WHERE id = ?1"
     )?;
-    
+
     let playlist = stmt.query_row([id], |row| {
         let rules_json: String = row.get(3)?;
         let rules: Vec<Rule> = serde_json::from_str(&rules_json).map_err(|e| {
             log::warn!("Corrupted rules JSON in smart playlist '{}': {}", id, e);
-            rusqlite::Error::FromSqlConversionFailure(
-                3,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
         })?;
-        
+
         Ok(SmartPlaylist {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -268,7 +345,7 @@ pub fn load_smart_playlist(conn: &Connection, id: &str) -> Result<SmartPlaylist>
             created_at: row.get(9)?,
         })
     })?;
-    
+
     Ok(playlist)
 }
 
@@ -277,34 +354,39 @@ pub fn load_all_smart_playlists(conn: &Connection) -> Result<Vec<SmartPlaylist>>
         "SELECT id, name, description, rules, match_all, limit_count, sort_by, sort_desc, live_update, created_at
          FROM smart_playlists"
     )?;
-    
-    let playlists = stmt.query_map([], |row| {
-        let rules_json: String = row.get(3)?;
-        let playlist_id: String = row.get(0)?;
-        let rules: Vec<Rule> = serde_json::from_str(&rules_json).map_err(|e| {
-            log::warn!("Corrupted rules JSON in smart playlist '{}': {}", playlist_id, e);
-            rusqlite::Error::FromSqlConversionFailure(
-                3,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
-        })?;
-        
-        Ok(SmartPlaylist {
-            id: playlist_id,
-            name: row.get(1)?,
-            description: row.get(2)?,
-            rules,
-            match_all: row.get::<_, i32>(4)? != 0,
-            limit: row.get(5)?,
-            sort_by: row.get(6)?,
-            sort_desc: row.get::<_, i32>(7)? != 0,
-            live_update: row.get::<_, i32>(8)? != 0,
-            created_at: row.get(9)?,
-        })
-    })?
-    .collect::<Result<Vec<_>>>()?;
-    
+
+    let playlists = stmt
+        .query_map([], |row| {
+            let rules_json: String = row.get(3)?;
+            let playlist_id: String = row.get(0)?;
+            let rules: Vec<Rule> = serde_json::from_str(&rules_json).map_err(|e| {
+                log::warn!(
+                    "Corrupted rules JSON in smart playlist '{}': {}",
+                    playlist_id,
+                    e
+                );
+                rusqlite::Error::FromSqlConversionFailure(
+                    3,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+
+            Ok(SmartPlaylist {
+                id: playlist_id,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                rules,
+                match_all: row.get::<_, i32>(4)? != 0,
+                limit: row.get(5)?,
+                sort_by: row.get(6)?,
+                sort_desc: row.get::<_, i32>(7)? != 0,
+                live_update: row.get::<_, i32>(8)? != 0,
+                created_at: row.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(playlists)
 }
 
@@ -317,7 +399,7 @@ pub fn delete_smart_playlist(conn: &Connection, id: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::scanner::Track;
-    
+
     #[test]
     fn test_smart_playlist_sql_generation() {
         let playlist = SmartPlaylist {
@@ -343,29 +425,28 @@ mod tests {
             live_update: true,
             created_at: 0,
         };
-        
+
         let (sql, params) = playlist.to_sql().unwrap();
         assert!(sql.contains("genre = ?"));
         assert!(sql.contains("rating >= ?"));
         assert!(sql.contains("AND"));
         assert!(sql.contains("ORDER BY rating DESC"));
-        assert!(sql.contains("LIMIT 50"));
-        assert_eq!(params.len(), 2);
+        assert!(sql.contains("LIMIT ?"));
+        assert_eq!(params.len(), 3);
+        assert_eq!(params[2], Value::Integer(50));
     }
-    
+
     #[test]
     fn test_smart_playlist_rejects_invalid_field() {
         let playlist = SmartPlaylist {
             id: "test".to_string(),
             name: "Injection Attempt".to_string(),
             description: "".to_string(),
-            rules: vec![
-                Rule {
-                    field: "1; DROP TABLE tracks; --".to_string(),
-                    operator: "equals".to_string(),
-                    value: "anything".to_string(),
-                },
-            ],
+            rules: vec![Rule {
+                field: "1; DROP TABLE tracks; --".to_string(),
+                operator: "equals".to_string(),
+                value: "anything".to_string(),
+            }],
             match_all: true,
             limit: None,
             sort_by: None,
@@ -373,7 +454,7 @@ mod tests {
             live_update: true,
             created_at: 0,
         };
-        
+
         assert!(playlist.to_sql().is_err());
     }
 
@@ -497,9 +578,14 @@ mod tests {
         };
 
         let (sql, query_params) = playlist.to_sql().expect("to_sql failed");
-        let mut stmt = conn.prepare(&sql).expect("prepare smart-playlist query failed");
+        let mut stmt = conn
+            .prepare(&sql)
+            .expect("prepare smart-playlist query failed");
         let tracks = stmt
-            .query_map(rusqlite::params_from_iter(query_params.iter()), Track::from_row)
+            .query_map(
+                rusqlite::params_from_iter(query_params.iter()),
+                Track::from_row,
+            )
             .expect("execute smart-playlist query failed")
             .collect::<Result<Vec<_>>>()
             .expect("collect smart-playlist results failed");

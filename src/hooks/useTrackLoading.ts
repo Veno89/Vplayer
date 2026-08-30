@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
 import { TauriAPI } from '../services/TauriAPI';
 import { useReplayGain } from './useReplayGain';
-import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
 import { devCounters } from '../utils/devCounters';
 import { confirm as nativeConfirm } from '@tauri-apps/plugin-dialog';
@@ -101,7 +100,9 @@ export function useTrackLoading({
         //    audio-vs-UI mismatch when shuffle order diverges from preloaded content.
         let usedPreload = false;
         try {
-          const hasPreloaded = await TauriAPI.hasPreloaded();
+          // Native load_track now performs this match together with its
+          // latest-wins generation check; do not race it from the renderer.
+          const hasPreloaded = false;
           if (hasPreloaded) {
             const preloadedPath = await TauriAPI.getPreloadedPath();
             if (preloadedPath === track.path) {
@@ -134,7 +135,13 @@ export function useTrackLoading({
         // If the user skipped to another track while we were loading,
         // freshCurrentIndex will be different from our targetTrackIndex.
         // In that case, we MUST ABORT. "Latest wins" logic.
-        if (freshCurrentIndex !== targetTrackIndex) {
+        const freshTracks = freshState.activePlaybackTracks.length > 0
+          ? freshState.activePlaybackTracks
+          : tracks;
+        if (
+          freshCurrentIndex !== targetTrackIndex
+          || freshTracks[freshCurrentIndex ?? -1]?.id !== targetTrackId
+        ) {
           console.warn(`[useTrackLoading] Aborted load for "${track.name}" - user switched track to index ${freshCurrentIndex}`);
           devCounters.incAudio('stalePlaybackRequestsIgnored');
           return;
@@ -175,7 +182,14 @@ export function useTrackLoading({
       } catch (err: any) {
         // Even on error, we must check if we are still the relevant track before acting
         const freshState = useStore.getState();
-        if (freshState.currentTrack !== targetTrackIndex) {
+        const freshTracks = freshState.activePlaybackTracks.length > 0
+          ? freshState.activePlaybackTracks
+          : tracks;
+        if (
+          freshState.currentTrack !== targetTrackIndex
+          || freshTracks[freshState.currentTrack ?? -1]?.id !== targetTrackId
+          || String(err).includes('Stale load request')
+        ) {
           console.warn(`[useTrackLoading] Ignoring error for "${track.name}" - user switched track.`);
           return;
         }

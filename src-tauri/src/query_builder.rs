@@ -82,11 +82,6 @@ impl QueryBuilder {
     pub fn params(&self) -> &[Value] {
         &self.params
     }
-
-    /// Consume self and return owned params.
-    pub fn into_params(self) -> Vec<Value> {
-        self.params
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

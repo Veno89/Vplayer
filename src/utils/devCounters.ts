@@ -111,6 +111,6 @@ class DevCountersManager {
 export const devCounters = new DevCountersManager();
 
 // Expose globally for testing, but only in development mode
-if (typeof window !== 'undefined' && import.meta.env.DEV) {
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   (window as any).__DEV_COUNTERS__ = devCounters;
 }

@@ -3,14 +3,14 @@
 //! This module wraps audio sources with effects processing (EQ, etc.)
 //! and feeds samples to the visualizer buffer.
 
-use rodio::{Source};
-use rodio::source::SeekError;
-use rodio::cpal::FromSample;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
-use crate::effects::EffectsProcessor;
 use super::visualizer::VisualizerBuffer;
+use crate::effects::EffectsProcessor;
+use rodio::cpal::FromSample;
+use rodio::source::SeekError;
+use rodio::Source;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// EffectsSource wraps a Source and applies audio effects (EQ, etc.) to each sample
 ///
@@ -120,9 +120,17 @@ where
         let balanced = if channels >= 2 {
             let balance = f32::from_bits(self.balance.load(Ordering::Relaxed));
             let gain = if self.channel_index == 0 {
-                if balance > 0.0 { 1.0 - balance } else { 1.0 }
+                if balance > 0.0 {
+                    1.0 - balance
+                } else {
+                    1.0
+                }
             } else if self.channel_index == 1 {
-                if balance < 0.0 { 1.0 + balance } else { 1.0 }
+                if balance < 0.0 {
+                    1.0 + balance
+                } else {
+                    1.0
+                }
             } else {
                 1.0
             };
@@ -181,4 +189,3 @@ where
         log::info!("EffectsSource dropped - track finished or removed from sink");
     }
 }
-

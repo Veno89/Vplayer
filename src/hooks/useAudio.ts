@@ -16,16 +16,26 @@ const LONG_IDLE_THRESHOLD_SECONDS = 5 * 60; // 5 minutes
 
 // Timeout for backend operations to prevent UI freezing
 const BACKEND_TIMEOUT_MS = 5000;
+let lastLoadRequestId = 0;
 
 /** Wrap a promise with a timeout. */
 const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation timed out'): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => {
-        devCounters.incAudio('playbackTimeoutCount');
-        reject(new Error(errorMsg));
-    }, ms)),
-  ]);
+  new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      devCounters.incAudio('playbackTimeoutCount');
+      reject(new Error(errorMsg));
+    }, ms);
+    promise.then(
+      value => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 
 /** Playback-tick payload emitted by the Rust broadcast thread. */
 interface PlaybackTickPayload {
@@ -95,6 +105,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
 
   // ── Event listeners: playback-tick + track-ended + device-lost ────
   useEffect(() => {
+    let disposed = false;
     let unlistenTick: UnlistenFn | undefined;
     let unlistenEnded: UnlistenFn | undefined;
     let unlistenDeviceLost: UnlistenFn | undefined;
@@ -125,6 +136,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
           onTimeUpdateRef.current(clamped);
         }
       });
+      if (disposed) { unlistenTick(); unlistenTick = undefined; return; }
 
       unlistenEnded = await TauriAPI.onEvent<null>('track-ended', () => {
         const state = useStore.getState();
@@ -147,6 +159,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         state.setProgress(0);
         if (onEndedRef.current) onEndedRef.current();
       });
+      if (disposed) { unlistenEnded(); unlistenEnded = undefined; return; }
 
       // Device-lost: the Rust broadcast thread detected the audio device
       // disappeared while playing. Pause the UI and show a recoverable
@@ -158,6 +171,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         setAudioBackendError('Audio device disconnected. Waiting for reconnect...');
         toast.showWarning('Audio device disconnected');
       });
+      if (disposed) { unlistenDeviceLost(); unlistenDeviceLost = undefined; return; }
 
       // Device-recovered: the Rust broadcast thread detected the audio device
       // reappeared and successfully resumed playback. Sync the UI back.
@@ -167,11 +181,13 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         useStore.getState().setPlaying(true);
         toast.showSuccess('Audio device reconnected');
       });
+      if (disposed) { unlistenDeviceRecovered(); unlistenDeviceRecovered = undefined; }
     };
 
     setup();
 
     return () => {
+      disposed = true;
       unlistenTick?.();
       unlistenEnded?.();
       unlistenDeviceLost?.();
@@ -181,12 +197,14 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
 
   // ── loadTrack ─────────────────────────────────────────────────────
   const loadTrack = useCallback(async (track: Track) => {
+    const requestId = Math.max(lastLoadRequestId + 1, Date.now() * 1000);
+    lastLoadRequestId = requestId;
     // Self-healing: if we have a stale error from a previous device disconnect,
     // check if a device is available again before giving up.
     if (audioBackendError) {
       try {
-        const available = await TauriAPI.isAudioDeviceAvailable();
-        if (available) {
+        const health = await TauriAPI.getAudioHealth();
+        if (health.device_available) {
           log.info('[Audio] Device reappeared — clearing stale backend error');
           setAudioBackendError(null);
           // Fall through to normal load path
@@ -202,10 +220,16 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     let lastError: unknown = null;
 
     while (attempt <= AUDIO_RETRY_CONFIG.MAX_RETRIES) {
+      if (requestId !== lastLoadRequestId) {
+        throw new Error('Stale load request ignored');
+      }
       try {
         setIsLoading(true);
         // Timeout fix: prevent hanging forever
-        await withTimeout(TauriAPI.loadTrack(track.path), BACKEND_TIMEOUT_MS);
+        await withTimeout(
+          TauriAPI.loadTrack(track.id, track.path, requestId),
+          BACKEND_TIMEOUT_MS,
+        );
         currentTrackRef.current = track;
 
         // Get real duration from backend and write to store
@@ -219,6 +243,10 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         retryCountRef.current = 0;
         return;
       } catch (err) {
+        if (requestId !== lastLoadRequestId || String(err).includes('Stale load request')) {
+          setIsLoading(false);
+          throw new Error('Stale load request ignored');
+        }
         lastError = err;
         attempt++;
         if (attempt > AUDIO_RETRY_CONFIG.MAX_RETRIES) {

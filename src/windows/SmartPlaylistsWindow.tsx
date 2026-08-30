@@ -27,6 +27,8 @@ export function SmartPlaylistsWindow() {
   const tracks: Track[] = library.tracks;
   const currentColors = useCurrentColors();
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
+  const setActivePlaybackTracks = useStore(s => s.setActivePlaybackTracks);
+  const setPlaying = useStore(s => s.setPlaying);
   const [selectedPlaylist, setSelectedPlaylist] = useState<SmartPlaylist | null>(null);
 
   // Define smart playlist rules
@@ -121,7 +123,11 @@ export function SmartPlaylistsWindow() {
   };
 
   const handleTrackClick = (track: PlaylistTrackWithIndex) => {
-    setCurrentTrack(track.originalIndex);
+    const sourceTracks: Track[] = playlistTracks.map(({ originalIndex: _index, ...item }) => item);
+    const sourceIndex = playlistTracks.findIndex(item => item.id === track.id);
+    setActivePlaybackTracks(sourceTracks);
+    setCurrentTrack(sourceIndex);
+    setPlaying(true);
   };
 
   const formatTrackDuration = (seconds: number): string => {
@@ -218,11 +224,12 @@ export function SmartPlaylistsWindow() {
               : (playlist.sort ? Math.min(tracks.length, playlist.limit || tracks.length) : tracks.length);
 
             return (
-              <div
+              <button
+                type="button"
                 key={playlist.id}
                 onClick={() => handlePlaylistClick(playlist)}
                 onMouseDown={e => e.stopPropagation()}
-                className="group cursor-pointer p-4 rounded-lg bg-slate-800/30 border border-slate-700 hover:border-slate-600 hover:bg-slate-800/50 transition-all"
+                className="group cursor-pointer p-4 rounded-lg bg-slate-800/30 border border-slate-700 hover:border-slate-600 hover:bg-slate-800/50 transition-all text-left"
               >
                 <div className="flex items-start gap-4">
                   <div className={`w-16 h-16 rounded-lg ${currentColors.primary} bg-opacity-20 flex items-center justify-center flex-shrink-0 group-hover:bg-opacity-30 transition-all`}>
@@ -241,7 +248,7 @@ export function SmartPlaylistsWindow() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

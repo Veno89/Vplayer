@@ -67,7 +67,8 @@ fn smart_playlist_executes_against_initialized_database() {
     ];
 
     for track in &tracks {
-        db.add_track(track).expect("seed track insert should succeed");
+        db.add_track(track)
+            .expect("seed track insert should succeed");
     }
 
     // `add_track` preserves existing ratings and defaults new rows to 0,

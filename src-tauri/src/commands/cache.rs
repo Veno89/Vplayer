@@ -1,31 +1,62 @@
 // Cache and system commands
-use crate::AppState;
 use crate::error::{AppError, AppResult};
-use tauri::{AppHandle, Manager};
+use crate::AppState;
 use log::info;
+use tauri::{AppHandle, Manager};
 
 /// Clear album art cache
 #[tauri::command]
-pub fn clear_album_art_cache(app: AppHandle) -> AppResult<()> {
-    let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get cache dir: {}", e))))?
+pub fn clear_album_art_cache(app: AppHandle, state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to get cache dir: {}",
+                e
+            )))
+        })?
         .join("album_art");
-    
+
     if cache_dir.exists() {
-        std::fs::remove_dir_all(&cache_dir)
-            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to clear cache: {}", e))))?;
-        std::fs::create_dir_all(&cache_dir)
-            .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to recreate cache dir: {}", e))))?;
+        std::fs::remove_dir_all(&cache_dir).map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to clear cache: {}",
+                e
+            )))
+        })?;
+        std::fs::create_dir_all(&cache_dir).map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to recreate cache dir: {}",
+                e
+            )))
+        })?;
     }
+    let waveform_dir = std::env::temp_dir().join("vplayer_waveform_cache");
+    if waveform_dir.exists() {
+        std::fs::remove_dir_all(&waveform_dir).map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to clear waveform cache: {e}"
+            )))
+        })?;
+    }
+    state
+        .db
+        .clear_album_art_blobs()
+        .map_err(|e| AppError::Database(format!("Failed to clear database album art: {e}")))?;
     Ok(())
 }
 
 /// Get cache size in bytes
 #[tauri::command]
-pub fn get_cache_size(app: AppHandle) -> AppResult<u64> {
-    let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get cache dir: {}", e))))?;
-    
+pub fn get_cache_size(app: AppHandle, state: tauri::State<'_, AppState>) -> AppResult<u64> {
+    let cache_dir = app.path().app_cache_dir().map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to get cache dir: {}",
+            e
+        )))
+    })?;
+
     fn dir_size(path: &std::path::Path) -> std::io::Result<u64> {
         let mut size = 0;
         if path.is_dir() {
@@ -41,20 +72,44 @@ pub fn get_cache_size(app: AppHandle) -> AppResult<u64> {
         }
         Ok(size)
     }
-    
-    dir_size(&cache_dir).map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to calculate size: {}", e))))
+
+    let disk_size = dir_size(&cache_dir)
+        .and_then(|size| {
+            dir_size(&std::env::temp_dir().join("vplayer_waveform_cache"))
+                .map(|waveforms| size + waveforms)
+        })
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to calculate size: {}",
+                e
+            )))
+        })?;
+    let database_size = state.db.album_art_cache_size().map_err(|e| {
+        AppError::Database(format!("Failed to calculate album-art cache size: {e}"))
+    })?;
+    Ok(disk_size.saturating_add(database_size))
 }
 
 /// Get database size in bytes
 #[tauri::command]
 pub fn get_database_size(app: AppHandle) -> AppResult<u64> {
-    let db_path = app.path().app_data_dir()
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get app data dir: {}", e))))?
+    let db_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to get app data dir: {}",
+                e
+            )))
+        })?
         .join("vplayer.db");
-    
-    std::fs::metadata(db_path)
-        .map(|m| m.len())
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get database size: {}", e))))
+
+    std::fs::metadata(db_path).map(|m| m.len()).map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "Failed to get database size: {}",
+            e
+        )))
+    })
 }
 
 /// Get performance statistics
@@ -62,47 +117,62 @@ pub fn get_database_size(app: AppHandle) -> AppResult<u64> {
 pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<serde_json::Value> {
     use log::warn;
     let conn = state.db.conn();
-    
+
     // Get database stats — log any errors before defaulting so diagnostic runs
     // don't silently present zeros for a locked or corrupt database.
-    let track_count: i32 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+    let track_count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
         .inspect_err(|e| warn!("get_performance_stats: track count failed: {}", e))
         .unwrap_or(0);
-    let playlist_count: i32 = conn.query_row("SELECT COUNT(*) FROM playlists", [], |row| row.get(0))
+    let playlist_count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM playlists", [], |row| row.get(0))
         .inspect_err(|e| warn!("get_performance_stats: playlist count failed: {}", e))
         .unwrap_or(0);
-    let smart_playlist_count: i32 = conn.query_row("SELECT COUNT(*) FROM smart_playlists", [], |row| row.get(0))
+    let smart_playlist_count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM smart_playlists", [], |row| row.get(0))
         .inspect_err(|e| warn!("get_performance_stats: smart_playlist count failed: {}", e))
         .unwrap_or(0);
-    
+
     // Get database file size
-    let db_size: i64 = conn.query_row("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()", [], |row| row.get(0))
+    let db_size: i64 = conn
+        .query_row(
+            "SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()",
+            [],
+            |row| row.get(0),
+        )
         .inspect_err(|e| warn!("get_performance_stats: db_size failed: {}", e))
         .unwrap_or(0);
-    
+
     // Get index usage stats
-    let index_count: i32 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'", [], |row| row.get(0))
+    let index_count: i32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )
         .inspect_err(|e| warn!("get_performance_stats: index_count failed: {}", e))
         .unwrap_or(0);
 
     // Release the DB guard before the benchmark query so that playback-related
     // writes (play_count, position) are not blocked for the duration of the scan.
     drop(conn);
-    
+
     // Calculate average query times (simplified - just track count queries)
     let query_time_ms = {
         let conn = state.db.conn();
         let start = std::time::Instant::now();
-        let mut stmt = conn.prepare("SELECT id FROM tracks LIMIT 1000")
+        let mut stmt = conn
+            .prepare("SELECT id FROM tracks LIMIT 1000")
             .map_err(|e| AppError::Database(format!("Query error: {}", e)))?;
-        let _track_ids: Vec<String> = stmt.query_map([], |row| row.get(0))
+        let _track_ids: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
             .map_err(|e| AppError::Database(format!("Query error: {}", e)))?
             .filter_map(Result::ok)
             .collect();
         start.elapsed().as_millis()
         // conn guard released here
     };
-    
+
     Ok(serde_json::json!({
         "database": {
             "tracks": track_count,
@@ -128,10 +198,22 @@ pub fn get_runtime_diagnostics(state: tauri::State<'_, AppState>) -> AppResult<s
     let audio_healthy = state.player.is_device_available();
     let is_playing = state.player.is_playing();
     let pid = std::process::id();
-    let scan_cancel_flag = state.scan_cancel_flag.load(std::sync::atomic::Ordering::SeqCst);
+    let (active_scan_count, cancelling_scan_count) = state
+        .scan_operations
+        .lock()
+        .map(|operations| {
+            (
+                operations.len(),
+                operations
+                    .values()
+                    .filter(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+                    .count(),
+            )
+        })
+        .unwrap_or_default();
     let uptime_ms = crate::time_utils::now_millis() - state.app_start_time;
     let inactive_duration_sec = state.player.get_inactive_duration();
-    
+
     Ok(serde_json::json!({
         "pid": pid,
         "uptime_ms": uptime_ms,
@@ -143,7 +225,8 @@ pub fn get_runtime_diagnostics(state: tauri::State<'_, AppState>) -> AppResult<s
             "is_reinitializing": state.player.is_reinitializing(),
         },
         "scanning": {
-            "cancel_flag_set": scan_cancel_flag
+            "active_count": active_scan_count,
+            "cancelling_count": cancelling_scan_count
         },
         "timestamp_ms": crate::time_utils::now_millis(),
     }))
@@ -157,7 +240,8 @@ pub fn vacuum_database(state: tauri::State<'_, AppState>) -> AppResult<()> {
     // for several seconds on large libraries. Require the player to be idle.
     if state.player.is_playing() {
         return Err(AppError::Validation(
-            "Cannot vacuum the database while a track is playing. Pause playback first.".to_string()
+            "Cannot vacuum the database while a track is playing. Pause playback first."
+                .to_string(),
         ));
     }
     info!("Running database vacuum to reclaim space and optimize");
@@ -170,19 +254,26 @@ pub fn vacuum_database(state: tauri::State<'_, AppState>) -> AppResult<()> {
 
 /// Evict oldest album-art cache files until total size is ≤ `limit_mb` MB.
 #[tauri::command]
-pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> AppResult<u64> {
+pub fn enforce_cache_limit(
+    app: tauri::AppHandle,
+    limit_mb: u64,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<u64> {
     if limit_mb == 0 {
-        return Err(AppError::Validation("Cache limit must be greater than 0 MB".to_string()));
+        return Err(AppError::Validation(
+            "Cache limit must be greater than 0 MB".to_string(),
+        ));
     }
     let cache_dir = app
         .path()
         .app_cache_dir()
-        .map_err(|e| AppError::Io(std::io::Error::other(format!("Failed to get cache dir: {}", e))))?
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to get cache dir: {}",
+                e
+            )))
+        })?
         .join("album_art");
-
-    if !cache_dir.exists() {
-        return Ok(0);
-    }
 
     let limit_bytes = limit_mb * 1024 * 1024;
 
@@ -190,17 +281,34 @@ pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> AppResult<u6
     let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = Vec::new();
     let mut total_size: u64 = 0;
 
-    for entry in std::fs::read_dir(&cache_dir)
-        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
-    {
-        let entry = entry.map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
-        let meta = entry.metadata().map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
-        if meta.is_file() {
-            let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-            total_size += meta.len();
-            files.push((entry.path(), meta.len(), modified));
+    for directory in [
+        cache_dir,
+        std::env::temp_dir().join("vplayer_waveform_cache"),
+    ] {
+        if !directory.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(&directory)
+            .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
+        {
+            let entry = entry.map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+            let meta = entry
+                .metadata()
+                .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?;
+            if meta.is_file() {
+                let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+                total_size += meta.len();
+                files.push((entry.path(), meta.len(), modified));
+            }
         }
     }
+
+    total_size = total_size.saturating_add(
+        state
+            .db
+            .album_art_cache_size()
+            .map_err(|e| AppError::Database(e.to_string()))?,
+    );
 
     if total_size <= limit_bytes {
         return Ok(0);
@@ -220,6 +328,17 @@ pub fn enforce_cache_limit(app: tauri::AppHandle, limit_mb: u64) -> AppResult<u6
         }
     }
 
-    info!("Cache limit enforced: removed {} files, new size ~{} bytes", removed, total_size);
+    if total_size > limit_bytes {
+        let freed = state
+            .db
+            .evict_album_art_bytes(total_size - limit_bytes)
+            .map_err(|e| AppError::Database(format!("Failed to evict database album art: {e}")))?;
+        total_size = total_size.saturating_sub(freed);
+    }
+
+    info!(
+        "Cache limit enforced: removed {} files, new size ~{} bytes",
+        removed, total_size
+    );
     Ok(removed)
 }

@@ -40,16 +40,35 @@ export interface PerformanceStats {
     database: {
         tracks: number;
         playlists: number;
-        smartPlaylists: number;
-        sizeBytes: number;
+        smart_playlists: number;
+        size_bytes: number;
+        size_mb: number;
         indexes: number;
     };
-    query: {
-        sampleTimeMs: number;
+    performance: {
+        query_time_ms: number;
     };
-    memory: {
-        estimatedUsage: number;
+    recommendations: {
+        vacuum_recommended: boolean;
+        optimize_queries: boolean;
     };
+}
+
+export interface RuntimeDiagnostics {
+    pid: number;
+    uptime_ms: number;
+    audio: {
+        device_available: boolean;
+        playing: boolean;
+        inactive_duration_sec: number;
+        needs_reinit: boolean;
+        is_reinitializing: boolean;
+    };
+    scanning: {
+        active_count: number;
+        cancelling_count: number;
+    };
+    timestamp_ms: number;
 }
 
 /** Returned by check_missing_files — (trackId, path) tuples */
@@ -68,6 +87,18 @@ export interface TracksPageResponse {
     offset: number;
     limit: number;
     hasMore: boolean;
+}
+
+/** Matches the parsed Rust Lrc response. */
+export interface LyricsData {
+    metadata: {
+        title?: string;
+        artist?: string;
+        album?: string;
+        by?: string;
+        offset: number;
+    };
+    lines: Array<{ timestamp: number; text: string }>;
 }
 
 /**
@@ -100,10 +131,22 @@ class TauriAPIService {
      * Helper to wrap a promise with a timeout
      */
     private _withTimeout<T>(promise: Promise<T>, ms: number, command: string): Promise<T> {
-        return Promise.race([
-            promise,
-            new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Command '${command}' timed out after ${ms}ms`)), ms))
-        ]);
+        return new Promise<T>((resolve, reject) => {
+            const timer = window.setTimeout(
+                () => reject(new Error(`Command '${command}' timed out after ${ms}ms`)),
+                ms,
+            );
+            promise.then(
+                value => {
+                    window.clearTimeout(timer);
+                    resolve(value);
+                },
+                error => {
+                    window.clearTimeout(timer);
+                    reject(error);
+                },
+            );
+        });
     }
 
     /**
@@ -153,7 +196,9 @@ class TauriAPIService {
         const errorStr = String(error);
 
         if (errorStr.includes('timed out')) {
-            return new Error(`Operation timed out. The background task took too long and has been aborted.`);
+            return new Error(command.includes('scan')
+                ? 'Operation timed out. Backend cancellation was requested.'
+                : 'Operation timed out. The backend may still be finishing the request.');
         }
 
         // Map common errors to user-friendly messages
@@ -172,8 +217,8 @@ class TauriAPIService {
 
     // ========== Audio Player Commands ==========
 
-    async loadTrack(path: string): Promise<void> {
-        return this._invoke('load_track', { path });
+    async loadTrack(trackId: string, path: string, requestId: number): Promise<void> {
+        return this._invoke('load_track', { trackId, path, requestId });
     }
 
     async play(): Promise<void> {
@@ -238,16 +283,16 @@ class TauriAPIService {
      * Analyze a track for ReplayGain data (LUFS loudness measurement)
      * @param {string} trackPath - Path to the audio file
      */
-    async analyzeReplayGain(trackPath: string): Promise<{ track_gain: number, track_peak: number, loudness: number }> {
-        return this._invoke('analyze_replaygain', { trackPath });
+    async analyzeReplayGain(trackId: string, trackPath: string): Promise<{ track_gain: number, track_peak: number, loudness: number }> {
+        return this._invoke('analyze_replaygain', { trackId, trackPath });
     }
 
     /**
      * Get stored ReplayGain data for a track
      * @param {string} trackPath - Path to the audio file
      */
-    async getTrackReplayGain(trackPath: string): Promise<{ track_gain: number, track_peak: number, loudness: number } | null> {
-        return this._invoke('get_track_replaygain', { trackPath });
+    async getTrackReplayGain(trackId: string, trackPath: string): Promise<{ track_gain: number, track_peak: number, loudness: number } | null> {
+        return this._invoke('get_track_replaygain', { trackId, trackPath });
     }
 
     async getAlbumReplayGain(artist: string, album: string): Promise<{
@@ -347,8 +392,8 @@ class TauriAPIService {
      * Show a file in the system file explorer
      * @param {string} path - Full path to the file
      */
-    async showInFolder(path: string): Promise<void> {
-        return this._invoke('show_in_folder', { path });
+    async showInFolder(trackId: string, path: string): Promise<void> {
+        return this._invoke('show_in_folder', { trackId, path });
     }
 
     /**
@@ -380,8 +425,8 @@ class TauriAPIService {
 
     // ========== Gapless Playback Commands ==========
 
-    async preloadTrack(path: string): Promise<void> {
-        return this._invoke('preload_track', { path });
+    async preloadTrack(trackId: string, path: string): Promise<void> {
+        return this._invoke('preload_track', { trackId, path });
     }
 
     async swapToPreloaded(): Promise<void> {
@@ -432,8 +477,8 @@ class TauriAPIService {
         return this._invoke('set_beat_sensitivity', { sensitivity });
     }
 
-    async getTrackWaveform(path: string, numBars?: number): Promise<number[]> {
-        return this._invoke('get_track_waveform', { path, numBars: numBars ?? 200 });
+    async getTrackWaveform(trackId: string, path: string, numBars?: number): Promise<number[]> {
+        return this._invoke('get_track_waveform', { trackId, path, numBars: numBars ?? 200 });
     }
 
     // ========== Tag Editor Commands ==========
@@ -531,18 +576,6 @@ class TauriAPIService {
         return this._invoke('recover_audio');
     }
 
-    async isAudioDeviceAvailable(): Promise<boolean> {
-        return this._invoke('is_audio_device_available');
-    }
-
-    async hasAudioDeviceChanged(): Promise<boolean> {
-        return this._invoke('has_audio_device_changed');
-    }
-
-    async getInactiveDuration(): Promise<number> {
-        return this._invoke('get_inactive_duration');
-    }
-
     /** Fetch all audio health info in a single IPC round-trip. */
     async getAudioHealth(): Promise<{
         healthy: boolean;
@@ -595,8 +628,8 @@ class TauriAPIService {
 
     // ========== Lyrics Commands ==========
 
-    async loadLyrics(trackPath: string): Promise<string | null> {
-        return this._invoke('load_lyrics', { trackPath });
+    async loadLyrics(trackId: string, trackPath: string): Promise<LyricsData> {
+        return this._invoke('load_lyrics', { trackId, trackPath });
     }
 
     // ========== File System Commands ==========
@@ -615,7 +648,7 @@ class TauriAPIService {
         return this._invoke('get_performance_stats');
     }
 
-    async getRuntimeDiagnostics(): Promise<any> {
+    async getRuntimeDiagnostics(): Promise<RuntimeDiagnostics> {
         return this._invoke('get_runtime_diagnostics');
     }
 

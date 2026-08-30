@@ -7,25 +7,25 @@
 //! - device: Device detection, DeviceState, SendOutputStream
 //! - effects: EQ and effects processing
 //! - visualizer: Audio visualization buffer
-//! 
+//!
 //! # Thread Safety
 //! All public methods are thread-safe (Send + Sync).
 //! AudioPlayer is designed to be held in an Arc<AudioPlayer> or Tauri state.
 
-pub mod visualizer;
-pub mod effects;
 pub mod device;
+pub mod effects;
 pub mod playback_state;
 pub mod preload;
+pub mod visualizer;
 pub mod volume_manager;
 
+use crate::context_log::LogContext;
+use log::{error, info, warn};
 use rodio::{Decoder, Sink, Source};
 use std::fs::File;
 use std::io::BufReader;
-use log::{info, error, warn};
-use crate::context_log::LogContext;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Condvar};
-use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
@@ -41,14 +41,14 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 use crate::effects::{EffectsConfig, EffectsProcessor};
-use visualizer::VisualizerBuffer;
 use effects::EffectsSource;
+use visualizer::VisualizerBuffer;
 
+pub use device::AudioDevice;
+use device::DeviceState;
 use playback_state::PlaybackState;
 use preload::PreloadManager;
 use volume_manager::VolumeManager;
-use device::DeviceState;
-pub use device::AudioDevice;
 
 /// Threshold for considering a pause "long" — after this duration, we proactively
 /// reinitialize the audio stream to prevent stale device issues.
@@ -69,7 +69,10 @@ pub struct BroadcastWake {
 
 impl BroadcastWake {
     pub fn new() -> Self {
-        Self { flag: Mutex::new(false), condvar: Condvar::new() }
+        Self {
+            flag: Mutex::new(false),
+            condvar: Condvar::new(),
+        }
     }
 
     /// Wake the broadcast thread (called from play/load).
@@ -81,12 +84,21 @@ impl BroadcastWake {
     /// Block until signaled or the timeout elapses. Consumes the flag.
     pub fn wait_idle(&self, timeout: Duration) {
         let mut flag = lock_or_recover(&self.flag);
-        if *flag { *flag = false; return; }
+        if *flag {
+            *flag = false;
+            return;
+        }
         let (mut flag, _) = self
             .condvar
             .wait_timeout(flag, timeout)
             .unwrap_or_else(PoisonError::into_inner);
         *flag = false;
+    }
+}
+
+impl Default for BroadcastWake {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -107,12 +119,8 @@ pub struct BroadcastSnapshot {
 /// Each sub-struct groups related state behind a single Mutex, reducing the
 /// number of lock acquisitions per operation and clarifying ownership.
 ///
-/// # Send / Sync
-///
-/// All fields are either `Mutex<T>` or `Arc<Mutex<T>>` for Send + Sync types.
-/// The only originally-!Send type (`OutputStream`) is wrapped in
-/// `SendOutputStream` (see `device.rs`) with a targeted, documented unsafe impl.
-/// The blanket `unsafe impl Send/Sync for AudioPlayer` is no longer needed.
+/// The non-Send CPAL output stream remains on a dedicated owner thread; this
+/// coordinator stores only Send-safe control and mixer handles.
 pub struct AudioPlayer {
     sink: Mutex<Sink>,
     playback: Mutex<PlaybackState>,
@@ -131,34 +139,52 @@ pub struct AudioPlayer {
     broadcast_wake: Arc<BroadcastWake>,
     /// Prevents multiple threads from blocking on CPAL initialization concurrently.
     is_reinitializing: AtomicBool,
+    /// Latest-wins generation for asynchronous renderer load requests.
+    latest_load_request: AtomicU64,
 }
 
 impl AudioPlayer {
     pub fn new() -> AppResult<Self> {
         info!("Initializing audio player with high-quality settings");
 
-        let (stream, mixer, device_name) = device::create_high_quality_output_with_device_name()?;
-        
-        // Use Sink::connect_new to attach to our manual mixer
-        let sink = Sink::connect_new(&mixer);
-        
+        let (sink, device_state) = match device::create_high_quality_output_with_device_name() {
+            Ok((stream, mixer, device_name)) => {
+                info!(
+                    "Audio player initialized successfully on device: {:?}",
+                    device_name
+                );
+                let sink = Sink::connect_new(&mixer);
+                (sink, DeviceState::new(stream, mixer, device_name))
+            }
+            Err(error) => {
+                // The library and settings UI remain usable when Windows has no
+                // output endpoint. Playback will attach to a real stream during
+                // recovery as soon as a device appears.
+                warn!("Starting audio player in device-less mode: {error}");
+                let (mixer, source) = rodio::mixer::mixer(2, 44_100);
+                let sink = Sink::connect_new(&mixer);
+                (sink, DeviceState::dormant(mixer, source))
+            }
+        };
+
         let visualizer_buffer = Arc::new(VisualizerBuffer::new(4096));
 
-        info!("Audio player initialized successfully on device: {:?}", device_name);
         Ok(Self {
             sink: Mutex::new(sink),
             playback: Mutex::new(PlaybackState::new()),
             preload: Mutex::new(PreloadManager::new()),
             volume_mgr: Mutex::new(VolumeManager::new()),
-            device: Mutex::new(DeviceState::new(stream, mixer, device_name)),
-            effects_processor: Arc::new(Mutex::new(
-                EffectsProcessor::new(44100, EffectsConfig::default()),
-            )),
+            device: Mutex::new(device_state),
+            effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(
+                44100,
+                EffectsConfig::default(),
+            ))),
             effects_enabled: Mutex::new(true),
             visualizer_buffer,
             balance: Arc::new(AtomicU32::new(0.0_f32.to_bits())),
             broadcast_wake: Arc::new(BroadcastWake::new()),
             is_reinitializing: AtomicBool::new(false),
+            latest_load_request: AtomicU64::new(0),
         })
     }
 
@@ -184,10 +210,32 @@ impl AudioPlayer {
     // ── Track loading ───────────────────────────────────────────────
 
     pub fn load(&self, path: String) -> AppResult<()> {
-        if self.is_reinitializing.load(Ordering::SeqCst) {
-            return Err(AppError::Audio("Audio system is busy recovering. Please try again in a moment.".into()));
+        let request_id = self.latest_load_request.fetch_add(1, Ordering::SeqCst) + 1;
+        self.load_with_generation(path, request_id)
+    }
+
+    pub fn load_request(&self, path: String, request_id: u64) -> AppResult<()> {
+        let previous = self
+            .latest_load_request
+            .fetch_max(request_id, Ordering::SeqCst);
+        if request_id < previous {
+            return Err(AppError::Audio("Stale load request ignored".to_string()));
         }
-        
+
+        if self.get_preloaded_path().as_deref() == Some(path.as_str()) {
+            return self.swap_to_preloaded_generation(request_id, Some(path.as_str()));
+        }
+
+        self.load_with_generation(path, request_id)
+    }
+
+    fn load_with_generation(&self, path: String, request_id: u64) -> AppResult<()> {
+        if self.is_reinitializing.load(Ordering::SeqCst) {
+            return Err(AppError::Audio(
+                "Audio system is busy recovering. Please try again in a moment.".into(),
+            ));
+        }
+
         let ctx = LogContext::new("audio_load").with("path", &path);
         ctx.info("Loading audio file");
         let file = File::open(&path).map_err(|e| {
@@ -214,7 +262,14 @@ impl AudioPlayer {
             self.balance.clone(),
         );
 
+        if self.latest_load_request.load(Ordering::SeqCst) != request_id {
+            return Err(AppError::Audio("Stale load request ignored".to_string()));
+        }
+
         let sink = lock_or_recover(&self.sink);
+        if self.latest_load_request.load(Ordering::SeqCst) != request_id {
+            return Err(AppError::Audio("Stale load request ignored".to_string()));
+        }
         sink.clear();
         sink.append(effects_source);
         sink.pause();
@@ -235,17 +290,24 @@ impl AudioPlayer {
     /// This is the single source of truth for device reinit. After this call
     /// the sink is empty (no source appended) — callers must reload/seek as
     /// needed for their specific use-case.
-    fn reinit_device(&self) -> AppResult<()> {
+    fn reinit_device(&self, preferred_device_name: Option<String>) -> AppResult<()> {
         let (new_stream, new_mixer, new_device_name) =
-            device::create_high_quality_output_with_device_name()?;
+            device::create_high_quality_output(preferred_device_name.as_deref())?;
 
-        info!("Audio output reinitialized on device: {:?}", new_device_name);
+        info!(
+            "Audio output reinitialized on device: {:?}",
+            new_device_name
+        );
 
         let new_sink = Sink::connect_new(&new_mixer);
         new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
 
-        lock_or_recover(&self.device)
-            .replace(new_stream, new_mixer, new_device_name);
+        lock_or_recover(&self.device).replace(
+            new_stream,
+            new_mixer,
+            new_device_name,
+            preferred_device_name,
+        );
         *lock_or_recover(&self.sink) = new_sink;
 
         // Discard stale preload — its sink was connected to the old mixer.
@@ -257,19 +319,30 @@ impl AudioPlayer {
     /// Reinit device, then reload the current track at the given position.
     /// Returns Ok(()) even if there was no track to reload.
     fn reinit_and_reload(&self) -> AppResult<()> {
+        let preferred = lock_or_recover(&self.device).preferred_device_name.clone();
+        self.reinit_and_reload_on(preferred)
+    }
+
+    fn reinit_and_reload_on(&self, preferred_device_name: Option<String>) -> AppResult<()> {
         // Prevent concurrent reinit attempts from spawning blocked WASAPI threads.
-        if self.is_reinitializing.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-            return Err(AppError::Audio("Audio reinitialization already in progress.".into()));
+        if self
+            .is_reinitializing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(AppError::Audio(
+                "Audio reinitialization already in progress.".into(),
+            ));
         }
 
         let current_path = lock_or_recover(&self.playback).current_path.clone();
         let current_position = self.get_position();
 
-        let res = self.reinit_device();
-        
+        let res = self.reinit_device(preferred_device_name);
+
         // Always reset the flag, even if reinit failed
         self.is_reinitializing.store(false, Ordering::SeqCst);
-        
+
         res?;
 
         if let Some(path) = current_path {
@@ -289,14 +362,18 @@ impl AudioPlayer {
 
     pub fn play(&self) -> AppResult<()> {
         if self.is_reinitializing.load(Ordering::SeqCst) {
-            return Err(AppError::Audio("Audio system is busy recovering. Please try again in a moment.".into()));
+            return Err(AppError::Audio(
+                "Audio system is busy recovering. Please try again in a moment.".into(),
+            ));
         }
-        
+
         info!("Starting playback");
 
         let pause_duration = {
             let pb = lock_or_recover(&self.playback);
-            pb.pause_start.map(|s| s.elapsed()).unwrap_or(Duration::ZERO)
+            pb.pause_start
+                .map(|s| s.elapsed())
+                .unwrap_or(Duration::ZERO)
         };
 
         let time_since_active = lock_or_recover(&self.device).last_active.elapsed();
@@ -318,7 +395,9 @@ impl AudioPlayer {
             sink.empty() && pb.current_path.is_some()
         };
 
-        let needs_reinit = device_changed
+        let has_output_stream = lock_or_recover(&self.device).has_output_stream();
+        let needs_reinit = !has_output_stream
+            || device_changed
             || pause_duration > LONG_PAUSE_THRESHOLD
             || time_since_active > LONG_PAUSE_THRESHOLD;
 
@@ -338,7 +417,7 @@ impl AudioPlayer {
             info!("Sink is empty but track is loaded - attempting reload/resume");
             let current_path = lock_or_recover(&self.playback).current_path.clone();
             let current_position = self.get_position();
-            
+
             if let Some(path) = current_path {
                 info!("Reloading track for resume: {}", path);
                 if let Err(e) = self.load(path) {
@@ -567,23 +646,8 @@ impl AudioPlayer {
     // ── Output device switching ─────────────────────────────────────
 
     pub fn set_output_device(&self, device_name: &str) -> AppResult<()> {
-        let host = rodio::cpal::default_host();
-        use rodio::cpal::traits::HostTrait;
-
-        let mut output_devices = host
-            .output_devices()
-            .map_err(|e| AppError::Audio(format!("Failed to enumerate devices: {}", e)))?;
-
-        let _device = output_devices
-            .find(|d| {
-                use rodio::DeviceTrait;
-                d.name().ok().as_deref() == Some(device_name)
-            })
-            .ok_or_else(|| AppError::NotFound(format!("Device '{}' not found", device_name)))?;
-
         let was_playing = self.is_playing();
-
-        self.reinit_and_reload()?;
+        self.reinit_and_reload_on(Some(device_name.to_string()))?;
 
         if was_playing {
             self.play()?;
@@ -625,12 +689,35 @@ impl AudioPlayer {
         new_sink.pause();
 
         lock_or_recover(&self.preload).set(new_sink, path, duration, generation);
-        info!("Audio file preloaded successfully (reusing existing output, gen={})", generation);
+        info!(
+            "Audio file preloaded successfully (reusing existing output, gen={})",
+            generation
+        );
         Ok(())
     }
 
     pub fn swap_to_preloaded(&self) -> AppResult<()> {
+        let request_id = self.latest_load_request.fetch_add(1, Ordering::SeqCst) + 1;
+        self.swap_to_preloaded_generation(request_id, None)
+    }
+
+    fn swap_to_preloaded_generation(
+        &self,
+        request_id: u64,
+        expected_path: Option<&str>,
+    ) -> AppResult<()> {
         info!("Swapping to preloaded track");
+
+        if self.latest_load_request.load(Ordering::SeqCst) != request_id {
+            return Err(AppError::Audio("Stale load request ignored".to_string()));
+        }
+        if let Some(expected) = expected_path {
+            if self.get_preloaded_path().as_deref() != Some(expected) {
+                return Err(AppError::Audio(
+                    "Preloaded track does not match request".to_string(),
+                ));
+            }
+        }
 
         let current_gen = lock_or_recover(&self.device).generation;
         let taken = lock_or_recover(&self.preload).take_if_current(current_gen);
@@ -639,6 +726,9 @@ impl AudioPlayer {
             // another thread from observing a half-swapped state.
             {
                 let mut sink = lock_or_recover(&self.sink);
+                if self.latest_load_request.load(Ordering::SeqCst) != request_id {
+                    return Err(AppError::Audio("Stale load request ignored".to_string()));
+                }
                 sink.stop();
                 *sink = new_sink;
                 sink.play();
@@ -657,9 +747,7 @@ impl AudioPlayer {
             info!("Successfully swapped to preloaded track");
             Ok(())
         } else {
-            Err(AppError::Audio(
-                "No preloaded track available".to_string(),
-            ))
+            Err(AppError::Audio("No preloaded track available".to_string()))
         }
     }
 
@@ -672,7 +760,9 @@ impl AudioPlayer {
     }
 
     pub fn get_preloaded_path(&self) -> Option<String> {
-        lock_or_recover(&self.preload).get_path().map(|s| s.to_string())
+        lock_or_recover(&self.preload)
+            .get_path()
+            .map(|s| s.to_string())
     }
 
     // ── Effects ─────────────────────────────────────────────────────
@@ -781,7 +871,7 @@ impl AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BroadcastWake, AudioPlayer};
+    use super::{AudioPlayer, BroadcastWake};
     use std::sync::{mpsc, Arc};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -850,11 +940,22 @@ mod tests {
         let player = AudioPlayer::new().expect("AudioPlayer::new requires audio hardware");
 
         assert!(player.is_healthy(), "new AudioPlayer should report healthy");
-        assert!(!player.needs_reinit(), "new AudioPlayer should not need reinit immediately");
+        assert!(
+            !player.needs_reinit(),
+            "new AudioPlayer should not need reinit immediately"
+        );
 
-        let recovered = player.recover().expect("recover() should not return an AppError");
-        assert!(recovered, "recover() on a healthy player should return true");
-        assert!(player.is_healthy(), "AudioPlayer should still be healthy after recover()");
+        let recovered = player
+            .recover()
+            .expect("recover() should not return an AppError");
+        assert!(
+            recovered,
+            "recover() on a healthy player should return true"
+        );
+        assert!(
+            player.is_healthy(),
+            "AudioPlayer should still be healthy after recover()"
+        );
     }
 
     /// needs_reinit() must be false immediately after construction (no long

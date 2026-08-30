@@ -123,12 +123,13 @@ export function useShortcuts({
   const storedShortcuts = useStore(state => state.keyboardShortcuts);
   const shortcuts = storedShortcuts || DEFAULT_SHORTCUTS;
 
-  // Check if an input element is focused
-  const isInputFocused = useCallback(() => {
-    const active = document.activeElement;
-    return active?.tagName === 'INPUT' || 
-           active?.tagName === 'TEXTAREA' || 
-           (active as HTMLElement)?.isContentEditable;
+  const shouldSuspendShortcuts = useCallback((event: KeyboardEvent) => {
+    if (event.defaultPrevented) return true;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, button, a, [contenteditable="true"], [role="slider"], [role="listbox"], [role="menu"]')) {
+      return true;
+    }
+    return document.querySelector('[aria-modal="true"], [role="menu"]') !== null;
   }, []);
 
   // Action handlers map
@@ -165,8 +166,7 @@ export function useShortcuts({
   // DOM keyboard events (in-app shortcuts)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip when typing in inputs (except for some shortcuts like Escape)
-      if (isInputFocused() && e.key !== 'Escape') return;
+      if (shouldSuspendShortcuts(e)) return;
       
       const handlers = actionHandlers();
       
@@ -185,44 +185,50 @@ export function useShortcuts({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isInputFocused, shortcuts, actionHandlers]);
+  }, [shouldSuspendShortcuts, shortcuts, actionHandlers]);
 
   // Tauri global shortcuts (OS media keys)
   useEffect(() => {
-    const unlisten = listen('global-shortcut', (event) => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<string>('global-shortcut', (event) => {
       const action = event.payload;
 
       switch (action) {
-        case 'PLAY_PAUSE':
+        case 'play-pause':
           togglePlay?.();
           break;
-        case 'NEXT_TRACK':
+        case 'next-track':
           nextTrack?.();
           break;
-        case 'PREV_TRACK':
+        case 'prev-track':
           prevTrack?.();
           break;
-        case 'STOP':
+        case 'stop':
           if (stop) {
             stop();
           } else if (audio) {
             audio.pause?.();
           }
           break;
-        case 'VOLUME_UP':
+        case 'volume-up':
           volumeUp?.();
           break;
-        case 'VOLUME_DOWN':
+        case 'volume-down':
           volumeDown?.();
           break;
-        case 'MUTE':
+        case 'mute':
           mute?.();
           break;
       }
-    });
+    }).then(fn => {
+      if (disposed) fn();
+      else unlisten = fn;
+    }).catch(error => console.error('Failed to register global shortcut listener:', error));
 
     return () => {
-      unlisten.then(fn => fn());
+      disposed = true;
+      unlisten?.();
     };
   }, [togglePlay, nextTrack, prevTrack, stop, volumeUp, volumeDown, mute, audio]);
 }

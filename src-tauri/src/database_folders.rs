@@ -2,6 +2,7 @@ use crate::database::Database;
 use crate::scanner::Track;
 use log::info;
 use rusqlite::{params, OptionalExtension, Result};
+use std::path::Path;
 
 impl Database {
     fn escape_like_pattern(value: &str) -> String {
@@ -33,15 +34,15 @@ impl Database {
 
     pub fn remove_tracks_by_folder(&self, folder_path: &str) -> Result<usize> {
         let conn = self.conn();
-        // Escape SQL LIKE wildcards in the folder path to prevent unintended matches
-        let escaped = folder_path
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
+        let (backslash_pattern, slash_pattern) = Self::folder_track_patterns(folder_path);
         let count = conn.execute(
-            "DELETE FROM tracks WHERE path LIKE ?1 ESCAPE '\\'",
-            params![format!("{}%", escaped)],
+            "DELETE FROM tracks
+             WHERE path = ?1 COLLATE NOCASE
+                OR path LIKE ?2 ESCAPE '\\' COLLATE NOCASE
+                OR path LIKE ?3 ESCAPE '\\' COLLATE NOCASE",
+            params![folder_path, backslash_pattern, slash_pattern],
         )?;
+        conn.execute("DELETE FROM album_replaygain", [])?;
         Ok(count)
     }
 
@@ -55,7 +56,7 @@ impl Database {
         let conn = self.conn();
 
         // Check if folder with same path already exists
-        let mut stmt = conn.prepare("SELECT id FROM folders WHERE path = ?1")?;
+        let mut stmt = conn.prepare("SELECT id FROM folders WHERE path = ?1 COLLATE NOCASE")?;
         let existing_id: Option<String> =
             stmt.query_row(params![folder_path], |row| row.get(0)).ok();
 
@@ -136,19 +137,26 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()?;
+        if let Some(stored_path) = stored_path.as_deref() {
+            if !stored_path.eq_ignore_ascii_case(folder_path) {
+                return Err(rusqlite::Error::InvalidParameterName(
+                    "folder ID/path mismatch".to_string(),
+                ));
+            }
+        }
         let effective_path = stored_path.as_deref().unwrap_or(folder_path);
         let (backslash_pattern, slash_pattern) = Self::folder_track_patterns(effective_path);
 
         tx.execute(
             "DELETE FROM tracks
-             WHERE path = ?1
-                OR path LIKE ?2 ESCAPE '\\'
-                OR path LIKE ?3 ESCAPE '\\'",
+             WHERE path = ?1 COLLATE NOCASE
+                OR path LIKE ?2 ESCAPE '\\' COLLATE NOCASE
+                OR path LIKE ?3 ESCAPE '\\' COLLATE NOCASE",
             params![effective_path, backslash_pattern, slash_pattern],
         )?;
         let removed_folders = tx.execute(
-            "DELETE FROM folders WHERE id = ?1 OR path = ?2 OR path = ?3",
-            params![folder_id, folder_path, effective_path],
+            "DELETE FROM folders WHERE id = ?1 OR path = ?2 COLLATE NOCASE",
+            params![folder_id, effective_path],
         )?;
 
         if removed_folders == 0 {
@@ -172,7 +180,7 @@ impl Database {
             let mut conn = self.conn();
             let tx = conn.transaction()?;
 
-            let mut stmt = tx.prepare("SELECT id FROM folders WHERE path = ?1")?;
+            let mut stmt = tx.prepare("SELECT id FROM folders WHERE path = ?1 COLLATE NOCASE")?;
             let existing_id: Option<String> =
                 stmt.query_row(params![folder_path], |row| row.get(0)).ok();
             drop(stmt);
@@ -200,8 +208,7 @@ impl Database {
 
             for track in chunk {
                 tx.execute(
-                    "INSERT OR REPLACE INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, COALESCE((SELECT play_count FROM tracks WHERE id = ?1), 0), COALESCE((SELECT last_played FROM tracks WHERE id = ?1), 0), COALESCE((SELECT rating FROM tracks WHERE id = ?1), 0))",
+                    crate::database_tracks::TRACK_UPSERT_SQL,
                     params![
                         track.id,
                         track.path,
@@ -215,9 +222,15 @@ impl Database {
                         track.disc_number,
                         track.duration,
                         track.date_added,
+                        track.play_count,
+                        track.last_played,
+                        track.rating,
+                        crate::database_tracks::file_modified_seconds(&track.path),
                     ],
                 )?;
             }
+
+            tx.execute("DELETE FROM album_replaygain", [])?;
 
             tx.commit()?;
             // Explicitly yield to give the OS a chance to let the UI thread acquire the mutex
@@ -232,10 +245,18 @@ impl Database {
     /// already registered under a given folder (new and pre-existing).
     pub fn get_track_ids_for_folder(&self, folder_path: &str) -> Result<Vec<String>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT id FROM tracks WHERE path LIKE ?1")?;
-        let ids = stmt
-            .query_map(params![format!("{}%", folder_path)], |row| row.get(0))?
-            .collect::<Result<Vec<String>>>()?;
+        let mut stmt = conn.prepare("SELECT id, path FROM tracks")?;
+        let root = Path::new(folder_path);
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let (id, path) = row?;
+            if Path::new(&path).starts_with(root) {
+                ids.push(id);
+            }
+        }
         Ok(ids)
     }
 
@@ -243,14 +264,18 @@ impl Database {
     pub fn get_folder_tracks(&self, folder_path: &str) -> Result<Vec<(String, String, i64)>> {
         info!("Getting tracks for folder: {}", folder_path);
         let conn = self.conn();
-        let mut stmt =
-            conn.prepare("SELECT id, path, file_modified FROM tracks WHERE path LIKE ?1")?;
-
-        let tracks = stmt
-            .query_map(params![format!("{}%", folder_path)], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2).unwrap_or(0)))
-            })?
-            .collect::<Result<Vec<_>>>()?;
+        let mut stmt = conn.prepare("SELECT id, path, file_modified FROM tracks")?;
+        let root = Path::new(folder_path);
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2).unwrap_or(0)))
+        })?;
+        let mut tracks = Vec::new();
+        for row in rows {
+            let track: (String, String, i64) = row?;
+            if Path::new(&track.1).starts_with(root) {
+                tracks.push(track);
+            }
+        }
 
         Ok(tracks)
     }

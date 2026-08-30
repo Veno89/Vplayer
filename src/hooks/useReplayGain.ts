@@ -115,7 +115,7 @@ export function useReplayGain(): ReplayGainAPI {
       }
 
       // Track mode (or album fallback): use per-track ReplayGain.
-      const rgData = await TauriAPI.getTrackReplayGain(track.path);
+      const rgData = await TauriAPI.getTrackReplayGain(track.id, track.path);
 
       if (rgData && rgData.track_gain !== undefined) {
         await TauriAPI.setReplayGain(rgData.track_gain, replayGainPreamp);
@@ -151,7 +151,7 @@ export function useReplayGain(): ReplayGainAPI {
 
     try {
       log.info(`[ReplayGain] Analyzing: ${track.title || track.name}`);
-      const rgData = await TauriAPI.analyzeReplayGain(track.path);
+      const rgData = await TauriAPI.analyzeReplayGain(track.id, track.path);
       log.info(`[ReplayGain] Analysis complete: ${rgData.loudness.toFixed(1)} LUFS, gain: ${rgData.track_gain.toFixed(1)}dB`);
       return rgData;
     } catch (err) {

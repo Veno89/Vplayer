@@ -2,6 +2,7 @@ use crate::database::Database;
 use crate::scanner::Track;
 use crate::time_utils::now_millis;
 use rusqlite::{params, OptionalExtension, Result};
+use std::collections::HashSet;
 
 impl Database {
     // Playlist operations
@@ -55,13 +56,20 @@ impl Database {
         &self,
         playlist_id: &str,
         track_id: &str,
-        position: i32,
+        _position: i32,
     ) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-            params![playlist_id, track_id, position],
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let next_position: i32 = tx.query_row(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
         )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+            params![playlist_id, track_id, next_position],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -70,19 +78,30 @@ impl Database {
         &self,
         playlist_id: &str,
         track_ids: &[String],
-        starting_position: i32,
+        _starting_position: i32,
     ) -> Result<usize> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
 
-        let mut count = 0;
-        for (i, track_id) in track_ids.iter().enumerate() {
-            let position = starting_position + i as i32;
-            tx.execute(
-                "INSERT OR REPLACE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-                params![playlist_id, track_id, position],
+        let mut next_position: i32 = tx.query_row(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        let mut count = 0usize;
+        let mut seen = HashSet::new();
+        for track_id in track_ids {
+            if !seen.insert(track_id) {
+                continue;
+            }
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                params![playlist_id, track_id, next_position],
             )?;
-            count += 1;
+            if inserted == 1 {
+                next_position += 1;
+                count += 1;
+            }
         }
 
         tx.commit()?;
@@ -125,9 +144,59 @@ impl Database {
     ) -> Result<()> {
         let mut conn = self.conn();
 
-        // Use a transaction for atomic updates
         let tx = conn.transaction()?;
+        let existing_count: usize = tx.query_row(
+            "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        if track_positions.len() != existing_count {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        if existing_count == 0 {
+            tx.commit()?;
+            return Ok(());
+        }
 
+        let mut track_ids = HashSet::with_capacity(track_positions.len());
+        let mut positions = HashSet::with_capacity(track_positions.len());
+        for (track_id, position) in &track_positions {
+            if *position < 0
+                || *position as usize >= existing_count
+                || !track_ids.insert(track_id.as_str())
+                || !positions.insert(*position)
+            {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+        }
+
+        let matched: usize = tx.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1 AND track_id IN ({})",
+                (0..track_positions.len())
+                    .map(|index| format!("?{}", index + 2))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            rusqlite::params_from_iter(
+                std::iter::once(&playlist_id as &dyn rusqlite::types::ToSql).chain(
+                    track_positions
+                        .iter()
+                        .map(|(track_id, _)| track_id as &dyn rusqlite::types::ToSql),
+                ),
+            ),
+            |row| row.get(0),
+        )?;
+        if matched != existing_count {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+
+        // Move every row into a temporary negative range first. This makes the
+        // final updates safe even with the unique (playlist, position) index.
+        tx.execute(
+            "UPDATE playlist_tracks SET position = -position - 1 WHERE playlist_id = ?1",
+            params![playlist_id],
+        )?;
         for (track_id, new_position) in track_positions {
             tx.execute(
                 "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND track_id = ?3",
@@ -137,6 +206,66 @@ impl Database {
 
         tx.commit()?;
         Ok(())
+    }
+
+    /// Commit a parsed playlist and any newly discovered tracks as one unit.
+    /// A read/metadata failure happens before this call; a database failure rolls
+    /// back both the playlist row and all of its membership rows.
+    pub fn import_playlist_atomic(
+        &self,
+        name: &str,
+        new_tracks: &[Track],
+        track_ids: &[String],
+    ) -> Result<String> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let playlist_id = format!("playlist_{}", uuid::Uuid::new_v4());
+        tx.execute(
+            "INSERT INTO playlists (id, name, created_at) VALUES (?1, ?2, ?3)",
+            params![playlist_id, name, now_millis()],
+        )?;
+
+        for track in new_tracks {
+            tx.execute(
+                crate::database_tracks::TRACK_UPSERT_SQL,
+                params![
+                    track.id,
+                    track.path,
+                    track.name,
+                    track.title,
+                    track.artist,
+                    track.album,
+                    track.genre,
+                    track.year,
+                    track.track_number,
+                    track.disc_number,
+                    track.duration,
+                    track.date_added,
+                    track.play_count,
+                    track.last_played,
+                    track.rating,
+                    crate::database_tracks::file_modified_seconds(&track.path),
+                ],
+            )?;
+        }
+
+        let mut seen = HashSet::new();
+        let mut position = 0i32;
+        for track_id in track_ids {
+            if !seen.insert(track_id) {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                params![playlist_id, track_id, position],
+            )?;
+            position += 1;
+        }
+        if !new_tracks.is_empty() {
+            tx.execute("DELETE FROM album_replaygain", [])?;
+        }
+        tx.commit()?;
+        Ok(playlist_id)
     }
 
     pub fn get_playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {

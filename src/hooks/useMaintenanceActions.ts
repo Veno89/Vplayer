@@ -1,15 +1,6 @@
 import { useState, useCallback } from 'react';
-import { TauriAPI, PerformanceStats as TauriPerformanceStats } from '../services/TauriAPI';
+import { TauriAPI, type PerformanceStats } from '../services/TauriAPI';
 import { Track } from '../types';
-
-interface PerformanceStats {
-  trackCount: number;
-  folderCount: number;
-  playlistCount: number;
-  totalPlayTime: number;
-  avgTrackDuration: number;
-  [key: string]: unknown;
-}
 
 export interface MaintenanceAPI {
   cacheSize: number;
@@ -55,7 +46,7 @@ export function useMaintenanceActions(): MaintenanceAPI {
       if (includePerf) {
         try {
           const perf = await TauriAPI.getPerformanceStats();
-          setPerfStats(perf as unknown as PerformanceStats);
+          setPerfStats(perf);
         } catch {
           setPerfStats(null);
         }

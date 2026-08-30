@@ -4,13 +4,13 @@ import { TauriAPI } from '../../services/TauriAPI';
 import { useStore } from '../../store/useStore';
 import { SettingSlider, SettingCard } from './SettingsComponents';
 
-interface MemoryUsageInfo {
+interface ResourceUsageInfo {
   cache_used: number;
-  memory_used: number;
+  database_used: number;
 }
 
 export function PerformanceTab() {
-  const [memoryUsage, setMemoryUsage] = useState<MemoryUsageInfo | null>(null);
+  const [resourceUsage, setResourceUsage] = useState<ResourceUsageInfo | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
   // Get settings from store
@@ -34,10 +34,9 @@ export function PerformanceTab() {
       setLoadingStats(true);
       const stats = await TauriAPI.getPerformanceStats().catch(() => null);
       const cacheUsed = await TauriAPI.getCacheSize().catch(() => 0);
-      const memoryMb = (stats as unknown as { memory_mb?: number })?.memory_mb;
-      setMemoryUsage({ 
+      setResourceUsage({
         cache_used: cacheUsed,
-        memory_used: memoryMb ? memoryMb * 1024 * 1024 : 0,
+        database_used: stats?.database.size_bytes ?? 0,
       });
     } catch (err) {
       console.error('Failed to load stats:', err);
@@ -55,7 +54,7 @@ export function PerformanceTab() {
   };
 
   // Calculate cache usage percentage for visual
-  const cachePercentage = Math.min(100, (memoryUsage?.cache_used || 0) / (cacheSizeLimit * 1024 * 1024) * 100);
+  const cachePercentage = Math.min(100, (resourceUsage?.cache_used || 0) / (cacheSizeLimit * 1024 * 1024) * 100);
 
   return (
     <div className="space-y-6">
@@ -68,7 +67,7 @@ export function PerformanceTab() {
               <span className="text-slate-400 text-xs">Cache Usage</span>
             </div>
             <p className="text-white text-lg font-bold">
-              {loadingStats ? '...' : formatBytes(memoryUsage?.cache_used || 0)}
+              {loadingStats ? '...' : formatBytes(resourceUsage?.cache_used || 0)}
             </p>
             <p className="text-slate-500 text-xs">of {cacheSizeLimit} MB limit</p>
             
@@ -84,12 +83,12 @@ export function PerformanceTab() {
           <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
             <div className="flex items-center gap-2 mb-2">
               <Cpu className="w-4 h-4 text-emerald-400" />
-              <span className="text-slate-400 text-xs">Memory</span>
+              <span className="text-slate-400 text-xs">Database</span>
             </div>
             <p className="text-white text-lg font-bold">
-              {loadingStats ? '...' : formatBytes(memoryUsage?.memory_used || 0)}
+              {loadingStats ? '...' : formatBytes(resourceUsage?.database_used || 0)}
             </p>
-            <p className="text-slate-500 text-xs">process memory</p>
+            <p className="text-slate-500 text-xs">on-disk size</p>
           </div>
         </div>
 

@@ -5,6 +5,34 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.44] - 2026-08-30
+
+### Correctness and data integrity
+
+- Replaced destructive track replacement with stable, path-derived IDs and conflict-safe updates that preserve play history, ratings, playlist links, artwork, and ReplayGain data.
+- Made folder scans independently cancellable, ownership-aware, symlink-safe, transactional, and serialized per watched root; drag-and-drop now uses the same library admission path.
+- Made playlist adds idempotent and playlist reorder/import/export operations validated and atomic.
+- Fixed smart-playlist time arithmetic, numeric validation, grouping, parameterized limits, and ReplayGain album aggregation/invalidation.
+
+### Playback and state ownership
+
+- Added latest-request-wins generations across frontend and native track loads, guarded preload swaps, selected-device recovery, and device-less startup support without unsafe stream transfers.
+- Reworked the queue as a pending FIFO with bounded advancement and explicit playback sources so filtering, history, album, smart-playlist, and auxiliary windows cannot silently desynchronize playback.
+- Centralized effects updates, hardened persisted settings import/reset/migration, and added cleanup for IPC listeners, timers, scan work, and aborted load retries.
+
+### Security, performance, and accessibility
+
+- Bound file-sensitive IPC commands to registered track identities and canonical paths; narrowed Tauri capabilities and removed unused filesystem and shell plugins.
+- Added bounded waveform, artwork, batch, cache, and local-storage behavior plus cache timestamps and eviction support.
+- Added keyboard/focus semantics for dialogs, menus, windows, track lists, transport controls, seek/volume controls, ratings, tabs, smart playlists, and the queue.
+- Added an automated frontend/native IPC contract test, migration and playlist regressions, deterministic frontend tests, strict type/lint gates, and removal of dead native code.
+
+### Release engineering
+
+- Added immutable action pins, tag/version consistency checks, pre-release frontend and Rust gates, production advisory checks, draft-only publishing, updater signature verification, SHA-256 manifests, release provenance evidence, npm/Cargo dependency manifests, Dependabot coverage, MIT metadata, and an explicit Authenticode policy.
+- Updated the transitive plist/XML stack to remove two high-severity RustSec advisories; the release gate now runs a pinned RustSec scanner and documents its single inactive-feature exception.
+- Updated application version metadata and the MusicBrainz user agent to `0.9.44`.
+
 ## [0.9.39] - 2026-05-12
 
 ### Bug Fixes

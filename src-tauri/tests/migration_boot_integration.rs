@@ -108,9 +108,20 @@ fn legacy_database_boot_runs_migrations() {
     assert_eq!(album_art_table_exists, 1);
 
     let schema_version: i32 = conn
-        .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| row.get(0))
+        .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| {
+            row.get(0)
+        })
         .expect("schema_version query should succeed");
-    assert_eq!(schema_version, 9);
+    assert_eq!(schema_version, 11);
+
+    let album_art_columns: Vec<String> = conn
+        .prepare("PRAGMA table_info(track_album_art)")
+        .expect("album art pragma prepare should succeed")
+        .query_map([], |row| row.get::<_, String>(1))
+        .expect("album art pragma query should succeed")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("album art column collect should succeed");
+    assert!(album_art_columns.iter().any(|column| column == "cached_at"));
 
     drop(stmt);
     drop(conn);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useId, useRef } from 'react';
 import { FixedSizeList as ListVirtual } from 'react-window';
 import type { ListChildComponentProps, Align } from 'react-window';
 import { Loader, MoreVertical, GripVertical, Check } from 'lucide-react';
@@ -36,6 +36,7 @@ interface TrackMenuEvent {
 }
 
 interface TrackRowData {
+  listId: string;
   tracks: Track[];
   currentTrack: number | null;
   onSelect: (index: number) => void;
@@ -123,6 +124,7 @@ interface SimpleTrackListProps {
  */
 const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<TrackRowData>) => {
   const {
+    listId,
     tracks,
     currentTrack,
     onSelect,
@@ -178,6 +180,9 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
 
   return (
     <div
+      id={`${listId}-track-${index}`}
+      role="option"
+      aria-selected={isSelected || isActive}
       style={style}
       draggable={isDraggable && !isMultiSelectMode}
       onDragStart={(e) => isDraggable && !isMultiSelectMode && onDragStart?.(e, index)}
@@ -324,6 +329,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
             }}
             className="p-1 hover:bg-slate-600 rounded transition-colors"
             title="More options"
+            aria-label={`More options for ${track.title || track.name || 'track'}`}
           >
             <MoreVertical className="w-3 h-3" />
           </button>
@@ -401,6 +407,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   columnWidths,
   queuePositions,
 }, ref) {
+  const listId = useId();
   const [focusedIndex, setFocusedIndex] = useState<number>(currentTrack ?? 0);
   const [localSelectedIndices, setLocalSelectedIndices] = useState<Set<number>>(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -580,6 +587,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   }, [tracks, focusedIndex, onSelect, onPlayTrack, enableMultiSelect, handleToggleSelect, isMultiSelectMode, actualSelectedIndices, onBatchAction, setActualSelectedIndices]);
 
   const itemData = React.useMemo(() => ({
+    listId,
     tracks,
     currentTrack,
     onSelect,
@@ -627,7 +635,8 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     enableMultiSelect,
     handleToggleSelect,
     isMultiSelectMode,
-    queuePositions
+    queuePositions,
+    listId
   ]);
 
   return (
@@ -638,7 +647,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       className="outline-none focus:outline-none"
       role="listbox"
       aria-label="Track list"
-      aria-activedescendant={`track-${focusedIndex}`}
+      aria-activedescendant={tracks[focusedIndex] ? `${listId}-track-${focusedIndex}` : undefined}
       aria-multiselectable={enableMultiSelect}
     >
       {/* Multi-select toolbar */}
@@ -719,6 +728,7 @@ export function SimpleTrackList({
   showDuration = true,
   onPlayTrack
 }: SimpleTrackListProps) {
+  const listId = useId();
   const [focusedIndex, setFocusedIndex] = useState<number>(currentTrack ?? 0);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -757,6 +767,7 @@ export function SimpleTrackList({
   }, [tracks.length, focusedIndex, onSelect, onPlayTrack]);
 
   const itemData: TrackRowData = {
+    listId,
     tracks,
     currentTrack,
     onSelect,
@@ -785,6 +796,7 @@ export function SimpleTrackList({
       className="flex flex-col outline-none focus:outline-none"
       role="listbox"
       aria-label="Track list"
+      aria-activedescendant={tracks[focusedIndex] ? `${listId}-track-${focusedIndex}` : undefined}
     >
       {tracks.map((track, index) => (
         <TrackRow

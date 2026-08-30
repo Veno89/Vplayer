@@ -194,7 +194,11 @@ describe('useAudio', () => {
         await result.current.loadTrack(mockTrack());
       });
 
-      expect(invoke).toHaveBeenCalledWith('load_track', { path: '/music/song.mp3' });
+      expect(invoke).toHaveBeenCalledWith('load_track', {
+        trackId: 'track-1',
+        path: '/music/song.mp3',
+        requestId: expect.any(Number),
+      });
       expect(invoke).toHaveBeenCalledWith('get_duration', {});
       expect(storeMock.setDuration).toHaveBeenCalledWith(200);
       expect(storeMock.setProgress).toHaveBeenCalledWith(0);

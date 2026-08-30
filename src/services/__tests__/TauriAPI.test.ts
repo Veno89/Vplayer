@@ -22,9 +22,13 @@ describe('TauriAPI', () => {
   // Audio Player Commands
   // ---------------------------------------------------------------------------
   describe('Audio Player Commands', () => {
-    it('loadTrack should invoke load_track with path', async () => {
-      await TauriAPI.loadTrack('/music/song.mp3');
-      expect(invoke).toHaveBeenCalledWith('load_track', { path: '/music/song.mp3' });
+    it('loadTrack should invoke load_track with authorized identity and generation', async () => {
+      await TauriAPI.loadTrack('track-1', '/music/song.mp3', 42);
+      expect(invoke).toHaveBeenCalledWith('load_track', {
+        trackId: 'track-1',
+        path: '/music/song.mp3',
+        requestId: 42,
+      });
     });
 
     it('play should invoke play_audio', async () => {
@@ -141,6 +145,22 @@ describe('TauriAPI', () => {
       await TauriAPI.removeFolder('folder-1', '/music/rock');
       expect(invoke).toHaveBeenCalledWith('remove_folder', { folderId: 'folder-1', folderPath: '/music/rock' });
     });
+
+    it('showInFolder should bind the path to its track identity', async () => {
+      await TauriAPI.showInFolder('track-1', '/music/rock/song.mp3');
+      expect(invoke).toHaveBeenCalledWith('show_in_folder', {
+        trackId: 'track-1',
+        path: '/music/rock/song.mp3',
+      });
+    });
+
+    it('loadLyrics should bind the path to its track identity', async () => {
+      await TauriAPI.loadLyrics('track-1', '/music/rock/song.mp3');
+      expect(invoke).toHaveBeenCalledWith('load_lyrics', {
+        trackId: 'track-1',
+        trackPath: '/music/rock/song.mp3',
+      });
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -189,19 +209,9 @@ describe('TauriAPI', () => {
       expect(invoke).toHaveBeenCalledWith('recover_audio', {});
     });
 
-    it('isAudioDeviceAvailable should invoke is_audio_device_available', async () => {
-      await TauriAPI.isAudioDeviceAvailable();
-      expect(invoke).toHaveBeenCalledWith('is_audio_device_available', {});
-    });
-
-    it('hasAudioDeviceChanged should invoke has_audio_device_changed', async () => {
-      await TauriAPI.hasAudioDeviceChanged();
-      expect(invoke).toHaveBeenCalledWith('has_audio_device_changed', {});
-    });
-
-    it('getInactiveDuration should invoke get_inactive_duration', async () => {
-      await TauriAPI.getInactiveDuration();
-      expect(invoke).toHaveBeenCalledWith('get_inactive_duration', {});
+    it('getAudioHealth should invoke the registered aggregate command', async () => {
+      await TauriAPI.getAudioHealth();
+      expect(invoke).toHaveBeenCalledWith('get_audio_health', {});
     });
   });
 
@@ -210,8 +220,11 @@ describe('TauriAPI', () => {
   // ---------------------------------------------------------------------------
   describe('Gapless Playback Commands', () => {
     it('preloadTrack should invoke preload_track', async () => {
-      await TauriAPI.preloadTrack('/music/next.mp3');
-      expect(invoke).toHaveBeenCalledWith('preload_track', { path: '/music/next.mp3' });
+      await TauriAPI.preloadTrack('track-2', '/music/next.mp3');
+      expect(invoke).toHaveBeenCalledWith('preload_track', {
+        trackId: 'track-2',
+        path: '/music/next.mp3',
+      });
     });
 
     it('swapToPreloaded should invoke swap_to_preloaded', async () => {
@@ -236,7 +249,7 @@ describe('TauriAPI', () => {
   describe('Error formatting', () => {
     it('should convert Decode errors to user-friendly messages', async () => {
       vi.mocked(invoke).mockRejectedValueOnce('Decode error: bad codec');
-      await expect(TauriAPI.loadTrack('/bad.mp3')).rejects.toThrow(
+      await expect(TauriAPI.loadTrack('bad', '/bad.mp3', 1)).rejects.toThrow(
         'Audio file is corrupted or in an unsupported format',
       );
     });
@@ -250,7 +263,7 @@ describe('TauriAPI', () => {
 
     it('should convert not-found errors to user-friendly messages', async () => {
       vi.mocked(invoke).mockRejectedValueOnce('No such file or directory');
-      await expect(TauriAPI.loadTrack('/missing.mp3')).rejects.toThrow(
+      await expect(TauriAPI.loadTrack('missing', '/missing.mp3', 2)).rejects.toThrow(
         'File or folder not found',
       );
     });
@@ -293,8 +306,11 @@ describe('TauriAPI', () => {
     });
 
     it('analyzeReplayGain should invoke analyze_replaygain', async () => {
-      await TauriAPI.analyzeReplayGain('/music/song.mp3');
-      expect(invoke).toHaveBeenCalledWith('analyze_replaygain', { trackPath: '/music/song.mp3' });
+      await TauriAPI.analyzeReplayGain('track-1', '/music/song.mp3');
+      expect(invoke).toHaveBeenCalledWith('analyze_replaygain', {
+        trackId: 'track-1',
+        trackPath: '/music/song.mp3',
+      });
     });
 
     it('getAlbumReplayGain should invoke get_album_replaygain', async () => {

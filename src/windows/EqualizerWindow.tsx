@@ -1,14 +1,11 @@
-import React, { useEffect, useCallback, useRef } from 'react';
+import React from 'react';
 import { Sliders, RotateCcw } from 'lucide-react';
-import { TauriAPI } from '../services/TauriAPI';
 import { useEqualizer } from '../hooks/useEqualizer';
 import { useCurrentColors } from '../hooks/useStoreHooks';
-import type { EqBand } from '../store/types';
 
 export function EqualizerWindow() {
   const { eqBands, setEqBands, currentPreset, applyPreset, resetEQ, presets } = useEqualizer();
   const currentColors = useCurrentColors();
-  const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get theme colors with fallbacks
   const colors = currentColors || {
@@ -20,52 +17,6 @@ export function EqualizerWindow() {
     textMuted: '#94a3b8',
     textSubtle: '#64748b',
   };
-
-  // Convert UI bands (0-100) to backend format (-12 to +12 dB)
-  const convertBandsToBackend = useCallback((bands: EqBand[]) => {
-    return bands.map((band: EqBand) => ((band.value - 50) / 50) * 12);
-  }, []);
-
-  // Send EQ settings to backend (debounced)
-  const updateBackendEQ = useCallback((bands: EqBand[]) => {
-    // Clear any pending update
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
-    
-    // Debounce the backend update to avoid too many calls while dragging
-    updateTimeoutRef.current = setTimeout(async () => {
-      try {
-        const eqGains = convertBandsToBackend(bands);
-        await TauriAPI.setAudioEffects({
-          tempo: 1.0,
-          reverb_mix: 0.0,
-          reverb_room_size: 0.5,
-          bass_boost: 0.0,
-          echo_delay: 0.3,
-          echo_feedback: 0.3,
-          echo_mix: 0.0,
-          eq_bands: eqGains,
-        });
-      } catch (err) {
-        console.error('Failed to update EQ:', err);
-      }
-    }, 50);
-  }, [convertBandsToBackend]);
-
-  // Update backend when bands change
-  useEffect(() => {
-    updateBackendEQ(eqBands);
-  }, [eqBands, updateBackendEQ]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Handle band change
   const handleBandChange = (index: number, value: number | string) => {
@@ -180,6 +131,8 @@ export function EqualizerWindow() {
                   min="0"
                   max="100"
                   value={band.value}
+                  aria-label={`${band.freq} equalizer gain`}
+                  aria-valuetext={`${isBoost ? '+' : isCut ? '-' : ''}${Math.abs(band.value - 50)} decibels`}
                   onChange={e => handleBandChange(idx, e.target.value)}
                   onMouseDown={e => e.stopPropagation()}
                   className="absolute inset-0 w-full h-full cursor-pointer opacity-0"

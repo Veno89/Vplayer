@@ -31,14 +31,9 @@ export function useEqualizer(): EqualizerAPI {
     try {
       const eqGains = convertBandsToBackend(bands);
       const effectOrder = useStore.getState().effectOrder;
+      const current = await TauriAPI.getAudioEffects();
       await TauriAPI.setAudioEffects({
-        tempo: 1.0,
-        reverb_mix: 0.0,
-        reverb_room_size: 0.5,
-        bass_boost: 0.0,
-        echo_delay: 0.3,
-        echo_feedback: 0.3,
-        echo_mix: 0.0,
+        ...current,
         eq_bands: eqGains,
         effect_order: effectOrder,
       });

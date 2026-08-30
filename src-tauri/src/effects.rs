@@ -1,11 +1,11 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
 const DSP_BLOCK_PROCESSING_ENV: &str = "VPLAYER_DSP_BLOCK_PROCESSING";
 
 /**
  * Audio DSP effects module
- * 
+ *
  * Provides high-quality real-time audio effects processing:
  * - 10-band Equalizer (Biquad IIR)
  * - Tempo/speed control (applied at Sink level)
@@ -16,7 +16,6 @@ const DSP_BLOCK_PROCESSING_ENV: &str = "VPLAYER_DSP_BLOCK_PROCESSING";
  *
  * The processing order is configurable via `effect_order`.
  */
-
 /// Identifies a single effect in the processing chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,20 +71,74 @@ impl Default for EffectsConfig {
     }
 }
 
+impl EffectsConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        let finite = [
+            self.tempo,
+            self.reverb_mix,
+            self.reverb_room_size,
+            self.bass_boost,
+            self.echo_delay,
+            self.echo_feedback,
+            self.echo_mix,
+        ]
+        .into_iter()
+        .chain(self.eq_bands)
+        .all(f32::is_finite);
+        if !finite {
+            return Err("Audio effects values must be finite".to_string());
+        }
+        if !(0.5..=2.0).contains(&self.tempo)
+            || !(0.0..=1.0).contains(&self.reverb_mix)
+            || !(0.0..=1.0).contains(&self.reverb_room_size)
+            || !(0.0..=12.0).contains(&self.bass_boost)
+            || !(0.01..=2.0).contains(&self.echo_delay)
+            || !(0.0..=0.9).contains(&self.echo_feedback)
+            || !(0.0..=1.0).contains(&self.echo_mix)
+            || self
+                .eq_bands
+                .iter()
+                .any(|gain| !(-12.0..=12.0).contains(gain))
+        {
+            return Err("Audio effects values are outside supported ranges".to_string());
+        }
+        if self.effect_order.len() != DEFAULT_EFFECT_ORDER.len()
+            || DEFAULT_EFFECT_ORDER.iter().any(|effect| {
+                self.effect_order
+                    .iter()
+                    .filter(|item| *item == effect)
+                    .count()
+                    != 1
+            })
+        {
+            return Err("Effect order must contain each supported effect exactly once".to_string());
+        }
+        Ok(())
+    }
+}
+
 /// Biquad filter implementation for EQ
 #[derive(Clone)]
 pub struct BiquadFilter {
-    a0: f32, a1: f32, a2: f32,
-    b1: f32, b2: f32,
-    z1: f32, z2: f32,
+    a0: f32,
+    a1: f32,
+    a2: f32,
+    b1: f32,
+    b2: f32,
+    z1: f32,
+    z2: f32,
 }
 
 impl BiquadFilter {
     pub fn new() -> Self {
         Self {
-            a0: 1.0, a1: 0.0, a2: 0.0,
-            b1: 0.0, b2: 0.0,
-            z1: 0.0, z2: 0.0,
+            a0: 1.0,
+            a1: 0.0,
+            a2: 0.0,
+            b1: 0.0,
+            b2: 0.0,
+            z1: 0.0,
+            z2: 0.0,
         }
     }
 
@@ -157,8 +210,12 @@ impl BiquadFilter {
         self.z1 = self.a1 * input - self.b1 * output + self.z2;
         self.z2 = self.a2 * input - self.b2 * output;
         // Flush denormals to zero to prevent CPU spikes on near-silent signals
-        if self.z1.abs() < 1e-15 { self.z1 = 0.0; }
-        if self.z2.abs() < 1e-15 { self.z2 = 0.0; }
+        if self.z1.abs() < 1e-15 {
+            self.z1 = 0.0;
+        }
+        if self.z2.abs() < 1e-15 {
+            self.z2 = 0.0;
+        }
         output
     }
 }
@@ -172,9 +229,11 @@ pub struct Equalizer {
 
 impl Equalizer {
     pub fn new(sample_rate: u32) -> Self {
-        let frequencies = [60.0, 170.0, 310.0, 600.0, 1000.0, 3000.0, 6000.0, 12000.0, 14000.0, 16000.0];
+        let frequencies = [
+            60.0, 170.0, 310.0, 600.0, 1000.0, 3000.0, 6000.0, 12000.0, 14000.0, 16000.0,
+        ];
         let mut filters = Vec::with_capacity(10);
-        
+
         for _ in 0..10 {
             filters.push(BiquadFilter::new());
         }
@@ -184,7 +243,7 @@ impl Equalizer {
             frequencies,
             sample_rate,
         };
-        
+
         eq.update_gains(&[0.0; 10]);
         eq
     }
@@ -192,7 +251,7 @@ impl Equalizer {
     pub fn update_gains(&mut self, gains: &[f32; 10]) {
         for (i, &gain) in gains.iter().enumerate() {
             let freq = self.frequencies[i];
-            
+
             if i == 0 {
                 self.filters[i].set_lowshelf(self.sample_rate, freq, 0.707, gain);
             } else if i == 9 {
@@ -227,7 +286,8 @@ impl CombFilter {
         // avoid integer truncation. At 48 kHz, integer division would give the
         // same capacity as 44100 Hz (8.2% too short); at 96 kHz it would
         // over-allocate by 31%. Ceiling ensures we never under-allocate.
-        let capacity = ((delay_samples as f64 * sample_rate as f64 / 44100.0).ceil() as usize).max(1);
+        let capacity =
+            ((delay_samples as f64 * sample_rate as f64 / 44100.0).ceil() as usize).max(1);
         Self {
             buffer: vec![0.0; capacity],
             index: 0,
@@ -246,28 +306,21 @@ impl CombFilter {
     }
 
     fn process(&mut self, input: f32) -> f32 {
-        if self.buffer.is_empty() { return input; }
-        
+        if self.buffer.is_empty() {
+            return input;
+        }
+
         let output = self.buffer[self.index];
         self.damp_hist = output * (1.0 - self.damp) + self.damp_hist * self.damp;
-        
+
         self.buffer[self.index] = input + self.damp_hist * self.feedback;
-        
+
         self.index += 1;
         if self.index >= self.buffer.len() {
             self.index = 0;
         }
-        
+
         output
-    }
-    
-    // Resize buffer if sample rate changes dramatically
-    fn resize(&mut self, size: usize) {
-        if size != self.buffer.len() {
-            self.buffer = vec![0.0; size];
-            self.index = 0;
-            self.damp_hist = 0.0;
-        }
     }
 }
 
@@ -281,34 +334,30 @@ struct AllpassFilter {
 impl AllpassFilter {
     fn new(sample_rate: u32, delay_samples: usize) -> Self {
         // Same float-ceiling formula as CombFilter — see comment there.
-        let capacity = ((delay_samples as f64 * sample_rate as f64 / 44100.0).ceil() as usize).max(1);
+        let capacity =
+            ((delay_samples as f64 * sample_rate as f64 / 44100.0).ceil() as usize).max(1);
         Self {
             buffer: vec![0.0; capacity],
             index: 0,
             feedback: 0.5,
         }
     }
-    
+
     fn process(&mut self, input: f32) -> f32 {
-        if self.buffer.is_empty() { return input; }
-        
+        if self.buffer.is_empty() {
+            return input;
+        }
+
         let buffered = self.buffer[self.index];
         let output = -input + buffered;
         self.buffer[self.index] = input + (buffered * self.feedback);
-        
+
         self.index += 1;
         if self.index >= self.buffer.len() {
             self.index = 0;
         }
-        
+
         output
-    }
-    
-    fn resize(&mut self, size: usize) {
-        if size != self.buffer.len() {
-            self.buffer = vec![0.0; size];
-            self.index = 0;
-        }
     }
 }
 
@@ -324,16 +373,6 @@ pub struct Reverb {
 }
 
 impl Reverb {
-    // Freeverb tuning constants
-    const COMB_TUNING_L1: usize = 1116;
-    const COMB_TUNING_R1: usize = 1116 + 23;
-    const COMB_TUNING_L2: usize = 1188;
-    const COMB_TUNING_R2: usize = 1188 + 23;
-    const COMB_TUNING_L3: usize = 1277;
-    const COMB_TUNING_R3: usize = 1277 + 23;
-    const COMB_TUNING_L4: usize = 1356;
-    const COMB_TUNING_R4: usize = 1356 + 23;
-    
     pub fn new(sample_rate: u32, room_size: f32) -> Self {
         let mut reverb = Self {
             combs: Vec::with_capacity(8),
@@ -347,38 +386,39 @@ impl Reverb {
         reverb.update_params();
         reverb
     }
-    
+
     fn init_filters(&mut self) {
         let scale = self.sample_rate as f32 / 44100.0;
-        
+
         self.combs.clear();
         for tuning in self.comb_tunings.iter() {
             let size = (*tuning as f32 * scale) as usize;
             self.combs.push(CombFilter::new(self.sample_rate, size));
         }
-        
+
         self.allpasses.clear();
         for tuning in self.allpass_tunings.iter() {
             let size = (*tuning as f32 * scale) as usize;
-            self.allpasses.push(AllpassFilter::new(self.sample_rate, size));
+            self.allpasses
+                .push(AllpassFilter::new(self.sample_rate, size));
         }
     }
-    
+
     fn update_params(&mut self) {
         let feedback = 0.7 + self.room_size * 0.28; // Max ~0.98
         let damp = 0.2 * (1.0 - self.room_size);
-        
+
         for comb in &mut self.combs {
             comb.set_feedback(feedback);
             comb.set_damp(damp);
         }
     }
-    
+
     pub fn set_room_size(&mut self, room_size: f32) {
         self.room_size = room_size.clamp(0.0, 1.0);
         self.update_params();
     }
-    
+
     pub fn resize(&mut self, sample_rate: u32) {
         if sample_rate != self.sample_rate {
             self.sample_rate = sample_rate;
@@ -387,19 +427,19 @@ impl Reverb {
             self.update_params();
         }
     }
-    
+
     pub fn process(&mut self, input: f32) -> f32 {
         let mut output = 0.0;
         let gain = 0.015; // Input gain to prevent explosion
-        
+
         for comb in &mut self.combs {
             output += comb.process(input * gain);
         }
-        
+
         for allpass in &mut self.allpasses {
             output = allpass.process(output);
         }
-        
+
         output
     }
 }
@@ -422,7 +462,7 @@ impl Echo {
             feedback: feedback.clamp(0.0, 0.95),
         }
     }
-    
+
     pub fn set_delay(&mut self, sample_rate: u32, delay_seconds: f32) {
         let new_delay = (sample_rate as f32 * delay_seconds) as usize;
         if new_delay != self.delay_samples && new_delay > 0 {
@@ -432,28 +472,30 @@ impl Echo {
             self.write_pos = 0;
         }
     }
-    
+
     pub fn set_feedback(&mut self, feedback: f32) {
         self.feedback = feedback.clamp(0.0, 0.95);
     }
-    
+
     pub fn process(&mut self, input: f32) -> f32 {
-        if self.buffer.is_empty() { return input; }
-        
+        if self.buffer.is_empty() {
+            return input;
+        }
+
         let read_pos = if self.write_pos >= self.delay_samples {
             self.write_pos - self.delay_samples
         } else {
             self.buffer.len() + self.write_pos - self.delay_samples
         };
-        
+
         // Safety wrap
         let read_idx = read_pos % self.buffer.len();
-        
+
         let delayed = self.buffer[read_idx];
         self.buffer[self.write_pos] = input + delayed * self.feedback;
-        
+
         self.write_pos = (self.write_pos + 1) % self.buffer.len();
-        
+
         delayed
     }
 }
@@ -469,11 +511,12 @@ impl BassBoost {
         filter.set_lowshelf(sample_rate, 200.0, 0.707, boost_db);
         Self { filter }
     }
-    
+
     pub fn set_boost(&mut self, sample_rate: u32, boost_db: f32) {
-        self.filter.set_lowshelf(sample_rate, 200.0, 0.707, boost_db);
+        self.filter
+            .set_lowshelf(sample_rate, 200.0, 0.707, boost_db);
     }
-    
+
     pub fn process(&mut self, input: f32) -> f32 {
         self.filter.process(input)
     }
@@ -484,23 +527,6 @@ impl BassBoost {
 pub struct SoftClipper;
 
 impl SoftClipper {
-    pub fn process(input: f32) -> f32 {
-        // Simple cubic soft clipper
-        // f(x) = x - x^3/3 for -1.5 < x < 1.5
-        let threshold = 1.0;
-        if input > threshold {
-            let x = input - threshold;
-            threshold + (1.0 - (-x).exp()) * 0.5 // Soft knee
-            // Alternatively, use tanh for standard saturation:
-            // input.tanh()
-        } else if input < -threshold {
-            let x = input + threshold;
-            -threshold - (1.0 - (x).exp()) * 0.5
-        } else {
-            input
-        }
-    }
-    
     // Standard tanh saturation (smoother, analog-like)
     pub fn saturate(input: f32) -> f32 {
         // Only apply limiter when signal might clip; for normal
@@ -559,26 +585,35 @@ impl EffectsProcessor {
         processor.block_processing_enabled = enabled;
         processor
     }
-    
+
     pub fn set_sample_rate(&mut self, new_sample_rate: u32) {
         if new_sample_rate != self.sample_rate {
-            log::info!("Updating effects processor sample rate: {} -> {}", self.sample_rate, new_sample_rate);
+            log::info!(
+                "Updating effects processor sample rate: {} -> {}",
+                self.sample_rate,
+                new_sample_rate
+            );
             self.sample_rate = new_sample_rate;
-            
+
             // Reinitialize/Resize effects
             self.reverb.resize(new_sample_rate);
-            self.echo = Echo::new(new_sample_rate, self.config.echo_delay, self.config.echo_feedback);
+            self.echo = Echo::new(
+                new_sample_rate,
+                self.config.echo_delay,
+                self.config.echo_feedback,
+            );
             self.bass_boost = BassBoost::new(new_sample_rate, self.config.bass_boost);
             self.equalizer = Equalizer::new(new_sample_rate);
             self.equalizer.update_gains(&self.config.eq_bands);
         }
     }
-    
+
     pub fn update_config(&mut self, config: EffectsConfig) {
         self.reverb.set_room_size(config.reverb_room_size);
         self.echo.set_delay(self.sample_rate, config.echo_delay);
         self.echo.set_feedback(config.echo_feedback);
-        self.bass_boost.set_boost(self.sample_rate, config.bass_boost);
+        self.bass_boost
+            .set_boost(self.sample_rate, config.bass_boost);
         self.equalizer.update_gains(&config.eq_bands);
         self.config = config;
     }
@@ -586,7 +621,7 @@ impl EffectsProcessor {
     pub fn get_config(&self) -> EffectsConfig {
         self.config.clone()
     }
-    
+
     pub fn process(&mut self, input: f32) -> f32 {
         let mut output = input;
 
@@ -604,8 +639,8 @@ impl EffectsProcessor {
                 EffectId::Echo => {
                     if self.config.echo_mix > 0.0 {
                         let echo_wet = self.echo.process(output);
-                        output = output * (1.0 - self.config.echo_mix)
-                            + echo_wet * self.config.echo_mix;
+                        output =
+                            output * (1.0 - self.config.echo_mix) + echo_wet * self.config.echo_mix;
                     }
                 }
                 EffectId::Reverb => {
@@ -684,7 +719,7 @@ impl EffectsProcessor {
             *sample = SoftClipper::saturate(*sample);
         }
     }
-    
+
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
         if self.block_processing_enabled {
             self.process_buffer_staged(buffer);
@@ -711,12 +746,12 @@ mod tests {
     fn test_soft_clipper() {
         // Fast path below threshold is intentionally identity.
         assert_eq!(SoftClipper::saturate(0.5), 0.5);
-        
+
         // Limiting region
         let loud = SoftClipper::saturate(2.0); // tanh(2.0) ≈ 0.964
         assert!(loud < 1.0);
         assert!(loud > 0.9);
-        
+
         // Extreme input
         let very_loud = SoftClipper::saturate(10.0);
         assert!(very_loud <= 1.0);
@@ -734,10 +769,10 @@ mod tests {
     fn test_effects_processor_chain() {
         let config = EffectsConfig::default();
         let mut processor = EffectsProcessor::new(44100, config);
-        
+
         let mut buffer = vec![0.5; 100];
         processor.process_buffer(&mut buffer);
-        
+
         for sample in buffer.iter() {
             assert!(sample.abs() <= 1.0);
         }
@@ -756,14 +791,16 @@ mod tests {
 
     #[test]
     fn test_process_buffer_stage_equivalence() {
-        let mut config = EffectsConfig::default();
-        config.bass_boost = 4.0;
-        config.echo_mix = 0.35;
-        config.echo_feedback = 0.45;
-        config.echo_delay = 0.1;
-        config.reverb_mix = 0.3;
-        config.reverb_room_size = 0.6;
-        config.eq_bands = [1.5, -0.8, 1.0, -1.2, 0.7, 0.2, -0.4, 0.8, -0.3, 0.6];
+        let config = EffectsConfig {
+            bass_boost: 4.0,
+            echo_mix: 0.35,
+            echo_feedback: 0.45,
+            echo_delay: 0.1,
+            reverb_mix: 0.3,
+            reverb_room_size: 0.6,
+            eq_bands: [1.5, -0.8, 1.0, -1.2, 0.7, 0.2, -0.4, 0.8, -0.3, 0.6],
+            ..EffectsConfig::default()
+        };
 
         let mut legacy = EffectsProcessor::new_with_block_mode(44100, config.clone(), false);
         let mut staged = EffectsProcessor::new_with_block_mode(44100, config, true);
@@ -803,14 +840,16 @@ mod tests {
     }
 
     fn run_buffer_benchmark(buffer_len: usize, loops: usize, block_mode: bool) -> (f64, f32) {
-        let mut config = EffectsConfig::default();
-        config.bass_boost = 4.0;
-        config.echo_mix = 0.35;
-        config.echo_feedback = 0.45;
-        config.echo_delay = 0.1;
-        config.reverb_mix = 0.3;
-        config.reverb_room_size = 0.6;
-        config.eq_bands = [1.5, -0.8, 1.0, -1.2, 0.7, 0.2, -0.4, 0.8, -0.3, 0.6];
+        let config = EffectsConfig {
+            bass_boost: 4.0,
+            echo_mix: 0.35,
+            echo_feedback: 0.45,
+            echo_delay: 0.1,
+            reverb_mix: 0.3,
+            reverb_room_size: 0.6,
+            eq_bands: [1.5, -0.8, 1.0, -1.2, 0.7, 0.2, -0.4, 0.8, -0.3, 0.6],
+            ..EffectsConfig::default()
+        };
 
         let mut processor = EffectsProcessor::new_with_block_mode(44100, config, block_mode);
         let seed: Vec<f32> = (0..buffer_len)
@@ -835,11 +874,17 @@ mod tests {
     #[test]
     #[ignore]
     fn benchmark_process_buffer_block_vs_legacy() {
-        let scenarios = [(256usize, 200usize), (512usize, 200usize), (2048usize, 120usize)];
+        let scenarios = [
+            (256usize, 200usize),
+            (512usize, 200usize),
+            (2048usize, 120usize),
+        ];
 
         for (buffer_len, loops) in scenarios {
-            let (legacy_ns_per_sample, legacy_checksum) = run_buffer_benchmark(buffer_len, loops, false);
-            let (block_ns_per_sample, block_checksum) = run_buffer_benchmark(buffer_len, loops, true);
+            let (legacy_ns_per_sample, legacy_checksum) =
+                run_buffer_benchmark(buffer_len, loops, false);
+            let (block_ns_per_sample, block_checksum) =
+                run_buffer_benchmark(buffer_len, loops, true);
 
             assert!(legacy_checksum.is_finite());
             assert!(block_checksum.is_finite());
@@ -874,18 +919,25 @@ mod tests {
                 let out = filter.process(sample);
                 assert!(
                     out.is_finite(),
-                    "BiquadFilter produced non-finite at sr={}", sr
+                    "BiquadFilter produced non-finite at sr={}",
+                    sr
                 );
                 assert!(
                     out.abs() <= 2.0,
-                    "BiquadFilter output {} out of bounds at sr={}", out, sr
+                    "BiquadFilter output {} out of bounds at sr={}",
+                    out,
+                    sr
                 );
             }
 
             // Negative gain: confirm the filter still settles without runaway.
             filter.set_lowshelf(sr, 200.0, 0.707, -12.0);
             let out = filter.process(1.0);
-            assert!(out.is_finite(), "negative-gain lowshelf non-finite at sr={}", sr);
+            assert!(
+                out.is_finite(),
+                "negative-gain lowshelf non-finite at sr={}",
+                sr
+            );
         }
     }
 
@@ -906,7 +958,9 @@ mod tests {
             assert!(
                 comb.index < capacity,
                 "CombFilter index {} out of bounds (capacity={}) at i={}",
-                comb.index, capacity, i
+                comb.index,
+                capacity,
+                i
             );
         }
     }
@@ -920,10 +974,16 @@ mod tests {
         for i in 0..(capacity + 10) {
             let input = if i % 2 == 0 { 0.4 } else { -0.4 };
             let out = ap.process(input);
-            assert!(out.is_finite(), "AllpassFilter output non-finite at i={}", i);
+            assert!(
+                out.is_finite(),
+                "AllpassFilter output non-finite at i={}",
+                i
+            );
             assert!(
                 ap.index < capacity,
-                "AllpassFilter index {} out of bounds at i={}", ap.index, i
+                "AllpassFilter index {} out of bounds at i={}",
+                ap.index,
+                i
             );
         }
     }
@@ -937,10 +997,19 @@ mod tests {
         let c96 = CombFilter::new(96000, 1116).buffer.len();
 
         assert_eq!(c44, 1116, "44.1 kHz capacity should equal delay_samples");
-        assert_eq!(c48, 1215, "48 kHz capacity should be ⌈1116×48000/44100⌉=1215");
-        assert_eq!(c96, 2430, "96 kHz capacity should be ⌈1116×96000/44100⌉=2430");
+        assert_eq!(
+            c48, 1215,
+            "48 kHz capacity should be ⌈1116×48000/44100⌉=1215"
+        );
+        assert_eq!(
+            c96, 2430,
+            "96 kHz capacity should be ⌈1116×96000/44100⌉=2430"
+        );
         // 48 kHz must be larger than 44.1 kHz
-        assert!(c48 > c44, "48 kHz buffer must be larger than 44.1 kHz buffer");
+        assert!(
+            c48 > c44,
+            "48 kHz buffer must be larger than 44.1 kHz buffer"
+        );
         assert!(c96 > c48, "96 kHz buffer must be larger than 48 kHz buffer");
     }
 }

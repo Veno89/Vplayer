@@ -12,8 +12,8 @@ import { useCurrentColors } from '../hooks/useStoreHooks';
 export function OnboardingWindow({ onComplete }: { onComplete: () => void }) {
   const currentColors = useCurrentColors();
   const { library, toast } = usePlayerContext();
-  const handleAddFolder = useCallback(async () => {
-    try { await library.addFolder(); toast.showSuccess('Folder added successfully'); }
+  const handleAddFolder = useCallback(async (folderPath: string) => {
+    try { await library.addFolder(folderPath); toast.showSuccess('Folder added successfully'); }
     catch { toast.showError('Failed to add folder'); }
   }, [library, toast]);
   const [step, setStep] = useState(0);
@@ -74,7 +74,7 @@ export function OnboardingWindow({ onComplete }: { onComplete: () => void }) {
 
       if (selected) {
         setSelectedFolder(selected);
-        await handleAddFolder();
+        await handleAddFolder(selected);
         setFolderAdded(true);
       }
     } catch (err) {
@@ -115,7 +115,7 @@ export function OnboardingWindow({ onComplete }: { onComplete: () => void }) {
   const StepIcon = currentStep.icon;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center" style={{ zIndex: 9999 }}>
+    <div role="dialog" aria-modal="true" aria-labelledby="onboarding-title" className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center" style={{ zIndex: 9999 }}>
       <div className="w-full max-w-2xl mx-4">
         {/* Progress */}
         <div className="flex justify-center gap-2 mb-8">
@@ -130,6 +130,8 @@ export function OnboardingWindow({ onComplete }: { onComplete: () => void }) {
                     ? 'bg-cyan-500/50' 
                     : 'bg-slate-700'
               }`}
+              aria-label={`Go to setup step ${i + 1}: ${s.title}`}
+              aria-current={i === step ? 'step' : undefined}
             />
           ))}
         </div>
@@ -141,7 +143,7 @@ export function OnboardingWindow({ onComplete }: { onComplete: () => void }) {
             <div className={`inline-flex p-4 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 mb-4`}>
               <StepIcon className="w-10 h-10 text-cyan-400" />
             </div>
-            <h1 className="text-2xl font-bold text-white mb-2">{currentStep.title}</h1>
+            <h1 id="onboarding-title" className="text-2xl font-bold text-white mb-2">{currentStep.title}</h1>
             <p className="text-slate-400">{currentStep.description}</p>
           </div>
 
@@ -286,7 +288,7 @@ function ShortcutsStep() {
         </div>
       ))}
       <p className="text-slate-500 text-sm text-center mt-4">
-        Press <kbd className="px-2 py-0.5 bg-slate-800 rounded text-xs">Ctrl + ?</kbd> anytime to see all shortcuts
+        Press <kbd className="px-2 py-0.5 bg-slate-800 rounded text-xs">?</kbd> anytime to see all shortcuts
       </p>
     </div>
   );
@@ -306,7 +308,7 @@ function CompleteStep() {
       </div>
       <div className="p-4 bg-slate-700/30 rounded-xl inline-block">
         <p className="text-slate-400 text-sm">
-          Need help? Press <kbd className="px-2 py-0.5 bg-slate-800 rounded text-xs mx-1">F1</kbd> or visit our documentation
+          Need help? Press <kbd className="px-2 py-0.5 bg-slate-800 rounded text-xs mx-1">?</kbd> to view all shortcuts
         </p>
       </div>
     </div>

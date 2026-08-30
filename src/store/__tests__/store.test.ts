@@ -45,8 +45,8 @@ describe('playerSlice', () => {
       const b = makeMockTrack({ id: 'b' });
       const c = makeMockTrack({ id: 'c' });
       useStore.getState().addToQueue([a, b], 'end');
-      useStore.getState().addToQueue(c, 'next'); // inserts at index 1 (after queueIndex 0)
-      expect(useStore.getState().queue.map(t => t.id)).toEqual(['a', 'c', 'b']);
+      useStore.getState().addToQueue(c, 'next');
+      expect(useStore.getState().queue.map(t => t.id)).toEqual(['c', 'a', 'b']);
     });
 
     it('removes a track from queue', () => {
@@ -68,7 +68,21 @@ describe('playerSlice', () => {
       const newTracks = [makeMockTrack({ id: 'x' }), makeMockTrack({ id: 'y' })];
       useStore.getState().replaceQueue(newTracks, 1);
       expect(useStore.getState().queue).toHaveLength(2);
-      expect(useStore.getState().queueIndex).toBe(1);
+      expect(useStore.getState().queue.map(t => t.id)).toEqual(['y', 'x']);
+      expect(useStore.getState().queueIndex).toBe(0);
+    });
+
+    it('consumes pending tracks exactly once in FIFO order', () => {
+      const tracks = [makeMockTrack({ id: 'a' }), makeMockTrack({ id: 'b' }), makeMockTrack({ id: 'c' })];
+      useStore.getState().addToQueue(tracks, 'end');
+
+      expect(useStore.getState().peekNextInQueue()?.id).toBe('a');
+      expect(useStore.getState().nextInQueue()?.id).toBe('a');
+      expect(useStore.getState().nextInQueue()?.id).toBe('b');
+      expect(useStore.getState().nextInQueue()?.id).toBe('c');
+      expect(useStore.getState().nextInQueue()).toBeNull();
+      expect(useStore.getState().queue).toEqual([]);
+      expect(useStore.getState().queueHistory.map(t => t.id)).toEqual(['a', 'b', 'c']);
     });
 
     it('moves track within queue', () => {

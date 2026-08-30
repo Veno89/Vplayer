@@ -1,5 +1,5 @@
-use std::fmt;
 use std::error::Error as StdError;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum AppError {
@@ -69,14 +69,14 @@ impl From<AppError> for String {
     fn from(err: AppError) -> Self {
         // Include the full error chain in the message
         let mut message = err.to_string();
-        
+
         // Add source chain if available
         let mut source = err.source();
         while let Some(err) = source {
             message.push_str(&format!("\n  Caused by: {}", err));
             source = err.source();
         }
-        
+
         message
     }
 }

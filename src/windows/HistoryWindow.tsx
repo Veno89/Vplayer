@@ -3,13 +3,13 @@ import { History, Clock, TrendingUp, PlayCircle } from 'lucide-react';
 import { TauriAPI } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
-import { usePlayerContext } from '../context/PlayerProvider';
 import type { Track } from '../types';
 
 export function HistoryWindow() {
   const currentColors = useCurrentColors();
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
-  const { playbackTracks: tracks } = usePlayerContext();
+  const setActivePlaybackTracks = useStore(s => s.setActivePlaybackTracks);
+  const setPlaying = useStore(s => s.setPlaying);
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
   const [mostPlayed, setMostPlayed] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,9 +36,12 @@ export function HistoryWindow() {
   };
 
   const handleTrackClick = (track: Track) => {
-    const trackIndex = tracks.findIndex((t: Track) => t.id === track.id);
+    const sourceTracks = activeTab === 'recent' ? recentlyPlayed : mostPlayed;
+    const trackIndex = sourceTracks.findIndex((item: Track) => item.id === track.id);
     if (trackIndex !== -1) {
+      setActivePlaybackTracks(sourceTracks);
       setCurrentTrack(trackIndex);
+      setPlaying(true);
     }
   };
 
@@ -80,10 +83,12 @@ export function HistoryWindow() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 bg-slate-800/50 rounded p-1">
+      <div className="flex gap-2 bg-slate-800/50 rounded p-1" role="tablist" aria-label="Listening history">
         <button
           onClick={() => setActiveTab('recent')}
           onMouseDown={e => e.stopPropagation()}
+          role="tab"
+          aria-selected={activeTab === 'recent'}
           className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm transition-all ${
             activeTab === 'recent'
               ? `${currentColors.primary} text-white`
@@ -96,6 +101,8 @@ export function HistoryWindow() {
         <button
           onClick={() => setActiveTab('most')}
           onMouseDown={e => e.stopPropagation()}
+          role="tab"
+          aria-selected={activeTab === 'most'}
           className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm transition-all ${
             activeTab === 'most'
               ? `${currentColors.primary} text-white`
@@ -108,7 +115,7 @@ export function HistoryWindow() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto space-y-1">
+      <div className="flex-1 overflow-y-auto space-y-1" role="tabpanel">
         {loading ? (
           <div className="flex items-center justify-center h-full text-slate-400">
             Loading...
@@ -127,9 +134,10 @@ export function HistoryWindow() {
                   </div>
                 ) : (
                   recentlyPlayed.map((track, index) => (
-                    <div
+                    <button
+                      type="button"
                       key={`recent-${track.id}-${index}`}
-                      className="group flex items-center gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer"
+                      className="group flex items-center gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer w-full text-left"
                       onClick={() => handleTrackClick(track)}
                       onMouseDown={e => e.stopPropagation()}
                     >
@@ -147,7 +155,7 @@ export function HistoryWindow() {
                       <div className="flex-shrink-0 text-xs text-slate-500">
                         {formatDate(track.last_played)}
                       </div>
-                    </div>
+                    </button>
                   ))
                 )}
               </>
@@ -165,9 +173,10 @@ export function HistoryWindow() {
                   </div>
                 ) : (
                   mostPlayed.map((track, index) => (
-                    <div
+                    <button
+                      type="button"
                       key={`most-${track.id}-${index}`}
-                      className="group flex items-center gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer"
+                      className="group flex items-center gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer w-full text-left"
                       onClick={() => handleTrackClick(track)}
                       onMouseDown={e => e.stopPropagation()}
                     >
@@ -189,7 +198,7 @@ export function HistoryWindow() {
                       <div className="flex-shrink-0 text-xs text-slate-500 font-medium">
                         {track.play_count || 0} plays
                       </div>
-                    </div>
+                    </button>
                   ))
                 )}
               </>

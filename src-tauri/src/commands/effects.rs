@@ -1,11 +1,15 @@
 // Audio effects commands
-use crate::AppState;
-use crate::error::AppResult;
 use crate::effects::EffectsConfig;
+use crate::error::{AppError, AppResult};
+use crate::AppState;
 
 /// Set audio effects configuration
 #[tauri::command]
-pub fn set_audio_effects(config: EffectsConfig, state: tauri::State<'_, AppState>) -> AppResult<()> {
+pub fn set_audio_effects(
+    config: EffectsConfig,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<()> {
+    config.validate().map_err(AppError::Validation)?;
     state.player.set_effects(config);
     Ok(())
 }

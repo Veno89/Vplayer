@@ -105,18 +105,30 @@ export function usePlayer({
 
         // Check queue first - queue always takes priority
         if (store && store.queue && store.queue.length > 0) {
-            const nextQueueTrack = store.peekNextInQueue();
-            if (nextQueueTrack) {
+            const attempts = consume ? store.queue.length : 1;
+            for (let attempt = 0; attempt < attempts; attempt++) {
+                const nextQueueTrack = consume
+                    ? store.nextInQueue()
+                    : store.peekNextInQueue();
+                if (!nextQueueTrack) break;
                 const queueTrackIndex = currentTracks.findIndex((t: Track) => t.id === nextQueueTrack.id);
                 if (queueTrackIndex !== -1) {
-                    if (consume) store.nextInQueue();
                     log.info('[getNextTrackIndex] Using queue, index:', queueTrackIndex);
                     return queueTrackIndex;
-                } else {
-                    console.warn('[getNextTrackIndex] Queue track not found in library, skipping:', nextQueueTrack.id);
-                    if (consume) store.nextInQueue();
-                    return _getNextTrackIndex(current, effectiveTotalTracks, isShuffled, repeat, consume);
                 }
+
+                // A queue entry can originate outside the current playlist/album.
+                // Peeking must stay side-effect free, so do not preload/crossfade
+                // across that source boundary. On consume, promote the queued track
+                // into an explicit playback source instead of silently dropping it.
+                if (!consume) return null;
+                const queueSource = [
+                    nextQueueTrack,
+                    ...currentTracks.filter((track: Track) => track.id !== nextQueueTrack.id),
+                ];
+                store.setActivePlaybackTracks(queueSource);
+                log.info('[getNextTrackIndex] Switched to queue playback source for:', nextQueueTrack.id);
+                return 0;
             }
         }
 
@@ -256,7 +268,7 @@ export function usePlayer({
                 if (nextTrack?.path) {
                     log.info(`[Gapless] Preloading next track: ${nextTrack.title || nextTrack.name}`);
                     nextTrackPreloadedRef.current = true;
-                    TauriAPI.preloadTrack(nextTrack.path).catch(err => {
+                    TauriAPI.preloadTrack(nextTrack.id, nextTrack.path).catch(err => {
                         console.warn('[Gapless] Preload failed:', err);
                         nextTrackPreloadedRef.current = false;
                     });

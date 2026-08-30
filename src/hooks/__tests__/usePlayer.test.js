@@ -118,6 +118,50 @@ describe('usePlayer', () => {
       expect(calledWith).toBeGreaterThanOrEqual(0);
       expect(calledWith).toBeLessThan(tracks.length);
     });
+
+    it('should switch playback source instead of skipping an external queued track', () => {
+      const tracks = [
+        { id: 'playlist-1', title: 'Playlist Track 1' },
+        { id: 'playlist-2', title: 'Playlist Track 2' },
+      ];
+      const queuedTrack = { id: 'library-only', title: 'Queued Library Track' };
+      const setActivePlaybackTracks = vi.fn();
+      const nextInQueue = vi.fn().mockReturnValue(queuedTrack);
+      const store = {
+        activePlaybackTracks: tracks,
+        currentTrack: 0,
+        shuffle: false,
+        repeatMode: 'off',
+        queue: [queuedTrack],
+        nextInQueue,
+        peekNextInQueue: vi.fn().mockReturnValue(queuedTrack),
+        setActivePlaybackTracks,
+        pushShuffleHistory: vi.fn(),
+        clearShuffleState: vi.fn(),
+      };
+
+      const { result } = renderHook(() =>
+        usePlayer({
+          audio: mockAudio,
+          player: mockPlayer,
+          tracks,
+          toast: mockToast,
+          crossfade: mockCrossfade,
+          storeGetter: () => store,
+        })
+      );
+
+      act(() => {
+        result.current.handleNextTrack();
+      });
+
+      expect(nextInQueue).toHaveBeenCalledOnce();
+      expect(setActivePlaybackTracks).toHaveBeenCalledWith([
+        queuedTrack,
+        ...tracks,
+      ]);
+      expect(mockPlayer.setCurrentTrack).toHaveBeenCalledWith(0);
+    });
   });
 
   describe('handlePrevTrack', () => {

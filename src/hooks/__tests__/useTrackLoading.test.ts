@@ -8,6 +8,8 @@ import { TauriAPI } from '../../services/TauriAPI';
 vi.mock('../../services/TauriAPI', () => ({
   TauriAPI: {
     hasPreloaded: vi.fn().mockResolvedValue(false),
+    getTrackReplayGain: vi.fn().mockResolvedValue(null),
+    clearReplayGain: vi.fn().mockResolvedValue(undefined),
   },
 }));
 

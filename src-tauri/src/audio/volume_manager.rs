@@ -156,7 +156,9 @@ mod tests {
         vm2.set_replaygain(5.0, 0.0);
         let mult_single = vm2.replaygain_multiplier;
 
-        assert!((mult_combined - mult_single).abs() < 0.001,
-            "gain+preamp should equal the same total dB");
+        assert!(
+            (mult_combined - mult_single).abs() < 0.001,
+            "gain+preamp should equal the same total dB"
+        );
     }
 }

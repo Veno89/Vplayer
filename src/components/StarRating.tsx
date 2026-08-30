@@ -47,6 +47,8 @@ export function StarRating({ rating = 0, onRatingChange, readOnly = false, size 
     <div 
       className="flex gap-0.5 items-center"
       onMouseLeave={handleMouseLeave}
+      role="group"
+      aria-label={`Rating: ${rating} of 5 stars`}
     >
       {[1, 2, 3, 4, 5].map((star) => (
         <button
@@ -62,6 +64,8 @@ export function StarRating({ rating = 0, onRatingChange, readOnly = false, size 
             readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
           }`}
           title={`${star} star${star > 1 ? 's' : ''}`}
+          aria-label={rating === star ? `Clear ${star}-star rating` : `Set rating to ${star} stars`}
+          aria-pressed={rating === star}
         >
           <Star
             className={`${iconSize} ${

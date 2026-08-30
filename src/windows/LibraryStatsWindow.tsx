@@ -7,23 +7,6 @@ import { nativeConfirm, nativeError } from '../utils/nativeDialog';
 import { usePlayerContext } from '../context/PlayerProvider';
 import type { Track } from '../types';
 
-// Extended performance stats shape from backend
-interface ExtendedPerfStats {
-  trackCount: number;
-  folderCount: number;
-  playlistCount: number;
-  totalPlayTime: number;
-  avgTrackDuration: number;
-  performance?: {
-    query_time_ms: number;
-    memory_usage_mb?: number;
-  };
-  recommendations?: {
-    vacuum_recommended: boolean;
-  };
-  [key: string]: unknown;
-}
-
 interface LocalStats {
   totalTracks: number;
   totalDuration: number;
@@ -238,26 +221,22 @@ export function LibraryStatsWindow() {
           </div>
 
           {/* Backend Performance */}
-          {(perfStats as ExtendedPerfStats | null)?.performance && (
+          {perfStats?.performance && (
             <div className="mt-3 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
               <p className="text-slate-500 text-xs mb-2">Performance</p>
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="text-sm">
                 <div>
                   <span className="text-slate-400">Query Time:</span>
-                  <span className="text-white ml-2">{(perfStats as ExtendedPerfStats).performance!.query_time_ms}ms</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Memory:</span>
-                  <span className="text-white ml-2">{(perfStats as ExtendedPerfStats).performance!.memory_usage_mb?.toFixed(1)}MB</span>
+                  <span className="text-white ml-2">{perfStats.performance.query_time_ms}ms</span>
                 </div>
               </div>
             </div>
           )}
 
           {/* Recommendations */}
-          {(perfStats as ExtendedPerfStats | null)?.recommendations && (
+          {perfStats?.recommendations && (
             <div className="mt-3 space-y-2">
-              {(perfStats as ExtendedPerfStats).recommendations!.vacuum_recommended && (
+              {perfStats.recommendations.vacuum_recommended && (
                 <div className="p-3 bg-yellow-900/20 border border-yellow-700/50 rounded-lg flex items-center gap-3">
                   <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
                   <p className="text-yellow-300 text-sm flex-1">Database optimization recommended</p>

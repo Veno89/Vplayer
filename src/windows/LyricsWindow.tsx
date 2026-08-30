@@ -52,17 +52,26 @@ export default function LyricsWindow() {
     setLoading(true);
     setError(null);
 
-    TauriAPI.loadLyrics(currentTrack.path)
+    let disposed = false;
+    TauriAPI.loadLyrics(currentTrack.id, currentTrack.path)
       .then((lrc) => {
-        setLyrics(lrc as unknown as LrcData);
+        if (disposed) return;
+        setLyrics(lrc as LrcData);
         setError(null);
       })
       .catch((err: unknown) => {
+        if (disposed) return;
         setLyrics(null);
         setError(err instanceof Error ? err.message : String(err));
       })
-      .finally(() => setLoading(false));
-  }, [currentTrack?.path]);
+      .finally(() => {
+        if (!disposed) setLoading(false);
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [currentTrack?.id, currentTrack?.path]);
 
   // Update current line based on progress
   useEffect(() => {
