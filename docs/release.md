@@ -12,8 +12,8 @@ tests. The workflow also installs a pinned `cargo-audit` release and checks the 
 against current RustSec data. `RUSTSEC-2026-0235` is explicitly ignored because it exists
 only behind `rust_decimal`'s inactive optional `rkyv` feature and is absent from the Windows
 release target graph; the exception must be removed if that feature ever becomes active.
-Release actions are pinned to full commit SHAs, and the workflow checks out full
-history so the exact tagged revision is retained.
+Release actions are pinned to full commit SHAs, the Rust toolchain is pinned to 1.91.0,
+and the workflow checks out full history so the exact tagged revision is retained.
 
 The workflow creates a **draft** GitHub release only after those gates pass. It requires the
 Tauri updater private key and password, verifies that updater `.sig` files exist, and attaches:

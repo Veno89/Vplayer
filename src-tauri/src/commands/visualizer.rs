@@ -33,13 +33,14 @@ fn cache_key(path: &str, bars: usize) -> String {
 fn read_cached_waveform(path: &str, bars: usize) -> Option<Vec<f32>> {
     let file_path = waveform_cache_dir().join(cache_key(path, bars));
     let bytes = fs::read(&file_path).ok()?;
-    if bytes.len() % 4 != 0 {
+    let (samples, remainder) = bytes.as_chunks::<4>();
+    if !remainder.is_empty() {
         return None;
     }
     Some(
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        samples
+            .iter()
+            .map(|sample| f32::from_le_bytes(*sample))
             .collect(),
     )
 }

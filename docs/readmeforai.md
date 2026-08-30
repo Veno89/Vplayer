@@ -104,7 +104,7 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.45
+├── package.json                        # v0.9.46
 ├── vite.config.js                      # Vite 7 config
 ├── vitest.config.js                    # Test config (jsdom environment)
 ├── tsconfig.json                       # TS config (strict, allowJs)
@@ -357,7 +357,7 @@ Before declaring any feature "done":
 - [ ] No blocking operations on UI thread
 - [ ] No TODOs, stubs, or unused code left behind
 - [ ] Errors are handled, not ignored (use `ErrorHandler` service or toast)
-- [ ] Tests pass (`npm test` — 177 tests across 14 files at the v0.9.45 release gate)
+- [ ] Tests pass (`npm test` — 177 tests across 14 files at the v0.9.46 release gate)
 
 ---
 
@@ -377,7 +377,7 @@ Before declaring any feature "done":
 ## 10. Known Bugs
 
 The following items came from the historical v0.9.32 notes. They have not been
-revalidated against v0.9.45 and must not be treated as current confirmed defects:
+revalidated against v0.9.46 and must not be treated as current confirmed defects:
 
 | # | Bug | Area |
 |---|-----|------|

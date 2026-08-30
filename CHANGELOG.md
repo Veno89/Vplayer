@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.46] - 2026-08-30
+
+### Release engineering
+
+- Adopted the fixed-size slice API required by current Clippy for waveform cache decoding.
+- Pinned both release jobs to Rust 1.91.0 so lint results remain reproducible instead of changing when the moving `stable` toolchain adds new warnings.
+
 ## [0.9.45] - 2026-08-30
 
 ### Release engineering
