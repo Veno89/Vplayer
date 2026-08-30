@@ -8,11 +8,13 @@ const cargoToml = readFileSync('src-tauri/Cargo.toml', 'utf8');
 const cargoLock = readFileSync('src-tauri/Cargo.lock', 'utf8');
 const musicBrainzApi = readFileSync('src/services/MusicBrainzAPI.ts', 'utf8');
 const optionsWindow = readFileSync('src/windows/OptionsWindowEnhanced.tsx', 'utf8');
+const advancedTab = readFileSync('src/windows/options/AdvancedTab.tsx', 'utf8');
 
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 const cargoLockVersion = cargoLock.match(/\[\[package\]\]\s*\r?\nname = "vplayer"\s*\r?\nversion = "([^"]+)"/m)?.[1];
 const musicBrainzVersion = musicBrainzApi.match(/VPlayer\/(\d+\.\d+\.\d+)/)?.[1];
 const optionsFallbackVersion = optionsWindow.match(/useState\('(\d+\.\d+\.\d+)'\)/)?.[1];
+const advancedFallbackVersion = advancedTab.match(/useState\('(\d+\.\d+\.\d+)'\)/)?.[1];
 const versions = new Map([
   ['package.json', packageJson.version],
   ['package-lock.json', packageLock.version],
@@ -22,6 +24,7 @@ const versions = new Map([
   ['src-tauri/tauri.conf.json', tauriConfig.version],
   ['MusicBrainz user agent', musicBrainzVersion],
   ['About window fallback', optionsFallbackVersion],
+  ['Advanced settings fallback', advancedFallbackVersion],
 ]);
 
 const missing = [...versions].filter(([, value]) => !value).map(([name]) => name);

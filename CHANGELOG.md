@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.45] - 2026-08-30
+
+### Release engineering
+
+- Declared `@testing-library/dom` as a direct development dependency so a clean CI install exposes the same Testing Library types as the local release gate.
+- Extended the version contract to cover both in-app version fallbacks and updated every current version source to `0.9.45` without rewriting the immutable `v0.9.44` tag.
+
 ## [0.9.44] - 2026-08-30
 
 ### Correctness and data integrity

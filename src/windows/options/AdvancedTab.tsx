@@ -73,7 +73,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [appVersion, setAppVersion] = useState('0.6.3');
+  const [appVersion, setAppVersion] = useState('0.9.45');
 
   useEffect(() => {
     loadStats();
