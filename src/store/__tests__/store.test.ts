@@ -4,7 +4,7 @@
  * A-B repeat, shuffle, layout application, theme CRUD.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useStore } from '../useStore';
+import { selectPersistedState, useStore } from '../useStore';
 
 const makeMockTrack = (overrides = {}) => ({
   id: `track-${Math.random().toString(36).slice(2, 8)}`,
@@ -157,6 +157,24 @@ describe('playerSlice', () => {
       useStore.getState().setRepeatMode('off');
       expect(useStore.getState().repeatMode).toBe('off');
     });
+  });
+});
+
+describe('persistence hot path', () => {
+  beforeEach(() => {
+    useStore.setState(useStore.getInitialState());
+  });
+
+  it('reuses the persisted snapshot for transient playback ticks', () => {
+    const initial = selectPersistedState(useStore.getState());
+
+    useStore.getState().setProgress(42.5);
+    useStore.getState().setDuration(200);
+    const afterTick = selectPersistedState(useStore.getState());
+    expect(afterTick).toBe(initial);
+
+    useStore.getState().setVolume(0.41);
+    expect(selectPersistedState(useStore.getState())).not.toBe(afterTick);
   });
 });
 

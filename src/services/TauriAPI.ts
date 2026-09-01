@@ -71,6 +71,14 @@ export interface RuntimeDiagnostics {
     timestamp_ms: number;
 }
 
+export interface VisualizerData {
+    spectrum: number[];
+    waveform: number[];
+    beat_detected: boolean;
+    peak_frequency: number;
+    rms_level: number;
+}
+
 /** Returned by check_missing_files — (trackId, path) tuples */
 export type MissingFile = [string, string];
 
@@ -465,8 +473,12 @@ class TauriAPIService {
 
     // ========== Visualizer Commands ==========
 
-    async getVisualizerData(): Promise<number[]> {
+    async getVisualizerData(): Promise<VisualizerData> {
         return this._invoke('get_visualizer_data');
+    }
+
+    async setVisualizerActive(active: boolean): Promise<void> {
+        return this._invoke('set_visualizer_active', { active });
     }
 
     async setVisualizerMode(mode: string): Promise<void> {

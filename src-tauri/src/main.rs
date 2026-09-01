@@ -52,6 +52,10 @@ struct PlaybackTick {
     is_paused: bool,
 }
 
+fn emit_window_visibility(app: &tauri::AppHandle, visible: bool) {
+    let _ = app.emit("app-window-visibility-changed", visible);
+}
+
 // Re-export commands for use in invoke_handler
 use commands::{
     add_track_to_playlist,
@@ -143,6 +147,7 @@ use commands::{
     set_track_rating,
     // Tray commands
     set_tray_settings,
+    set_visualizer_active,
     set_visualizer_mode,
     set_volume,
     show_in_folder,
@@ -451,6 +456,7 @@ fn main() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                            emit_window_visibility(app, true);
                         }
                     }
                     "quit" => {
@@ -470,9 +476,11 @@ fn main() {
                             if let Some(window) = app_handle.get_webview_window("main") {
                                 if window.is_visible().unwrap_or(false) {
                                     let _ = window.hide();
+                                    emit_window_visibility(&app_handle, false);
                                 } else {
                                     let _ = window.show();
                                     let _ = window.set_focus();
+                                    emit_window_visibility(&app_handle, true);
                                 }
                             }
                         }
@@ -566,6 +574,7 @@ fn main() {
             set_effects_enabled,
             is_effects_enabled,
             get_visualizer_data,
+            set_visualizer_active,
             set_visualizer_mode,
             set_beat_sensitivity,
             get_track_waveform,
@@ -598,6 +607,7 @@ fn main() {
                 if should_hide {
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.hide();
+                        emit_window_visibility(app_handle, false);
                     }
                     api.prevent_close();
                 }

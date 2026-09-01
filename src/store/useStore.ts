@@ -8,7 +8,7 @@
  * - musicBrainzSlice: MusicBrainz integration and discography matching
  */
 import { create } from 'zustand';
-import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
+import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
 import type { AppStore } from './types';
 import {
   createPlayerSlice,
@@ -32,25 +32,73 @@ try {
   }
 } catch { /* storage can be unavailable in hardened WebViews */ }
 
+type PersistedAppState = Partial<AppStore>;
+
 let lastPersistedValue: string | null = null;
-const deduplicatingStorage: StateStorage = {
+let lastPersistedSnapshot: PersistedAppState | null = null;
+const deduplicatingStorage: PersistStorage<PersistedAppState> = {
   getItem(name) {
     const value = localStorage.getItem(name);
     lastPersistedValue = value;
-    return value;
+    return value ? JSON.parse(value) as StorageValue<PersistedAppState> : null;
   },
   setItem(name, value) {
-    if (localStorage.getItem(STORE_RESET_PENDING_KEY) === '1' || value === lastPersistedValue) {
+    if (localStorage.getItem(STORE_RESET_PENDING_KEY) === '1' || value.state === lastPersistedSnapshot) {
       return;
     }
-    localStorage.setItem(name, value);
-    lastPersistedValue = value;
+    const serialized = JSON.stringify(value);
+    if (serialized === lastPersistedValue) {
+      lastPersistedSnapshot = value.state;
+      return;
+    }
+    localStorage.setItem(name, serialized);
+    lastPersistedValue = serialized;
+    lastPersistedSnapshot = value.state;
   },
   removeItem(name) {
     localStorage.removeItem(name);
     lastPersistedValue = null;
+    lastPersistedSnapshot = null;
   },
 };
+
+let lastSelectedState: PersistedAppState | null = null;
+
+function equalPersistedValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  return left.every((item, index) => Object.is(item, right[index]));
+}
+
+function equalPersistedState(left: PersistedAppState, right: PersistedAppState): boolean {
+  const leftEntries = Object.entries(left);
+  const rightKeys = Object.keys(right);
+  return leftEntries.length === rightKeys.length
+    && leftEntries.every(([key, value]) =>
+      equalPersistedValue(value, (right as Record<string, unknown>)[key])
+    );
+}
+
+export function selectPersistedState(state: AppStore): PersistedAppState {
+  const persisted: PersistedAppState = {
+    ...playerPersistState(state),
+    ...uiPersistState(state),
+    ...settingsPersistState(state),
+    ...musicBrainzPersistState(state),
+  };
+
+  if (!state.rememberQueue) {
+    persisted.queue = [];
+    persisted.queueIndex = 0;
+    persisted.queueHistory = [];
+  }
+
+  if (lastSelectedState && equalPersistedState(lastSelectedState, persisted)) {
+    return lastSelectedState;
+  }
+  lastSelectedState = persisted;
+  return persisted;
+}
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -84,7 +132,7 @@ function sanitizePersistedState(value: unknown, current: AppStore): Partial<AppS
 }
 
 export const useStore = create<AppStore>()(
-  persist(
+  persist<AppStore, [], [], PersistedAppState>(
     (set, get) => ({
       // Combine all slices
       ...createPlayerSlice(set, get),
@@ -95,24 +143,9 @@ export const useStore = create<AppStore>()(
     {
       name: 'vplayer-storage',
       version: 2,
-      storage: createJSONStorage(() => deduplicatingStorage),
-      migrate: (persistedState) => persistedState,
-      partialize: (state) => {
-        const persisted = {
-          // Combine persisted state from all slices
-          ...playerPersistState(state),
-          ...uiPersistState(state),
-          ...settingsPersistState(state),
-          ...musicBrainzPersistState(state),
-        };
-        // If rememberQueue is disabled, strip queue data from persistence
-        if (!state.rememberQueue) {
-          (persisted as Record<string, unknown>).queue = [];
-          (persisted as Record<string, unknown>).queueIndex = 0;
-          (persisted as Record<string, unknown>).queueHistory = [];
-        }
-        return persisted;
-      },
+      storage: deduplicatingStorage,
+      migrate: (persistedState) => persistedState as PersistedAppState,
+      partialize: selectPersistedState,
       // Merge persisted state with fresh defaults to add new windows
       merge: (persistedState, currentState) => {
         const persisted = sanitizePersistedState(persistedState, currentState);

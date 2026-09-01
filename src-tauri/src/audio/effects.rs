@@ -8,7 +8,7 @@ use crate::effects::EffectsProcessor;
 use rodio::cpal::FromSample;
 use rodio::source::SeekError;
 use rodio::Source;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -27,6 +27,8 @@ where
 {
     input: I,
     processor: Arc<Mutex<EffectsProcessor>>,
+    effects_enabled: Arc<AtomicBool>,
+    effects_configured: Arc<AtomicBool>,
     visualizer_buffer: Arc<VisualizerBuffer>,
     /// Shared atomic balance value (f32 stored as u32 bits).
     /// -1.0 = full left, 0.0 = center, 1.0 = full right.
@@ -48,12 +50,16 @@ where
     pub fn new(
         input: I,
         processor: Arc<Mutex<EffectsProcessor>>,
+        effects_enabled: Arc<AtomicBool>,
+        effects_configured: Arc<AtomicBool>,
         visualizer_buffer: Arc<VisualizerBuffer>,
         balance: Arc<AtomicU32>,
     ) -> Self {
         Self {
             input,
             processor,
+            effects_enabled,
+            effects_configured,
             visualizer_buffer,
             balance,
             sample_rate_initialized: false,
@@ -100,13 +106,17 @@ where
             }
 
             // Acquire effects lock once for the whole batch
-            match self.processor.try_lock() {
-                Ok(mut processor) => {
-                    processor.process_buffer(&mut self.batch_buf);
-                }
-                Err(_) => {
-                    // Lock contention — pass batch through unprocessed
-                    // to avoid audio dropouts during EQ adjustment
+            if self.effects_enabled.load(Ordering::Relaxed)
+                && self.effects_configured.load(Ordering::Relaxed)
+            {
+                match self.processor.try_lock() {
+                    Ok(mut processor) => {
+                        processor.process_buffer(&mut self.batch_buf);
+                    }
+                    Err(_) => {
+                        // Lock contention — pass batch through unprocessed
+                        // to avoid audio dropouts during EQ adjustment
+                    }
                 }
             }
         }
@@ -187,5 +197,41 @@ where
 {
     fn drop(&mut self) {
         log::info!("EffectsSource dropped - track finished or removed from sink");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::effects::{EffectsConfig, EffectsProcessor};
+    use rodio::buffer::SamplesBuffer;
+
+    fn source(enabled: bool, configured: bool) -> EffectsSource<SamplesBuffer> {
+        EffectsSource::new(
+            SamplesBuffer::new(1, 44_100, vec![0.95]),
+            Arc::new(Mutex::new(EffectsProcessor::new(
+                44_100,
+                EffectsConfig::default(),
+            ))),
+            Arc::new(AtomicBool::new(enabled)),
+            Arc::new(AtomicBool::new(configured)),
+            Arc::new(VisualizerBuffer::new(8)),
+            Arc::new(AtomicU32::new(0.0_f32.to_bits())),
+        )
+    }
+
+    #[test]
+    fn disabled_effects_bypass_dsp() {
+        let mut disabled = source(false, true);
+        assert_eq!(disabled.next(), Some(0.95));
+
+        let mut enabled = source(true, true);
+        assert!(enabled.next().expect("sample") < 0.95);
+    }
+
+    #[test]
+    fn flat_effects_config_bypasses_dsp() {
+        let mut flat = source(true, false);
+        assert_eq!(flat.next(), Some(0.95));
     }
 }

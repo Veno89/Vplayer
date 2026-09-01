@@ -129,7 +129,8 @@ pub struct AudioPlayer {
     device: Mutex<DeviceState>,
     // Shared with EffectsSource on the audio thread — must remain Arc<Mutex<>>
     effects_processor: Arc<Mutex<EffectsProcessor>>,
-    effects_enabled: Mutex<bool>,
+    effects_enabled: Arc<AtomicBool>,
+    effects_configured: Arc<AtomicBool>,
     visualizer_buffer: Arc<VisualizerBuffer>,
     /// Shared atomic balance for lock-free per-sample L/R attenuation.
     /// Stored as f32 bits in AtomicU32 (0.0 = center, -1.0 = left, 1.0 = right).
@@ -168,6 +169,8 @@ impl AudioPlayer {
         };
 
         let visualizer_buffer = Arc::new(VisualizerBuffer::new(4096));
+        let effects_config = EffectsConfig::default();
+        let effects_configured = effects_config.requires_sample_processing();
 
         Ok(Self {
             sink: Mutex::new(sink),
@@ -175,11 +178,9 @@ impl AudioPlayer {
             preload: Mutex::new(PreloadManager::new()),
             volume_mgr: Mutex::new(VolumeManager::new()),
             device: Mutex::new(device_state),
-            effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(
-                44100,
-                EffectsConfig::default(),
-            ))),
-            effects_enabled: Mutex::new(true),
+            effects_processor: Arc::new(Mutex::new(EffectsProcessor::new(44100, effects_config))),
+            effects_enabled: Arc::new(AtomicBool::new(true)),
+            effects_configured: Arc::new(AtomicBool::new(effects_configured)),
             visualizer_buffer,
             balance: Arc::new(AtomicU32::new(0.0_f32.to_bits())),
             broadcast_wake: Arc::new(BroadcastWake::new()),
@@ -258,6 +259,8 @@ impl AudioPlayer {
         let effects_source = EffectsSource::new(
             source,
             self.effects_processor.clone(),
+            self.effects_enabled.clone(),
+            self.effects_configured.clone(),
             self.visualizer_buffer.clone(),
             self.balance.clone(),
         );
@@ -550,6 +553,8 @@ impl AudioPlayer {
                     let effects_source = EffectsSource::new(
                         source,
                         self.effects_processor.clone(),
+                        self.effects_enabled.clone(),
+                        self.effects_configured.clone(),
                         self.visualizer_buffer.clone(),
                         self.balance.clone(),
                     );
@@ -679,6 +684,8 @@ impl AudioPlayer {
         let effects_source = EffectsSource::new(
             source,
             self.effects_processor.clone(),
+            self.effects_enabled.clone(),
+            self.effects_configured.clone(),
             self.visualizer_buffer.clone(),
             self.balance.clone(),
         );
@@ -770,8 +777,11 @@ impl AudioPlayer {
     pub fn set_effects(&self, config: EffectsConfig) {
         // Apply tempo/speed at the Sink level (changes playback rate)
         let tempo = config.tempo.clamp(0.5, 2.0);
+        let requires_processing = config.requires_sample_processing();
         lock_or_recover(&self.sink).set_speed(tempo);
         lock_or_recover(&self.effects_processor).update_config(config);
+        self.effects_configured
+            .store(requires_processing, Ordering::Relaxed);
     }
 
     pub fn get_effects(&self) -> EffectsConfig {
@@ -779,11 +789,11 @@ impl AudioPlayer {
     }
 
     pub fn set_effects_enabled(&self, enabled: bool) {
-        *lock_or_recover(&self.effects_enabled) = enabled;
+        self.effects_enabled.store(enabled, Ordering::Relaxed);
     }
 
     pub fn is_effects_enabled(&self) -> bool {
-        *lock_or_recover(&self.effects_enabled)
+        self.effects_enabled.load(Ordering::Relaxed)
     }
 
     pub fn is_reinitializing(&self) -> bool {
@@ -866,6 +876,11 @@ impl AudioPlayer {
     /// Get current audio samples for visualization
     pub fn get_visualizer_samples(&self) -> Vec<f32> {
         self.visualizer_buffer.get_samples()
+    }
+
+    /// Avoid per-sample atomic writes when no visible visualizer consumes them.
+    pub fn set_visualizer_active(&self, active: bool) {
+        self.visualizer_buffer.set_active(active);
     }
 }
 

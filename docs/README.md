@@ -287,7 +287,7 @@ npm run test:watch      # Interactive watch mode
 cd src-tauri && cargo test  # Rust tests
 ```
 
-Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. The v0.9.46 release gate runs **177 tests across 14 files**.
+Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. The v0.9.47 release gate runs **184 tests across 15 files**.
 
 ### Building
 
@@ -401,4 +401,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.46 | **Updated**: August 2026
+**Version**: 0.9.47 | **Updated**: September 2026

@@ -1,17 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Music, BarChart3, Activity } from 'lucide-react';
-import { TauriAPI } from '../services/TauriAPI';
+import { TauriAPI, type VisualizerData } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
+import { useAppVisibility } from '../hooks/useAppVisibility';
 
 const VISUALIZER_MODES = ['bars', 'wave', 'circular'] as const;
 type VisualizerMode = typeof VISUALIZER_MODES[number];
+const DATA_INTERVAL_MS = 50; // 20 native FFT analyses per second
+const RENDER_INTERVAL_MS = 1000 / 30;
+const MAX_CANVAS_DPR = 1.5;
 
-interface VisualizerData {
-  spectrum?: number[];
-  waveform?: number[];
-  beat_detected?: boolean;
-}
+const BACKEND_MODES: Record<VisualizerMode, string> = {
+  bars: 'Spectrum',
+  wave: 'Waveform',
+  circular: 'CircularSpectrum',
+};
 
 /**
  * Real-time audio visualizer using FFT analysis from Rust backend
@@ -23,23 +27,24 @@ interface VisualizerData {
 export function VisualizerWindow() {
   const currentColors = useCurrentColors();
   const isPlaying = useStore(s => s.playing);
+  const appVisible = useAppVisibility();
+  const visualizerActive = isPlaying && appVisible;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
+  const renderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Store visualization data from backend
   const spectrumRef = useRef(new Array(64).fill(0));
   const waveformRef = useRef(new Array(256).fill(0));
   const smoothedSpectrumRef = useRef(new Array(64).fill(0));
+  const beatDetectedRef = useRef(false);
   
   const [mode, setMode] = useState<VisualizerMode>('bars');
-  const [beatDetected, setBeatDetected] = useState(false);
 
   // Fetch visualization data from backend
   const fetchVisualizerData = useCallback(async () => {
-    if (!isPlaying) return;
-    
     try {
-      const data = await TauriAPI.getVisualizerData() as unknown as VisualizerData;
+      const data: VisualizerData = await TauriAPI.getVisualizerData();
       
       if (data) {
         // Update spectrum data (already normalized 0-1 from backend)
@@ -53,24 +58,50 @@ export function VisualizerWindow() {
         }
         
         // Update beat detection
-        if (data.beat_detected !== undefined) {
-          setBeatDetected(data.beat_detected);
-        }
+        beatDetectedRef.current = data.beat_detected;
       }
     } catch (err) {
       // Silently fail - visualization is non-critical
       console.debug('Visualizer data fetch failed:', err);
     }
-  }, [isPlaying]);
+  }, []);
 
-  // Fetch visualization data from backend on interval (not in RAF)
   useEffect(() => {
-    if (!isPlaying) return;
-    
-    // Fetch data at ~30fps independent of render loop
-    const interval = setInterval(fetchVisualizerData, 33);
-    return () => clearInterval(interval);
-  }, [isPlaying, fetchVisualizerData]);
+    TauriAPI.setVisualizerMode(BACKEND_MODES[mode]).catch(() => {
+      // Non-critical; the default backend mode still produces valid data.
+    });
+  }, [mode]);
+
+  useEffect(() => {
+    TauriAPI.setVisualizerActive(visualizerActive).catch(() => {});
+  }, [visualizerActive]);
+
+  useEffect(() => {
+    return () => {
+      TauriAPI.setVisualizerActive(false).catch(() => {});
+    };
+  }, []);
+
+  // Single-flight polling prevents a slow IPC call from building a backlog.
+  useEffect(() => {
+    if (!visualizerActive) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      const startedAt = performance.now();
+      await fetchVisualizerData();
+      if (cancelled) return;
+      const remaining = Math.max(0, DATA_INTERVAL_MS - (performance.now() - startedAt));
+      timer = setTimeout(poll, remaining);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [visualizerActive, fetchVisualizerData]);
 
   // Draw visualizer
   useEffect(() => {
@@ -86,18 +117,36 @@ export function VisualizerWindow() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size
+    // Cap backing resolution: high-DPI canvases otherwise multiply fill cost.
+    let width = 0;
+    let height = 0;
     const updateCanvasSize = () => {
-      canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      width = canvas.offsetWidth;
+      height = canvas.offsetHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_DPR);
+      const targetWidth = Math.max(1, Math.round(width * dpr));
+      const targetHeight = Math.max(1, Math.round(height * dpr));
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
     };
     updateCanvasSize();
 
-    const width = canvas.offsetWidth;
-    const height = canvas.offsetHeight;
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateCanvasSize);
+    resizeObserver?.observe(canvas);
+    if (!resizeObserver) window.addEventListener('resize', updateCanvasSize);
 
     const draw = () => {
+      if (!appVisible) {
+        animationRef.current = null;
+        renderTimerRef.current = null;
+        return;
+      }
+
       let shouldContinueAnimating = isPlaying;
 
       if (isPlaying) {
@@ -143,9 +192,12 @@ export function VisualizerWindow() {
       }
 
       if (shouldContinueAnimating) {
-        animationRef.current = requestAnimationFrame(draw);
+        renderTimerRef.current = setTimeout(() => {
+          animationRef.current = requestAnimationFrame(draw);
+        }, RENDER_INTERVAL_MS);
       } else {
         animationRef.current = null;
+        renderTimerRef.current = null;
       }
     };
 
@@ -156,14 +208,31 @@ export function VisualizerWindow() {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
       }
+      if (renderTimerRef.current) {
+        clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
+      resizeObserver?.disconnect();
+      if (!resizeObserver) window.removeEventListener('resize', updateCanvasSize);
     };
-  }, [isPlaying, mode]); // Removed fetchVisualizerData from deps since it's now in separate effect
+  }, [appVisible, isPlaying, mode]);
 
   // Draw bar visualizer
   const drawBars = (ctx: CanvasRenderingContext2D, spectrum: number[], width: number, height: number) => {
     const barCount = spectrum.length;
     const barWidth = width / barCount;
     const maxHeight = height * 0.85;
+
+    const gradients = [
+      ['#8b5cf6', '#6366f1'],
+      ['#3b82f6', '#06b6d4'],
+      ['#06b6d4', '#14b8a6'],
+    ].map(([start, end]) => {
+      const gradient = ctx.createLinearGradient(0, 0, 0, height);
+      gradient.addColorStop(0, start);
+      gradient.addColorStop(1, end);
+      return gradient;
+    });
 
     for (let i = 0; i < barCount; i++) {
       // Spectrum values are 0-1 from backend
@@ -172,26 +241,8 @@ export function VisualizerWindow() {
       const x = i * barWidth;
       const y = height - barHeight;
 
-      // Create gradient based on frequency (bass=purple, treble=cyan)
-      const gradient = ctx.createLinearGradient(x, y, x, height);
-      
-      // Color based on frequency band
       const freqRatio = i / barCount;
-      if (freqRatio < 0.3) {
-        // Bass - purple to blue
-        gradient.addColorStop(0, '#8b5cf6');
-        gradient.addColorStop(1, '#6366f1');
-      } else if (freqRatio < 0.6) {
-        // Mids - blue to cyan
-        gradient.addColorStop(0, '#3b82f6');
-        gradient.addColorStop(1, '#06b6d4');
-      } else {
-        // Highs - cyan to teal
-        gradient.addColorStop(0, '#06b6d4');
-        gradient.addColorStop(1, '#14b8a6');
-      }
-
-      ctx.fillStyle = gradient;
+      ctx.fillStyle = gradients[freqRatio < 0.3 ? 0 : freqRatio < 0.6 ? 1 : 2];
       ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
       
       // Add glow effect on peaks
@@ -257,7 +308,7 @@ export function VisualizerWindow() {
     const bars = spectrum.length;
 
     // Draw center circle with subtle pulse on beat
-    const pulseRadius = beatDetected ? baseRadius * 1.05 : baseRadius;
+    const pulseRadius = beatDetectedRef.current ? baseRadius * 1.05 : baseRadius;
     ctx.fillStyle = 'rgba(6, 182, 212, 0.1)';
     ctx.beginPath();
     ctx.arc(centerX, centerY, pulseRadius * 0.8, 0, Math.PI * 2);

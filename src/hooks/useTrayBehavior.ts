@@ -7,6 +7,7 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { TauriAPI } from '../services/TauriAPI';
+import { notifyAppWindowVisibility } from './useAppVisibility';
 
 let startMinimizedHandled = false;
 
@@ -31,6 +32,7 @@ export function useTrayBehavior() {
         try {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
           await getCurrentWindow().hide();
+          notifyAppWindowVisibility(false);
         } catch { /* not in Tauri context */ }
       })();
     } else {
@@ -56,6 +58,7 @@ export function useTrayBehavior() {
               const minimized = await win.isMinimized();
               if (minimized) {
                 await win.hide();
+                notifyAppWindowVisibility(false);
               }
             } catch { /* ignore transient errors */ }
           }

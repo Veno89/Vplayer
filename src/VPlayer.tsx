@@ -14,6 +14,7 @@ import { MiniPlayerWindow } from './windows/MiniPlayerWindow';
 import { OnboardingGuard } from './windows/OnboardingWindow';
 import ThemeEditorWindow from './windows/ThemeEditorWindow';
 import { UpdateBanner } from './components/UpdateComponents';
+import { TauriAPI } from './services/TauriAPI';
 
 const VPlayerInner = () => {
   const {
@@ -33,6 +34,7 @@ const VPlayerInner = () => {
   const toggleWindow = useStore(s => s.toggleWindow);
   const autoResizeWindow = useStore(s => s.autoResizeWindow);
   const volumeStepSetting = useStore(s => s.volumeStep);
+  const cacheSizeLimit = useStore(s => s.cacheSizeLimit);
   // Convert percentage (1-20) to 0-1 scale
   const effectiveVolumeStep = (volumeStepSetting || 5) / 100;
 
@@ -47,6 +49,15 @@ const VPlayerInner = () => {
 
   // ── Title bar (show track info in window title) ───────────────────
   useTitleBar();
+
+  // Cache cleanup must not depend on opening the Performance settings tab.
+  // Debounce startup/hydration and slider changes into one background pass.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      TauriAPI.enforceCacheLimit(cacheSizeLimit).catch(() => {});
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [cacheSizeLimit]);
 
   // ── Auto-resize (self-contained: reads windows/enabled from store) ─
   const { recalculateSize } = useAutoResize();

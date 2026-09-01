@@ -235,28 +235,41 @@ impl Visualizer {
         // Add samples to FFT buffer
         self.fft_analyzer.add_samples(samples);
 
-        // Get spectrum
-        let spectrum = self.fft_analyzer.get_spectrum(self.num_bars);
+        // Waveform mode is time-domain only. Spectrum modes avoid allocating
+        // waveform data that their renderers never consume.
+        let needs_spectrum = self.mode != VisualizerMode::Waveform;
+        let spectrum = if needs_spectrum {
+            self.fft_analyzer.get_spectrum(self.num_bars)
+        } else {
+            Vec::new()
+        };
+        let waveform = if self.mode == VisualizerMode::Waveform {
+            self.fft_analyzer.get_waveform(256)
+        } else {
+            Vec::new()
+        };
 
-        // Get waveform
-        let waveform = self.fft_analyzer.get_waveform(256);
+        let beat_detected =
+            needs_spectrum && self.beat_detector.detect_beat(&spectrum, self.current_time);
 
-        // Detect beat
-        let beat_detected = self.beat_detector.detect_beat(&spectrum, self.current_time);
-
-        // Calculate peak frequency
-        let peak_idx = spectrum
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-
-        let peak_frequency =
-            20.0 * (20000.0_f32 / 20.0).powf(peak_idx as f32 / self.num_bars as f32);
+        let peak_frequency = if needs_spectrum {
+            let peak_idx = spectrum
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            20.0 * (20000.0_f32 / 20.0).powf(peak_idx as f32 / self.num_bars as f32)
+        } else {
+            0.0
+        };
 
         // Calculate RMS level
-        let rms_level = (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt();
+        let rms_level = if samples.is_empty() {
+            0.0
+        } else {
+            (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt()
+        };
 
         VisualizerData {
             spectrum,
@@ -326,5 +339,23 @@ mod tests {
         assert_eq!(data.spectrum.len(), 32);
         assert!(data.rms_level >= 0.0);
         assert!(data.peak_frequency > 0.0);
+    }
+
+    #[test]
+    fn test_visualizer_mode_only_computes_required_representation() {
+        let samples: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut vis = Visualizer::new(44100, 32);
+
+        vis.set_mode(VisualizerMode::Waveform);
+        let waveform = vis.process(&samples, 0.05);
+        assert!(waveform.spectrum.is_empty());
+        assert_eq!(waveform.waveform.len(), 256);
+        assert!(!waveform.beat_detected);
+        assert_eq!(waveform.peak_frequency, 0.0);
+
+        vis.set_mode(VisualizerMode::Spectrum);
+        let spectrum = vis.process(&samples, 0.05);
+        assert_eq!(spectrum.spectrum.len(), 32);
+        assert!(spectrum.waveform.is_empty());
     }
 }

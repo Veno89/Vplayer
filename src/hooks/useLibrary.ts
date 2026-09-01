@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useLibraryData } from './library/useLibraryData';
 import { useLibraryScanner } from './library/useLibraryScanner';
 import { useLibraryFilters } from './library/useLibraryFilters';
@@ -66,8 +66,8 @@ export function useLibrary() {
     return result;
   }, [addFolderData, scanNewFolder]);
 
-  // 5. Expose Unified API
-  return {
+  // Keep the aggregate stable when an ancestor rerenders for playback ticks.
+  return useMemo(() => ({
     // Data
     tracks,
     libraryFolders,
@@ -97,5 +97,27 @@ export function useLibrary() {
     refreshFolders,
     removeTrack,
     refreshTracks: loadTracks,
-  };
+  }), [
+    tracks,
+    libraryFolders,
+    isScanning,
+    scanProgress,
+    scanCurrent,
+    scanTotal,
+    scanCurrentFile,
+    cancelScan,
+    searchQuery,
+    sortBy,
+    sortOrder,
+    advancedFilters,
+    setSearchQuery,
+    setSortBy,
+    setSortOrder,
+    setAdvancedFilters,
+    addFolder,
+    removeFolder,
+    refreshFolders,
+    removeTrack,
+    loadTracks,
+  ]);
 }

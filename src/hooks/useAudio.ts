@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 import { AUDIO_RETRY_CONFIG } from '../utils/constants';
 import { log } from '../utils/logger';
@@ -83,12 +83,6 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
   const currentTrackRef = useRef<Track | null>(null);
   const retryCountRef = useRef(0);
 
-  // ── Store reads (for return value only – components can also read directly) ──
-  const storeIsPlaying = useStore(s => s.playing);
-  const storeProgress = useStore(s => s.progress);
-  const storeDuration = useStore(s => s.duration);
-  const storeVolume = useStore(s => s.volume);
-
   // ── Check audio backend on mount ──────────────────────────────────
   useEffect(() => {
     const checkAudioBackend = async () => {
@@ -126,10 +120,15 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
           }
         }
 
-        // Write directly to Zustand – single source of truth
-        useStore.getState().setProgress(clamped);
-        if (duration > 0) {
-          useStore.getState().setDuration(duration);
+        // Commit one store update per tick, and avoid notifying subscribers
+        // for an unchanged duration on every 100 ms event.
+        const state = useStore.getState();
+        const durationChanged = duration > 0 && state.duration !== duration;
+        if (state.progress !== clamped || durationChanged) {
+          useStore.setState({
+            progress: clamped,
+            ...(durationChanged ? { duration } : {}),
+          });
         }
 
         if (onTimeUpdateRef.current) {
@@ -389,13 +388,15 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     }
   }, [audioBackendError, toast]);
 
-  // ── Return AudioService – reads from store ────────────────────────
-  return {
-    isPlaying: storeIsPlaying,
+  // Keep the service identity stable across 10 Hz playback ticks. Consumers
+  // still get current scalar values through getters without rerendering the
+  // entire AudioEngine context for progress-only updates.
+  return useMemo<AudioService>(() => ({
+    get isPlaying() { return useStore.getState().playing; },
     isLoading,
-    progress: storeProgress,
-    duration: storeDuration,
-    volume: storeVolume,
+    get progress() { return useStore.getState().progress; },
+    get duration() { return useStore.getState().duration; },
+    get volume() { return useStore.getState().volume; },
     audioBackendError,
     loadTrack,
     play,
@@ -403,5 +404,14 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     stop,
     changeVolume,
     seek,
-  };
+  }), [
+    isLoading,
+    audioBackendError,
+    loadTrack,
+    play,
+    pause,
+    stop,
+    changeVolume,
+    seek,
+  ]);
 }

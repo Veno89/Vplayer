@@ -67,10 +67,16 @@ pub fn get_visualizer_data(state: tauri::State<'_, AppState>) -> AppResult<Visua
         .lock()
         .map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
 
-    // Use a fixed delta time (~33ms for 30fps)
-    let delta_time = 0.033;
+    // Match the frontend's 20 Hz single-flight polling cadence.
+    let delta_time = 0.05;
 
     Ok(vis.process(&samples, delta_time))
+}
+
+/// Enable sample capture only while the frontend is actively rendering it.
+#[tauri::command]
+pub fn set_visualizer_active(active: bool, state: tauri::State<'_, AppState>) {
+    state.player.set_visualizer_active(active);
 }
 
 /// Set visualizer mode

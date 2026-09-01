@@ -128,7 +128,9 @@ export function PlaybackProvider({ children, playerHookRef, tracksRef }: Playbac
   });
 
   // Keep playerHookRef in sync for AudioEngine's onEnded closure
-  useEffect(() => { playerHookRef.current = playerHook; }, [playerHook]);
+  useEffect(() => {
+    playerHookRef.current = { handleNextTrack: playerHook.handleNextTrack };
+  }, [playerHook.handleNextTrack, playerHookRef]);
 
   // ── Track loading ─────────────────────────────────────────────────
   const trackLoading = useTrackLoading({
@@ -165,7 +167,19 @@ export function PlaybackProvider({ children, playerHookRef, tracksRef }: Playbac
     playbackTracks,
     library,
     toast,
-  }), [playerHook, togglePlayCb, playbackTracks, library, toast]);
+  }), [
+    playerHook.handleNextTrack,
+    playerHook.handlePrevTrack,
+    playerHook.handleSeek,
+    playerHook.handleVolumeChange,
+    playerHook.handleVolumeUp,
+    playerHook.handleVolumeDown,
+    playerHook.handleToggleMute,
+    togglePlayCb,
+    playbackTracks,
+    library,
+    toast,
+  ]);
 
   return (
     <PlaybackContext.Provider value={value}>

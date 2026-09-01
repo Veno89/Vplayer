@@ -5,6 +5,21 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.47] - 2026-09-01
+
+### Performance
+
+- Stop visualizer sample capture and rendering when playback or the app window is inactive, cap analysis at 20 Hz, rendering at 30 FPS, and canvas resolution at 1.5x device scale.
+- Avoid unused visualizer representations, per-bar gradient allocation, and flat or disabled per-sample effects processing.
+- Prevent transient 10 Hz playback ticks from serializing durable Zustand state or invalidating stable audio, library, and playback contexts.
+- Save remembered track position every five seconds only while playing, with final pause and page-teardown flushes.
+- Enforce the configured cache limit at application startup instead of only when the Performance settings tab is opened.
+
+### Fixed
+
+- Make the effects enable switch actually bypass the native effects pipeline.
+- Prevent completed visualizer IPC work from overlapping when a response is slower than the sampling interval.
+
 ## [0.9.46] - 2026-08-30
 
 ### Release engineering

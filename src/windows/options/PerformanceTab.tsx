@@ -19,14 +19,12 @@ export function PerformanceTab() {
 
   useEffect(() => {
     loadStats();
-    // Enforce cache limit on mount
-    TauriAPI.enforceCacheLimit(cacheSizeLimit).catch(() => {});
   }, []);
 
-  // Enforce cache limit whenever the slider changes
+  // The application root debounces cache enforcement after this durable
+  // setting changes, avoiding a full disk scan for every slider event.
   const handleCacheLimitChange = (value: number) => {
     setCacheSizeLimit(value);
-    TauriAPI.enforceCacheLimit(value).catch(() => {});
   };
 
   const loadStats = async () => {

@@ -126,17 +126,95 @@ describe('usePlaybackEffects', () => {
   // -------------------------------------------------------------------------
   it('should save last position every 5 seconds', () => {
     vi.useFakeTimers();
-    storeMock.progress = 10; // 10 % 5 === 0, so it should trigger
+    storeMock.playing = true;
+    storeMock.progress = 10;
 
     renderHook(() =>
       usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
     );
 
-    // Advance past the 1-second interval tick
-    act(() => { vi.advanceTimersByTime(1100); });
+    act(() => { vi.advanceTimersByTime(4999); });
+    expect(storeMock.setLastPosition).not.toHaveBeenCalled();
+
+    act(() => { vi.advanceTimersByTime(1); });
 
     expect(storeMock.setLastPosition).toHaveBeenCalledWith(10);
     vi.useRealTimers();
+  });
+
+  it('does not save periodically while paused', () => {
+    vi.useFakeTimers();
+    storeMock.playing = false;
+    storeMock.progress = 10;
+
+    renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(storeMock.setLastPosition).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('flushes the final position when playback pauses', () => {
+    storeMock.playing = true;
+    storeMock.progress = 12.5;
+    const { rerender } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    storeMock.playing = false;
+    rerender();
+
+    expect(storeMock.setLastPosition).toHaveBeenCalledWith(12.5);
+  });
+
+  it('flushes the advanced position after a fade-out finishes', async () => {
+    vi.useFakeTimers();
+    storeMock.playing = true;
+    storeMock.progress = 12.5;
+    storeMock.fadeOnPause = true;
+    storeMock.fadeDuration = 200;
+    const { rerender } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    storeMock.playing = false;
+    rerender();
+    storeMock.setLastPosition.mockClear();
+    storeMock.progress = 12.7;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(audioMock.pause).toHaveBeenCalledOnce();
+    expect(storeMock.setLastPosition).toHaveBeenCalledWith(12.7);
+    vi.useRealTimers();
+  });
+
+  it('flushes the final position on unmount', () => {
+    storeMock.playing = true;
+    storeMock.progress = 7.25;
+    const { unmount } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    unmount();
+
+    expect(storeMock.setLastPosition).toHaveBeenCalledWith(7.25);
+  });
+
+  it('flushes the final position when the page is hidden for teardown', () => {
+    storeMock.playing = true;
+    storeMock.progress = 8.5;
+    renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    act(() => window.dispatchEvent(new Event('pagehide')));
+
+    expect(storeMock.setLastPosition).toHaveBeenCalledWith(8.5);
   });
 
   // -------------------------------------------------------------------------

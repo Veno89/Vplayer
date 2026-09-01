@@ -72,6 +72,15 @@ impl Default for EffectsConfig {
 }
 
 impl EffectsConfig {
+    /// Whether this configuration needs per-sample DSP. Tempo is applied by
+    /// the sink and does not require the effects pipeline.
+    pub fn requires_sample_processing(&self) -> bool {
+        self.reverb_mix > 0.0
+            || self.bass_boost > 0.0
+            || self.echo_mix > 0.0
+            || self.eq_bands.iter().any(|gain| *gain != 0.0)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         let finite = [
             self.tempo,
@@ -629,7 +638,9 @@ impl EffectsProcessor {
         for effect in &self.config.effect_order {
             match effect {
                 EffectId::Equalizer => {
-                    output = self.equalizer.process(output);
+                    if self.config.eq_bands.iter().any(|gain| *gain != 0.0) {
+                        output = self.equalizer.process(output);
+                    }
                 }
                 EffectId::BassBoost => {
                     if self.config.bass_boost > 0.0 {
@@ -678,13 +689,16 @@ impl EffectsProcessor {
         let bass_boost_db = self.config.bass_boost;
         let echo_mix = self.config.echo_mix;
         let reverb_mix = self.config.reverb_mix;
+        let equalizer_active = self.config.eq_bands.iter().any(|gain| *gain != 0.0);
 
         // Process by stage to reduce branch overhead in the hot path.
         for effect in effect_order {
             match effect {
                 EffectId::Equalizer => {
-                    for sample in buffer.iter_mut() {
-                        *sample = self.equalizer.process(*sample);
+                    if equalizer_active {
+                        for sample in buffer.iter_mut() {
+                            *sample = self.equalizer.process(*sample);
+                        }
                     }
                 }
                 EffectId::BassBoost => {
@@ -736,10 +750,14 @@ mod tests {
 
     #[test]
     fn test_effects_config_default() {
-        let config = EffectsConfig::default();
+        let mut config = EffectsConfig::default();
         assert_eq!(config.tempo, 1.0);
         assert_eq!(config.reverb_mix, 0.0);
         assert_eq!(config.eq_bands, [0.0; 10]);
+        assert!(!config.requires_sample_processing());
+
+        config.eq_bands[0] = 1.0;
+        assert!(config.requires_sample_processing());
     }
 
     #[test]

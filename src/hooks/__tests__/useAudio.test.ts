@@ -23,7 +23,12 @@ const storeMock: Record<string, any> = {};
 vi.mock('../../store/useStore', () => ({
   useStore: Object.assign(
     (selector: (s: any) => any) => selector(storeMock),
-    { getState: () => storeMock },
+    {
+      getState: () => storeMock,
+      setState: vi.fn((partial: Record<string, unknown>) => {
+        Object.assign(storeMock, partial);
+      }),
+    },
   ),
 }));
 
@@ -42,6 +47,7 @@ vi.mock('../../utils/constants', async (importOriginal) => {
 });
 
 import { useAudio } from '../useAudio';
+import { useStore } from '../../store/useStore';
 
 // ── Captured event listeners ───────────────────────────────────────────────
 type ListenerMap = Record<string, ((event: any) => void)[]>;
@@ -443,8 +449,9 @@ describe('useAudio', () => {
   // ─────────────────────────────────────────────────────────────────────────
   describe('event listeners', () => {
     it('should update store progress/duration on playback-tick event', async () => {
-      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
       await act(async () => { await tick(); });
+      const service = result.current;
 
       // Fire a fake playback-tick event
       act(() => {
@@ -456,8 +463,34 @@ describe('useAudio', () => {
         });
       });
 
-      expect(storeMock.setProgress).toHaveBeenCalledWith(42.5);
-      expect(storeMock.setDuration).toHaveBeenCalledWith(200);
+      expect(useStore.setState).toHaveBeenCalledWith({ progress: 42.5, duration: 200 });
+      expect(storeMock.setProgress).not.toHaveBeenCalled();
+      expect(storeMock.setDuration).not.toHaveBeenCalled();
+      expect(result.current).toBe(service);
+      expect(result.current.progress).toBe(42.5);
+      expect(result.current.duration).toBe(200);
+
+      vi.mocked(useStore.setState).mockClear();
+      act(() => {
+        fireEvent('playback-tick', {
+          position: 43,
+          duration: 200,
+          isPlaying: true,
+          isFinished: false,
+        });
+      });
+      expect(useStore.setState).toHaveBeenCalledWith({ progress: 43 });
+
+      vi.mocked(useStore.setState).mockClear();
+      act(() => {
+        fireEvent('playback-tick', {
+          position: 43,
+          duration: 200,
+          isPlaying: true,
+          isFinished: false,
+        });
+      });
+      expect(useStore.setState).not.toHaveBeenCalled();
     });
 
     it('should call onTimeUpdate callback on playback-tick', async () => {
@@ -489,7 +522,8 @@ describe('useAudio', () => {
         });
       });
 
-      expect(storeMock.setProgress).toHaveBeenCalledWith(200);
+      expect(useStore.setState).toHaveBeenCalledWith({ progress: 200, duration: 200 });
+      expect(storeMock.progress).toBe(200);
     });
 
     it('should call onEnded and reset state on track-ended event', async () => {

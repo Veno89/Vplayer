@@ -9,6 +9,19 @@ interface PlaybackEffectsParams {
   tracks: Track[];
 }
 
+const POSITION_SAVE_INTERVAL_MS = 5000;
+
+function persistCurrentPosition(): void {
+  const state = useStore.getState();
+  if (
+    state.rememberTrackPosition
+    && state.progress > 0
+    && state.lastPosition !== state.progress
+  ) {
+    state.setLastPosition(state.progress);
+  }
+}
+
 /**
  * Encapsulates side-effects that sync the audio engine with the Zustand store.
  * Extracted from PlayerProvider to follow Single Responsibility.
@@ -43,7 +56,7 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   // ── A-B repeat looping + periodic position save ───────────────────
   // A-B repeat: subscribe to store progress changes (~10Hz from playback-tick)
   // for tighter looping precision (~100ms vs former 1s interval).
-  // Position save: still uses 1Hz interval since it's IO and doesn't need precision.
+  // Position save: use a low cadence while playing, then flush on pause/unmount.
   const abRepeatRef = useRef(abRepeat);
   abRepeatRef.current = abRepeat;
 
@@ -66,15 +79,22 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
     return unsub;
   }, [audio]);
 
-  // Periodic position save (1Hz is sufficient for IO)
+  // Persisting serializes the durable Zustand state, so avoid waking/writing
+  // every second and do no periodic work while playback is paused.
   useEffect(() => {
+    const flushPosition = () => persistCurrentPosition();
     const id = setInterval(() => {
       const state = useStore.getState();
-      if (state.rememberTrackPosition && state.progress > 0) {
-        state.setLastPosition(state.progress);
+      if (state.playing) {
+        persistCurrentPosition();
       }
-    }, 1000);
-    return () => clearInterval(id);
+    }, POSITION_SAVE_INTERVAL_MS);
+    window.addEventListener('pagehide', flushPosition);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('pagehide', flushPosition);
+      flushPosition();
+    };
   }, []);
 
   // ── Translate store `playing` → audio.play() / audio.pause() ──────
@@ -120,6 +140,7 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
         });
       }
     } else if (!playing && wasPlaying) {
+      persistCurrentPosition();
       if (shouldFade && duration > 0) {
         // Fade out: ramp volume down, then pause, then restore volume
         const steps = 10;
@@ -132,6 +153,9 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
           if (step >= steps) {
             clearInterval(interval);
             audio.pause().then(() => {
+              // Playback can advance during the fade; persist the actual
+              // paused position instead of only the pre-fade snapshot.
+              persistCurrentPosition();
               // Restore volume so next play starts at correct level
               audio.changeVolume(currentVolume).catch(() => {});
             }).catch(err => {
