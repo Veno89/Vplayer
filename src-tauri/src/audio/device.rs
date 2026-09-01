@@ -9,9 +9,50 @@ use rodio::cpal::traits::{DeviceTrait as CpalDeviceTrait, HostTrait};
 use rodio::mixer::{Mixer, MixerSource};
 use rodio::{OutputStream, OutputStreamBuilder};
 use serde::Serialize;
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
+
+// CPAL's Windows device API crosses the native COM/WASAPI boundary. Serialize
+// access so recovery monitoring, settings enumeration, and stream creation do
+// not enter the endpoint API concurrently. Headless Windows environments can
+// otherwise terminate the process with STATUS_ACCESS_VIOLATION.
+static AUDIO_DEVICE_API_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_audio_device_api() -> MutexGuard<'static, ()> {
+    AUDIO_DEVICE_API_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeviceChange {
+    Disappeared,
+    DefaultChanged,
+}
+
+fn classify_device_change(
+    connected_device_name: Option<&str>,
+    follow_default: bool,
+    connected_device_is_available: bool,
+    default_device_name: Option<&str>,
+) -> Option<DeviceChange> {
+    let connected = connected_device_name?;
+
+    if !connected_device_is_available {
+        return Some(DeviceChange::Disappeared);
+    }
+
+    if follow_default && default_device_name.is_some_and(|default| default != connected) {
+        return Some(DeviceChange::DefaultChanged);
+    }
+
+    None
+}
+
+fn device_available_from_enumeration<E>(enumeration: Result<bool, E>) -> bool {
+    enumeration.unwrap_or(false)
+}
 
 // ---------------------------------------------------------------------------
 // SendOutputStream — targeted Send wrapper for OutputStream
@@ -187,6 +228,7 @@ pub(crate) fn create_high_quality_output(
 fn open_output_stream(
     requested_device_name: Option<&str>,
 ) -> AppResult<(OutputStream, Mixer, Option<String>)> {
+    let _device_api_guard = lock_audio_device_api();
     let host = rodio::cpal::default_host();
     let device = if let Some(requested) = requested_device_name {
         host.output_devices()
@@ -257,49 +299,60 @@ pub fn has_device_changed(connected_device_name: &Option<String>, follow_default
         None => return false,
     };
 
+    let _device_api_guard = lock_audio_device_api();
     let host = rodio::cpal::default_host();
 
     // ── Check 1: has our connected device disappeared from the OS? ──────────
     let still_present = host
         .output_devices()
-        .map(|devices| devices.filter_map(|d| d.name().ok()).any(|n| n == *name))
+        .map(|devices| {
+            devices
+                .filter_map(|device| device.name().ok())
+                .any(|device_name| device_name == *name)
+        })
         .unwrap_or(false);
-
-    if !still_present {
-        info!("Connected audio device disappeared: {:?}", name);
-        return true;
-    }
 
     // ── Check 2: has Windows changed its default output to something else? ──
     // This covers the "started app with device off, device powers on, Windows
     // promotes it to default" scenario. The old device is still present so
     // Check 1 passes, but we are sending audio to the wrong endpoint.
-    if !follow_default {
-        return false;
-    }
+    let default_name = (still_present && follow_default)
+        .then(|| {
+            host.default_output_device()
+                .and_then(|device| device.name().ok())
+        })
+        .flatten();
 
-    let default_name = host.default_output_device().and_then(|d| d.name().ok());
-
-    if let Some(ref default) = default_name {
-        if default != name {
+    match classify_device_change(
+        Some(name),
+        follow_default,
+        still_present,
+        default_name.as_deref(),
+    ) {
+        Some(DeviceChange::Disappeared) => {
+            info!("Connected audio device disappeared: {:?}", name);
+            true
+        }
+        Some(DeviceChange::DefaultChanged) => {
             info!(
                 "Windows default output changed from {:?} to {:?} — reinit needed",
-                name, default
+                name,
+                default_name.as_deref().unwrap_or("unknown")
             );
-            return true;
+            true
         }
+        None => false,
     }
-
-    false
 }
 
 /// Check if there's any audio device available
 pub fn is_device_available() -> bool {
+    let _device_api_guard = lock_audio_device_api();
     let host = rodio::cpal::default_host();
-    let available = host
-        .output_devices()
-        .map(|mut devices| devices.next().is_some())
-        .unwrap_or(false);
+    let available = device_available_from_enumeration(
+        host.output_devices()
+            .map(|mut devices| devices.next().is_some()),
+    );
     if !available {
         warn!("No audio output device available");
     }
@@ -308,6 +361,7 @@ pub fn is_device_available() -> bool {
 
 /// Get list of all audio output devices.
 pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
+    let _device_api_guard = lock_audio_device_api();
     let host = rodio::cpal::default_host();
     let mut devices = Vec::new();
 
@@ -349,88 +403,48 @@ mod tests {
     #[test]
     fn has_device_changed_returns_false_when_no_device_recorded() {
         let connected: Option<String> = None;
-        assert!(
-            !has_device_changed(&connected, true),
-            "has_device_changed should return false when connected_device_name is None"
-        );
+        assert!(!has_device_changed(&connected, true));
     }
 
     /// A device name that cannot exist in any OS device list must be reported
     /// as "changed" (disappeared from OS enumeration — Check 1).
     #[test]
     fn has_device_changed_returns_true_for_nonexistent_device() {
-        let connected = Some("VPlayer_NonExistent_Audio_Device_xyz_1a2b3c".to_string());
-        assert!(
-            has_device_changed(&connected, true),
-            "has_device_changed should return true when the device is absent from OS list"
+        assert_eq!(
+            classify_device_change(Some("Missing device"), true, false, Some("Speakers"),),
+            Some(DeviceChange::Disappeared)
         );
     }
 
-    /// When the connected device name matches the current Windows default,
-    /// `has_device_changed` must return false (no reinit needed).
-    ///
-    /// This test requires at least one output device to be present. If no
-    /// device is available the test is skipped via early return.
+    /// A connected device that is both present and the current default does
+    /// not need reinitialization. The snapshot keeps native audio APIs out of
+    /// the parallel unit-test process.
     #[test]
     fn has_device_changed_returns_false_when_connected_to_current_default() {
-        let host = rodio::cpal::default_host();
-        let default_name = match host.default_output_device().and_then(|d| d.name().ok()) {
-            Some(n) => n,
-            None => return, // no audio hardware in this environment — skip
-        };
-        let connected = Some(default_name);
-        assert!(
-            !has_device_changed(&connected, true),
-            "has_device_changed should return false when connected to the current default device"
+        assert_eq!(
+            classify_device_change(Some("Speakers"), true, true, Some("Speakers"),),
+            None
         );
     }
 
-    /// When the app is connected to a device that is present in the OS but is
-    /// no longer the Windows default, `has_device_changed` must return true
-    /// (Check 2: default-device switch — e.g. USB DAC powered on after startup).
-    ///
-    /// We synthesise this by using a known-present device name (the real
-    /// default) but then passing a *different* fabricated name as the
-    /// "connected" device, ensuring the connected name is still present yet
-    /// the default has moved on. We achieve the same logical condition by
-    /// claiming we are connected to an impossible device name while a real
-    /// default exists — but Check 1 already covers absence. Instead we rely
-    /// on the fact that the nonexistent device used in
-    /// `has_device_changed_returns_true_for_nonexistent_device` exercises the
-    /// disappearance path; the default-switch path is exercised here by
-    /// passing a name that is present but is NOT the default.
-    ///
-    /// If the system has only one output device this test cannot be
-    /// constructed meaningfully and is skipped.
+    /// A present non-default device requires reinitialization only when the
+    /// app is configured to follow the Windows default.
     #[test]
     fn has_device_changed_returns_true_when_default_device_changed() {
-        let host = rodio::cpal::default_host();
-
-        // Collect all device names.
-        let all_names: Vec<String> = match host.output_devices() {
-            Ok(devs) => devs.filter_map(|d| d.name().ok()).collect(),
-            Err(_) => return, // no audio hardware — skip
-        };
-
-        let default_name = match host.default_output_device().and_then(|d| d.name().ok()) {
-            Some(n) => n,
-            None => return, // no default device — skip
-        };
-
-        // Find a device that is present but is NOT the current default.
-        let non_default = all_names.iter().find(|n| *n != &default_name);
-
-        if let Some(connected_name) = non_default {
-            // We are "connected" to a real but non-default device.
-            // Check 2 should fire: default != connected_name.
-            let connected = Some(connected_name.clone());
-            assert!(
-                has_device_changed(&connected, true),
-                "has_device_changed should return true when connected device is not the current default"
-            );
-        }
-        // If no non-default device exists (single-device system) we skip —
-        // we cannot simulate a default-switch without real hardware.
+        assert_eq!(
+            classify_device_change(Some("Headphones"), true, true, Some("Speakers")),
+            Some(DeviceChange::DefaultChanged)
+        );
+        assert_eq!(
+            classify_device_change(Some("Headphones"), false, true, Some("Speakers")),
+            None,
+            "a user-selected device must not follow Windows default changes"
+        );
+        assert_eq!(
+            classify_device_change(Some("Headphones"), true, true, None),
+            None,
+            "a missing default endpoint must not trigger a spurious reinit"
+        );
     }
 
     /// `is_device_available` must not panic regardless of whether hardware is
@@ -439,5 +453,12 @@ mod tests {
     fn is_device_available_does_not_panic() {
         let _available = is_device_available();
         // No assertion on the value — CI may have no audio hardware.
+    }
+
+    #[test]
+    fn device_availability_maps_enumeration_results() {
+        assert!(device_available_from_enumeration::<()>(Ok(true)));
+        assert!(!device_available_from_enumeration::<()>(Ok(false)));
+        assert!(!device_available_from_enumeration::<()>(Err(())));
     }
 }

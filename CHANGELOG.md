@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.48] - 2026-09-01
+
+### Fixed
+
+- Serialize Windows audio endpoint access across recovery monitoring, settings enumeration, and stream creation to prevent concurrent CPAL/COM calls from terminating the process.
+- Exercise device-change rules with deterministic snapshots so the release gate no longer races native audio enumeration in parallel tests.
+
 ## [0.9.47] - 2026-09-01
 
 ### Performance
