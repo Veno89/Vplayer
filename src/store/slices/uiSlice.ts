@@ -6,18 +6,33 @@ import { COLOR_SCHEMES } from '../../utils/colorSchemes';
 import { LAYOUT_TEMPLATES } from '../../utils/layoutTemplates';
 import type { AppStore, UISlice, UISliceState, WindowsState, LayoutTemplate, ColorScheme } from '../types';
 
+const OPTIONS_WINDOW_DEFAULT = {
+  x: 180,
+  y: 70,
+  width: 900,
+  height: 700,
+  visible: false,
+  minimized: false,
+};
+
 /**
- * Get initial windows state from full layout
+ * Get initial windows state from the full layout plus standalone windows.
  */
 export const getInitialWindows = (): WindowsState => {
-  const fullLayout = LAYOUT_TEMPLATES.full.windows;
+  const defaultWindows = {
+    ...LAYOUT_TEMPLATES.full.windows,
+    options: OPTIONS_WINDOW_DEFAULT,
+  };
   const windowsWithZIndex: WindowsState = {};
   let zIndex = 10;
-  Object.keys(fullLayout).forEach(key => {
-    windowsWithZIndex[key] = { ...fullLayout[key], zIndex: zIndex++ };
+  Object.entries(defaultWindows).forEach(([key, window]) => {
+    windowsWithZIndex[key] = { ...window, zIndex: zIndex++ };
   });
   return windowsWithZIndex;
 };
+
+const getInitialMaxZIndex = () =>
+  Math.max(...Object.values(getInitialWindows()).map(window => window.zIndex));
 
 type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
 type GetFn = () => AppStore;
@@ -28,7 +43,7 @@ type GetFn = () => AppStore;
 export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
   // === Window State ===
   windows: getInitialWindows(),
-  maxZIndex: 15,
+  maxZIndex: getInitialMaxZIndex(),
   currentLayout: 'full',
 
   // === Theme State ===

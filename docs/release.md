@@ -1,8 +1,9 @@
 # VPlayer release policy
 
 VPlayer releases are built from immutable `vMAJOR.MINOR.PATCH` tags. The tag must match
-`package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and
-`src-tauri/tauri.conf.json`. Run `npm run check:versions` before creating a tag.
+every application version source enforced by `scripts/check-version.mjs`, including the npm,
+Cargo, and Tauri manifests plus network and UI fallback versions. Run
+`npm run check:versions` before creating a tag.
 
 ## Required gates
 

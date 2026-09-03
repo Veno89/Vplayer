@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.51] - 2026-09-03
+
+### Fixed
+
+- Open Options at a useful 900×700 default size in front of the workspace and retain
+  user-resized Options geometry across app restarts when window-position memory is enabled.
+
 ## [0.9.50] - 2026-09-03
 
 ### Fixed

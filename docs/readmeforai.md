@@ -107,7 +107,7 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.50
+├── package.json                        # v0.9.51
 ├── .node-version                       # Pinned Node.js runtime
 ├── rust-toolchain.toml                 # Pinned Rust, Clippy, and rustfmt
 ├── vite.config.js                      # Vite 8 + Tailwind 4 config
@@ -373,7 +373,7 @@ Before declaring any feature "done":
 - **Audio is Rust-only:** There is no `<audio>` HTML element. All playback goes through Rust IPC via `useAudio.ts` → `TauriAPI.ts` → Rust `AudioPlayer`.
 - **PlayerContext vs. useStore:** Use `usePlayerContext()` for actions that need the audio engine. Use `useStore(s => s.x)` for scalar state reads. Never destructure the entire context or store.
 - **Settings slice convention:** Individual setters (`setVolume`, `setShuffle`, etc.) are auto-generated. You can also use `updateSetting('key', value)` generically.
-- **Window layout is persisted:** The Zustand `persist` middleware saves window positions/sizes. Changes to default window configs in `uiSlice.ts` only affect fresh installs.
+- **Window layout is persisted:** With `rememberWindowPositions` enabled, Zustand saves window positions and sizes. Hydration merges current default window entries with persisted user geometry, so newly defined windows receive safe defaults without resetting existing custom sizes.
 - **Tauri v2 capabilities:** Permissions for filesystem, dialog, shell, etc. are configured in `src-tauri/capabilities/`. New plugin permissions must be added there.
 - **Test mocks:** Tauri `invoke` is mocked in `src/test/setupTests.js`. When adding new IPC commands, add corresponding mocks or tests will fail.
 
@@ -382,7 +382,7 @@ Before declaring any feature "done":
 ## 10. Known Bugs
 
 The following items came from the historical v0.9.32 notes. They have not been
-revalidated against v0.9.48 and must not be treated as current confirmed defects:
+revalidated against v0.9.51 and must not be treated as current confirmed defects:
 
 | # | Bug | Area |
 |---|-----|------|

@@ -279,6 +279,47 @@ describe('uiSlice', () => {
       expect(useStore.getState().windows['nonexistent-window'].visible).toBe(true);
     });
 
+    it('opens Options at a useful default size and brings it to the front', () => {
+      const beforeOpen = useStore.getState();
+      expect(beforeOpen.windows.options).toMatchObject({
+        x: 180,
+        y: 70,
+        width: 900,
+        height: 700,
+        visible: false,
+      });
+
+      useStore.getState().toggleWindow('options');
+
+      expect(useStore.getState().windows.options).toMatchObject({
+        width: 900,
+        height: 700,
+        visible: true,
+        zIndex: beforeOpen.maxZIndex + 1,
+      });
+    });
+
+    it('restores a user-resized Options window during persisted-state hydration', () => {
+      const merge = (useStore as any).persist?.getOptions?.()?.merge;
+      expect(merge).toBeTypeOf('function');
+
+      const resizedOptions = {
+        x: 125,
+        y: 55,
+        width: 1040,
+        height: 760,
+        visible: false,
+        minimized: false,
+        zIndex: 42,
+      };
+      const merged = merge(
+        { rememberWindowPositions: true, windows: { options: resizedOptions } },
+        useStore.getInitialState(),
+      );
+
+      expect(merged.windows.options).toEqual(resizedOptions);
+    });
+
     it('bringToFront increases zIndex', () => {
       const initialZ = useStore.getState().maxZIndex;
       useStore.getState().bringToFront('player');
