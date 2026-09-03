@@ -5,6 +5,13 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.50] - 2026-09-03
+
+### Fixed
+
+- Restrict release-tag validation to GitHub tag refs so normal branch and pull-request
+  CI runs still verify synchronized application versions without treating their ref as a tag.
+
 ## [0.9.49] - 2026-09-03
 
 ### Changed
