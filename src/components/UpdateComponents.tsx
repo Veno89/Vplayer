@@ -53,13 +53,13 @@ export function UpdateBanner({
           <>
             <button
               onClick={onDownload}
-              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm font-medium transition-colors"
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-sm text-sm font-medium transition-colors"
             >
               Download & Install
             </button>
             <button
               onClick={onDismiss}
-              className="p-1 hover:bg-white/20 rounded transition-colors"
+              className="p-1 hover:bg-white/20 rounded-sm transition-colors"
               title="Dismiss"
             >
               <X size={16} />

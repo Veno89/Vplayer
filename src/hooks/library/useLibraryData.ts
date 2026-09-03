@@ -24,6 +24,7 @@ export interface LibraryDataAPI {
   libraryFolders: LibraryFolder[];
   setLibraryFolders: React.Dispatch<React.SetStateAction<LibraryFolder[]>>;
   loadTracks: () => Promise<void>;
+  refreshTracks: () => Promise<void>;
   loadAllTracks: () => Promise<void>;
   loadAllFolders: () => Promise<void>;
   addFolder: (selectedPath?: string) => Promise<AddFolderResult | null>;
@@ -166,6 +167,11 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
         }
     }, [errorHandler]);
 
+    const refreshTracks = useCallback(async () => {
+        clearPageCache();
+        await loadTracks();
+    }, [clearPageCache, loadTracks]);
+
     // Load tracks whenever filterParams change
     useEffect(() => {
         loadTracks();
@@ -254,7 +260,8 @@ export function useLibraryData(filterParams: TrackFilter | null = null): Library
         libraryFolders,
         setLibraryFolders, // Exposed for updates
         loadTracks,
-        loadAllTracks: loadTracks, // Alias for backward compatibility
+        refreshTracks,
+        loadAllTracks: refreshTracks, // Mutations/scans must bypass cached pages.
         loadAllFolders,
         addFolder,
         removeFolder,

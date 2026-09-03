@@ -1,8 +1,8 @@
 // Smart playlist commands
+use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::scanner::Track;
 use crate::smart_playlists::{self, SmartPlaylist};
-use crate::AppState;
 
 #[tauri::command]
 pub fn create_smart_playlist(
@@ -59,9 +59,16 @@ pub fn execute_smart_playlist(
     let playlist = smart_playlists::load_smart_playlist(&conn, &id)
         .map_err(|e| AppError::Database(format!("Failed to load smart playlist: {}", e)))?;
 
+    // Smart playlists are library views, so stale/orphaned track rows must not
+    // leak back into the UI after their registered folder has been removed.
+    let (library_scope, library_scope_params) =
+        crate::database::Database::registered_track_scope(&conn, "tracks.path").map_err(|e| {
+            AppError::Database(format!("Failed to scope smart playlist to library: {}", e))
+        })?;
+
     // Generate parameterized SQL query
     let (query, params) = playlist
-        .to_sql()
+        .to_scoped_sql(&library_scope, library_scope_params)
         .map_err(|e| AppError::Validation(format!("Failed to generate query: {}", e)))?;
 
     // Execute query with parameters

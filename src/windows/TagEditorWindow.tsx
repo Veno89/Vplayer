@@ -156,7 +156,7 @@ export function TagEditorWindow() {
       {/* Error Display */}
       {error && (
         <div className="mx-4 mt-4 p-3 bg-red-900/30 border border-red-700 rounded-lg flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
           <p className="text-red-300 text-sm">{error}</p>
         </div>
       )}
@@ -247,7 +247,7 @@ export function TagEditorWindow() {
             onChange={(e) => handleChange('comment', e.target.value)}
             placeholder="Add a comment..."
             rows={3}
-            className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none"
+            className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 resize-none"
           />
         </div>
       </div>
@@ -319,7 +319,7 @@ function TagField({ label, icon: Icon, value, onChange, placeholder, type = 'tex
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+        className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500"
       />
     </div>
   );

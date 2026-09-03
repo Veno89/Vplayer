@@ -28,16 +28,18 @@ You are a senior desktop application engineer and systems architect with deep ex
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| Native backend & IPC | Rust + Tauri | Tauri 2.9, Rust 2021 edition |
-| Audio engine | Rodio + Symphonia | rodio 0.21, symphonia 0.5 |
-| Metadata / tags | Lofty | 0.18 |
-| Database | SQLite (rusqlite) | 0.30 (bundled) |
-| UI framework | React | 19.x |
+| Native backend & IPC | Rust + Tauri | Tauri 2.11, Rust 1.98 (2024 edition) |
+| Audio engine | Rodio + Symphonia | rodio 0.22, symphonia 0.6 |
+| Metadata / tags | Lofty | 0.25 |
+| Database | SQLite (rusqlite) | 0.40 (bundled) |
+| UI framework | React | 19.2 |
 | State management | Zustand (sliced, persisted) | 5.x |
-| Styling | Tailwind CSS | 3.x |
-| Build tooling | Vite | 7.x |
-| Testing | Vitest + React Testing Library | vitest 4.x |
-| Icons | lucide-react | 0.278 |
+| Styling | Tailwind CSS | 4.3 |
+| Build tooling | Vite | 8.2 |
+| Language tooling | TypeScript | 7.0 |
+| Package manager | npm | 12.0 |
+| Testing | Vitest + React Testing Library | Vitest 4.1 |
+| Icons | lucide-react | 1.x |
 
 ### Key Capabilities
 
@@ -56,7 +58,8 @@ You are a senior desktop application engineer and systems architect with deep ex
 ### TypeScript Configuration
 
 - `allowJs: true`, `checkJs: false` — **gradual migration** in progress
-- Components and windows are `.jsx`; hooks, services, store, and types are `.ts` / `.tsx`
+- All production components, windows, hooks, services, store modules, and types are
+  `.ts` / `.tsx`; four legacy `.js` files remain under tests/setup only
 - Core files already converted: `PlayerProvider.tsx`, `AppContainer.tsx`, `Window.tsx`
 - `strict: true` is enabled; `noUnusedLocals` / `noUnusedParameters` are off during migration
 - Path alias `@/*` → `src/*` is configured but not yet widely used
@@ -104,12 +107,12 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.48
-├── vite.config.js                      # Vite 7 config
+├── package.json                        # v0.9.49
+├── .node-version                       # Pinned Node.js runtime
+├── rust-toolchain.toml                 # Pinned Rust, Clippy, and rustfmt
+├── vite.config.js                      # Vite 8 + Tailwind 4 config
 ├── vitest.config.js                    # Test config (jsdom environment)
 ├── tsconfig.json                       # TS config (strict, allowJs)
-├── tailwind.config.cjs                 # Tailwind 3 config
-├── postcss.config.cjs
 │
 ├── docs/
 │   ├── README.md                       # User-facing readme
@@ -126,27 +129,27 @@ VPlayer/
 │   ├── components/                     # Reusable UI components
 │   │   ├── AppContainer.tsx            # Root layout (theme, toast, drag-drop, bg image)
 │   │   ├── Window.tsx                  # Draggable/resizable window shell (typed props)
-│   │   ├── WindowManager.jsx           # Renders all visible windows from registry
-│   │   ├── Toast.jsx                   # ToastContainer + individual Toast rendering
-│   │   ├── ErrorBoundary.jsx           # React error boundary wrapper
-│   │   ├── ContextMenu.jsx             # Right-click context menu
-│   │   ├── TrackList.jsx               # Virtualized track list + SimpleTrackList
-│   │   ├── AlbumArt.jsx                # Album artwork display
-│   │   ├── StarRating.jsx              # 5-star rating component
-│   │   ├── Modal.jsx                   # Generic modal wrapper
-│   │   ├── AdvancedSearch.jsx          # Library advanced filter UI
-│   │   ├── AutoSizer.jsx              # Container size measurement
-│   │   ├── LibraryContent.jsx          # Library list view content
-│   │   ├── PlaylistContent.jsx         # Playlist list view content
-│   │   ├── TrackInfoDialog.jsx         # Track metadata info popup
-│   │   ├── UpdateComponents.jsx        # UpdateBanner component
+│   │   ├── WindowManager.tsx           # Renders all visible windows from registry
+│   │   ├── Toast.tsx                   # ToastContainer + individual Toast rendering
+│   │   ├── ErrorBoundary.tsx           # React error boundary wrapper
+│   │   ├── ContextMenu.tsx             # Right-click context menu
+│   │   ├── TrackList.tsx               # Virtualized track list + SimpleTrackList
+│   │   ├── AlbumArt.tsx                # Album artwork display
+│   │   ├── StarRating.tsx              # 5-star rating component
+│   │   ├── Modal.tsx                   # Generic modal wrapper
+│   │   ├── AdvancedSearch.tsx          # Library advanced filter UI
+│   │   ├── AutoSizer.tsx               # Container size measurement
+│   │   ├── LibraryContent.tsx          # Library list view content
+│   │   ├── PlaylistContent.tsx         # Playlist list view content
+│   │   ├── TrackInfoDialog.tsx         # Track metadata info popup
+│   │   ├── UpdateComponents.tsx        # UpdateBanner component
 │   │   └── playlist/                   # Playlist sub-components
-│   │       ├── index.js                # Barrel export
-│   │       ├── PlaylistColumnHeaders.jsx
-│   │       ├── PlaylistDialogs.jsx
-│   │       ├── PlaylistHeader.jsx
-│   │       ├── PlaylistSearchBar.jsx
-│   │       └── PlaylistSelector.jsx
+│   │       ├── index.ts                # Barrel export
+│   │       ├── PlaylistColumnHeaders.tsx
+│   │       ├── PlaylistDialogs.tsx
+│   │       ├── PlaylistHeader.tsx
+│   │       ├── PlaylistSearchBar.tsx
+│   │       └── PlaylistSelector.tsx
 │   │
 │   ├── context/
 │   │   └── PlayerProvider.tsx          # Typed React context (PlayerContextValue)
@@ -210,37 +213,37 @@ VPlayer/
 │   │   └── nativeDialog.ts           # Native file/folder dialog wrappers
 │   │
 │   ├── windows/                       # Individual window implementations
-│   │   ├── PlayerWindow.jsx           # Main playback controls
-│   │   ├── LibraryWindow.jsx          # Music library browser
-│   │   ├── PlaylistWindow.jsx         # Playlist management
-│   │   ├── QueueWindow.jsx            # Play queue
-│   │   ├── EqualizerWindow.jsx        # Equalizer UI
-│   │   ├── VisualizerWindow.jsx       # Audio visualizations
-│   │   ├── LyricsWindow.jsx           # Lyrics display
-│   │   ├── MiniPlayerWindow.jsx       # Compact player mode
-│   │   ├── AlbumViewWindow.jsx        # Album detail view
-│   │   ├── DiscographyWindow.jsx      # Artist discography (MusicBrainz)
-│   │   ├── HistoryWindow.jsx          # Play history
-│   │   ├── LibraryStatsWindow.jsx     # Library statistics
-│   │   ├── TagEditorWindow.jsx        # Metadata tag editor
-│   │   ├── ThemeEditorWindow.jsx      # Theme customization
-│   │   ├── ShortcutsWindow.jsx        # Keyboard shortcuts reference
-│   │   ├── SmartPlaylistsWindow.jsx   # Rule-based playlists
-│   │   ├── OnboardingWindow.jsx       # First-run wizard
-│   │   ├── OptionsWindowEnhanced.jsx  # Settings (tabbed)
+│   │   ├── PlayerWindow.tsx           # Main playback controls
+│   │   ├── LibraryWindow.tsx          # Music library browser
+│   │   ├── PlaylistWindow.tsx         # Playlist management
+│   │   ├── QueueWindow.tsx            # Play queue
+│   │   ├── EqualizerWindow.tsx        # Equalizer UI
+│   │   ├── VisualizerWindow.tsx       # Audio visualizations
+│   │   ├── LyricsWindow.tsx           # Lyrics display
+│   │   ├── MiniPlayerWindow.tsx       # Compact player mode
+│   │   ├── AlbumViewWindow.tsx        # Album detail view
+│   │   ├── DiscographyWindow.tsx      # Artist discography (MusicBrainz)
+│   │   ├── HistoryWindow.tsx          # Play history
+│   │   ├── LibraryStatsWindow.tsx     # Library statistics
+│   │   ├── TagEditorWindow.tsx        # Metadata tag editor
+│   │   ├── ThemeEditorWindow.tsx      # Theme customization
+│   │   ├── ShortcutsWindow.tsx        # Keyboard shortcuts reference
+│   │   ├── SmartPlaylistsWindow.tsx   # Rule-based playlists
+│   │   ├── OnboardingWindow.tsx       # First-run wizard
+│   │   ├── OptionsWindowEnhanced.tsx  # Settings (tabbed)
 │   │   └── options/                   # Settings tab sub-components
-│   │       ├── AdvancedTab.jsx
-│   │       ├── AppearanceTab.jsx
-│   │       ├── AudioTab.jsx
-│   │       ├── BehaviorTab.jsx
-│   │       ├── LibraryTab.jsx
-│   │       ├── PerformanceTab.jsx
-│   │       ├── PlaybackTab.jsx
-│   │       ├── SettingsComponents.jsx
-│   │       └── WindowsTab.jsx
+│   │       ├── AdvancedTab.tsx
+│   │       ├── AppearanceTab.tsx
+│   │       ├── AudioTab.tsx
+│   │       ├── BehaviorTab.tsx
+│   │       ├── LibraryTab.tsx
+│   │       ├── PerformanceTab.tsx
+│   │       ├── PlaybackTab.tsx
+│   │       ├── SettingsComponents.tsx
+│   │       └── WindowsTab.tsx
 │   │
 │   └── __tests__/
-│       └── VPlayer.test.jsx
+│       └── VPlayer.test.tsx
 │
 └── src-tauri/                         # ── Rust Backend ──
     ├── Cargo.toml                     # Rust dependencies
@@ -299,8 +302,8 @@ VPlayer/
 
 ### Adding a New Window
 
-1. Create `src/windows/MyWindow.jsx` (or `.tsx`)
-2. Register it in `src/windowRegistry.jsx` with an ID, title, icon, default position/size
+1. Create `src/windows/MyWindow.tsx`
+2. Register it in `src/windowRegistry.tsx` with an ID, title, icon, default position/size
 3. The `WindowManager` will automatically render it when toggled via `useStore(s => s.toggleWindow)('myWindow')`
 
 ### Adding a New Rust Command
@@ -342,7 +345,7 @@ toast.showInfo('Crossfade enabled');
 | `npm run tauri:dev` | Launch full Tauri dev build |
 | `npm run tauri:build` | Production build |
 
-Test files live next to the code they test (e.g., `LibraryContent.test.jsx`) or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`.
+Test files live next to the code they test (e.g., `LibraryContent.test.tsx`) or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`.
 
 ---
 
@@ -357,14 +360,16 @@ Before declaring any feature "done":
 - [ ] No blocking operations on UI thread
 - [ ] No TODOs, stubs, or unused code left behind
 - [ ] Errors are handled, not ignored (use `ErrorHandler` service or toast)
-- [ ] Tests pass (`npm test` — 184 tests across 15 files at the v0.9.48 release gate)
+- [ ] Tests pass (`npm test` — 186 tests across 16 files in the current upgrade gate)
 
 ---
 
 ## 9. Known Gotchas
 
-- **Mixed JS/TS codebase:** Hooks and services are `.ts`, most components are still `.jsx`. Don't add new `.js` files — use `.ts` or `.tsx`.
-- **`checkJs: false`:** The `.jsx` files get **zero** type checking. When touching a `.jsx` file heavily, consider converting it to `.tsx`.
+- **TypeScript application:** All production code is `.ts` / `.tsx`. Do not add new
+  `.js` files; the four remaining JavaScript files are legacy test/setup helpers.
+- **`checkJs: false`:** Those legacy `.js` test/setup helpers are not JavaScript-typechecked;
+  new and converted files should use `.ts` / `.tsx`.
 - **Audio is Rust-only:** There is no `<audio>` HTML element. All playback goes through Rust IPC via `useAudio.ts` → `TauriAPI.ts` → Rust `AudioPlayer`.
 - **PlayerContext vs. useStore:** Use `usePlayerContext()` for actions that need the audio engine. Use `useStore(s => s.x)` for scalar state reads. Never destructure the entire context or store.
 - **Settings slice convention:** Individual setters (`setVolume`, `setShuffle`, etc.) are auto-generated. You can also use `updateSetting('key', value)` generically.

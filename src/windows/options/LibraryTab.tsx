@@ -6,6 +6,7 @@ import { useStore } from '../../store/useStore';
 import { nativeConfirm, nativeError } from '../../utils/nativeDialog';
 import { usePlayerContext } from '../../context/PlayerProvider';
 import { SettingToggle, SettingSelect, SettingCard, SettingInfo, SettingBadge } from './SettingsComponents';
+import { isTrackWithinFolder } from '../../utils/libraryPaths';
 
 interface LibraryFolder {
   id: string;
@@ -46,7 +47,7 @@ export function LibraryTab() {
       
       // Transform folders to include track count
       const foldersWithCounts = folders.map(([id, path, name, dateAdded]) => {
-        const folderTracks = tracks.filter(t => t.folder_id === id);
+        const folderTracks = tracks.filter(track => isTrackWithinFolder(track.path, path));
         return {
           id,
           path,
@@ -162,7 +163,7 @@ export function LibraryTab() {
                 key={folder.id || idx}
                 className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 group"
               >
-                <FolderOpen className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                <FolderOpen className="w-5 h-5 text-amber-400 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium truncate">
                     {folder.name || folder.path?.split(/[/\\]/).pop()}
@@ -177,7 +178,7 @@ export function LibraryTab() {
                 <button
                   onClick={() => handleRemoveFolder(folder)}
                   onMouseDown={e => e.stopPropagation()}
-                  className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-all"
+                  className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-sm opacity-0 group-hover:opacity-100 transition-all"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -198,7 +199,7 @@ export function LibraryTab() {
               onClick={handleRescan}
               onMouseDown={e => e.stopPropagation()}
               disabled={scanning}
-              className="flex-shrink-0 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
+              className="shrink-0 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
               {scanning ? 'Scanning...' : 'Rescan'}

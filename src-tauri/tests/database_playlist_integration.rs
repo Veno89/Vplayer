@@ -57,9 +57,11 @@ fn playlist_crud_and_membership_roundtrip() {
     let playlists = db
         .get_all_playlists()
         .expect("playlist query should succeed");
-    assert!(playlists
-        .iter()
-        .any(|(id, name, _)| id == &playlist_id && name == "Integration Playlist"));
+    assert!(
+        playlists
+            .iter()
+            .any(|(id, name, _)| id == &playlist_id && name == "Integration Playlist")
+    );
 
     let tracks = db
         .get_playlist_tracks(&playlist_id)

@@ -1,7 +1,7 @@
 use crate::database::Database;
 use crate::scanner::Track;
 use crate::time_utils::now_millis;
-use rusqlite::{params, OptionalExtension, Result};
+use rusqlite::{OptionalExtension, Result, params};
 use std::collections::HashSet;
 
 impl Database {

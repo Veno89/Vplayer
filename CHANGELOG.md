@@ -5,6 +5,39 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.49] - 2026-09-03
+
+### Changed
+
+- Upgraded the frontend platform to Node 24.20, npm 12, React 19.2, TypeScript 7,
+  Vite 8, Tailwind CSS 4, `react-window` 2, Lucide 1, jsdom 30, and the current
+  Tauri JavaScript plugins, including the required styling and virtual-list migrations.
+- Upgraded the native platform to Rust 1.98 with the 2024 edition and current stable
+  Tauri 2.11, Rodio 0.22, Symphonia 0.6, Lofty 0.25, rusqlite 0.40, notify 8,
+  and supporting crates while preserving Windows audio-device recovery hardening.
+
+### Fixed
+
+- Retry audio output with the endpoint's default buffer and Rodio's supported-format
+  fallback when a device rejects the preferred low-latency F32 stream.
+- Save edited years through the canonical recording date so they survive a library
+  rescan without discarding an existing month or day.
+- Make the selected playlist the normal playback source so an empty playlist never
+  borrows tracks from the library, while preserving playlist-scoped startup autoplay.
+- Reconcile restored player and playlist identity atomically so both windows show the
+  correct track after restart and Next, queue, and double-click actions stay responsive.
+- Make library-folder removal and maintenance operations reconcile their database and
+  visible counts instead of retaining deleted or stale tracks.
+- Improve spectrum coverage and motion in the visualizer and remove default-size
+  vertical scrollbars from the player and equalizer layouts.
+
+### Release engineering
+
+- Pinned and cross-checked the Node, npm, and Rust toolchains; refreshed immutable
+  GitHub Action pins; added push/PR CI with a Tauri integration build; expanded release
+  provenance; removed legacy peer resolution and the obsolete RustSec exception; and
+  extended advisory checks to the complete frontend dependency graph.
+
 ## [0.9.48] - 2026-09-01
 
 ### Fixed

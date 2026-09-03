@@ -22,6 +22,7 @@ export interface PlaylistsAPI {
   setCurrentPlaylist: (id: string | null) => void;
   playlistTracks: Track[];
   isLoading: boolean;
+  isReady: boolean;
   addingProgress: AddingProgress;
   createPlaylist: (name: string) => Promise<string>;
   deletePlaylist: (playlistId: string) => Promise<void>;
@@ -35,18 +36,22 @@ export interface PlaylistsAPI {
 }
 
 export function usePlaylists(): PlaylistsAPI {
+  // Restore the selected playlist immediately. Its tracks are loaded below;
+  // isReady stays false until both the playlist list and that track request
+  // have settled, preventing an old playlist's tracks from being reused.
+  const lastPlaylistId = useStore(state => state.lastPlaylistId);
+  const setLastPlaylistId = useStore(state => state.setLastPlaylistId);
   const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
-  const [currentPlaylist, setCurrentPlaylist] = useState<string | null>(null);
+  const [currentPlaylist, setCurrentPlaylist] = useState<string | null>(lastPlaylistId);
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(Boolean(lastPlaylistId));
+  const [hasLoadedPlaylists, setHasLoadedPlaylists] = useState(false);
+  const [loadedPlaylistId, setLoadedPlaylistId] = useState<string | null>(null);
+  const loadRequestRef = useRef(0);
   // Use a ref instead of state so setting it does not re-create loadPlaylists
   // (which would cause a spurious second IPC call on mount via its useEffect).
   const hasRestoredPlaylistRef = useRef(false);
   const [addingProgress, setAddingProgress] = useState<AddingProgress>({ current: 0, total: 0, isAdding: false });
-
-  // Read last playlist from store (persisted)
-  const lastPlaylistId = useStore(state => state.lastPlaylistId);
-  const setLastPlaylistId = useStore(state => state.setLastPlaylistId);
 
   const loadPlaylists = useCallback(async () => {
     try {
@@ -63,39 +68,55 @@ export function usePlaylists(): PlaylistsAPI {
       setPlaylists(playlistObjects);
       
       // Restore last playlist on first load (runs only once — ref prevents re-run)
-      if (!hasRestoredPlaylistRef.current && playlistObjects.length > 0) {
+      if (!hasRestoredPlaylistRef.current) {
         if (lastPlaylistId) {
           // Check if saved playlist still exists
           const exists = playlistObjects.some((p: PlaylistItem) => p.id === lastPlaylistId);
           if (exists) {
             setCurrentPlaylist(lastPlaylistId);
+          } else {
+            setCurrentPlaylist(null);
           }
+        } else {
+          setCurrentPlaylist(null);
         }
         hasRestoredPlaylistRef.current = true;
       }
     } catch (err) {
       console.error('Failed to load playlists:', err);
       throw err;
+    } finally {
+      setHasLoadedPlaylists(true);
     }
   // hasRestoredPlaylistRef is a ref, not state, so it is not a dependency here.
   // This keeps loadPlaylists identity stable after the first call.
   }, [lastPlaylistId]);
 
   const loadPlaylistTracks = useCallback(async (playlistId: string | null) => {
+    const requestId = ++loadRequestRef.current;
     if (!playlistId) {
       setPlaylistTracks([]);
+      setLoadedPlaylistId(null);
+      setIsLoading(false);
       return;
     }
     
     try {
       setIsLoading(true);
       const tracks = await TauriAPI.getPlaylistTracks(playlistId);
+      if (requestId !== loadRequestRef.current) return;
       setPlaylistTracks(tracks);
+      setLoadedPlaylistId(playlistId);
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
+      setPlaylistTracks([]);
+      setLoadedPlaylistId(playlistId);
       console.error('Failed to load playlist tracks:', err);
       throw err;
     } finally {
-      setIsLoading(false);
+      if (requestId === loadRequestRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -195,14 +216,18 @@ export function usePlaylists(): PlaylistsAPI {
 
   // Load playlists on mount
   useEffect(() => {
-    loadPlaylists();
+    void loadPlaylists().catch(() => {});
   }, [loadPlaylists]);
 
   // Load tracks when current playlist changes, and persist selection
   useEffect(() => {
-    loadPlaylistTracks(currentPlaylist);
+    void loadPlaylistTracks(currentPlaylist).catch(() => {});
     setLastPlaylistId(currentPlaylist);
   }, [currentPlaylist, loadPlaylistTracks, setLastPlaylistId]);
+
+  const isReady = hasLoadedPlaylists
+    && !isLoading
+    && loadedPlaylistId === currentPlaylist;
 
   const refreshPlaylistTracks = useCallback(async () => {
     if (currentPlaylist) {
@@ -216,6 +241,7 @@ export function usePlaylists(): PlaylistsAPI {
     setCurrentPlaylist,
     playlistTracks,
     isLoading,
+    isReady,
     addingProgress,
     createPlaylist,
     deletePlaylist,

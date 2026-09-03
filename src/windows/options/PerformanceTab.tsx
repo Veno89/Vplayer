@@ -59,7 +59,7 @@ export function PerformanceTab() {
       {/* Resource Monitor */}
       <SettingCard title="Resource Monitor" icon={Activity} accent="cyan">
         <div className="grid grid-cols-2 gap-3">
-          <div className="p-4 rounded-xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
+          <div className="p-4 rounded-xl bg-linear-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
             <div className="flex items-center gap-2 mb-2">
               <HardDrive className="w-4 h-4 text-cyan-400" />
               <span className="text-slate-400 text-xs">Cache Usage</span>
@@ -72,13 +72,13 @@ export function PerformanceTab() {
             {/* Progress bar */}
             <div className="mt-2 h-1.5 bg-slate-700 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all"
+                className="h-full bg-linear-to-r from-cyan-500 to-blue-500 transition-all"
                 style={{ width: `${cachePercentage}%` }}
               />
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+          <div className="p-4 rounded-xl bg-linear-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
             <div className="flex items-center gap-2 mb-2">
               <Cpu className="w-4 h-4 text-emerald-400" />
               <span className="text-slate-400 text-xs">Database</span>

@@ -138,6 +138,7 @@ describe('useAudio', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -232,11 +233,72 @@ describe('useAudio', () => {
       expect(thrownError!.message).toContain('Audio system unavailable');
     });
 
+    it('keeps a superseded health check classified as a stale load', async () => {
+      const pendingHealthChecks: Array<(value: unknown) => void> = [];
+      const healthy = {
+        healthy: true,
+        needs_reinit: false,
+        inactive_duration: 0,
+        device_changed: false,
+        device_available: true,
+      };
+
+      vi.mocked(invoke).mockImplementation((cmd: string) => {
+        if (cmd === 'is_playing') return Promise.reject(new Error('Audio broken'));
+        if (cmd === 'get_audio_health') {
+          return new Promise(resolve => { pendingHealthChecks.push(resolve); });
+        }
+        if (cmd === 'load_track') return Promise.resolve(undefined);
+        if (cmd === 'get_duration') return Promise.resolve(222);
+        return Promise.resolve(null);
+      });
+
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+      expect(result.current.audioBackendError).toContain('Audio system unavailable');
+
+      let olderLoad!: Promise<Error | null>;
+      let newerLoad!: Promise<void>;
+      act(() => {
+        olderLoad = result.current.loadTrack(mockTrack()).then(
+          () => null,
+          error => error as Error,
+        );
+        newerLoad = result.current.loadTrack(mockTrack({
+          id: 'track-2',
+          path: '/music/newer.mp3',
+          duration: 222,
+        }));
+      });
+
+      expect(pendingHealthChecks).toHaveLength(2);
+
+      await act(async () => {
+        pendingHealthChecks[0](healthy);
+        await Promise.resolve();
+      });
+
+      const olderError = await olderLoad;
+      expect(olderError?.message).toContain('Stale load request');
+      expect(olderError?.message).not.toContain('Audio system unavailable');
+
+      await act(async () => {
+        pendingHealthChecks[1](healthy);
+        await newerLoad;
+      });
+
+      expect(storeMock.setDuration).toHaveBeenCalledTimes(1);
+      expect(storeMock.setDuration).toHaveBeenCalledWith(222);
+      expect(result.current.isLoading).toBe(false);
+    });
+
     it('should retry on failure with exponential backoff', async () => {
       let callCount = 0;
-      vi.mocked(invoke).mockImplementation((cmd: string) => {
+      const requestIds: number[] = [];
+      vi.mocked(invoke).mockImplementation((cmd, args) => {
         if (cmd === 'load_track') {
           callCount++;
+          requestIds.push((args as Record<string, unknown>)?.requestId as number);
           if (callCount <= 2) return Promise.reject(new Error('Decode error'));
           return Promise.resolve(undefined);
         }
@@ -252,8 +314,101 @@ describe('useAudio', () => {
       });
 
       expect(callCount).toBe(3);
+      expect(new Set(requestIds).size).toBe(3);
+      expect(requestIds[1]).toBeGreaterThan(requestIds[0]);
+      expect(requestIds[2]).toBeGreaterThan(requestIds[1]);
       expect(result.current.isLoading).toBe(false);
       expect(storeMock.setDuration).toHaveBeenCalledWith(200);
+    });
+
+    it('does not enqueue another native load when an invoke times out', async () => {
+      vi.useFakeTimers();
+      const requestIds: number[] = [];
+      let resolvePendingLoad: ((value: unknown) => void) | undefined;
+
+      vi.mocked(invoke).mockImplementation((cmd, args) => {
+        if (cmd === 'load_track') {
+          requestIds.push((args as Record<string, unknown>)?.requestId as number);
+          return new Promise(resolve => { resolvePendingLoad = resolve; });
+        }
+        if (cmd === 'is_playing') return Promise.resolve(false);
+        if (cmd === 'get_duration') return Promise.resolve(200);
+        return Promise.resolve(null);
+      });
+
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      let loadPromise!: Promise<void>;
+      act(() => {
+        loadPromise = result.current.loadTrack(mockTrack());
+      });
+      const outcomePromise = loadPromise.then(
+        () => ({ error: null as Error | null }),
+        error => ({ error: error as Error }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      const outcome = await outcomePromise;
+      expect(outcome.error?.message).toContain('Failed to load track');
+      expect(requestIds).toHaveLength(1);
+      expect(storeMock.setDuration).not.toHaveBeenCalled();
+
+      // The original native invocation may still settle later, but must not
+      // mutate hook/store state after the timeout was reported.
+      resolvePendingLoad?.(undefined);
+      await act(async () => { await Promise.resolve(); });
+      expect(storeMock.setDuration).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it('does not let an older load completion overwrite a newer in-flight load', async () => {
+      const pendingLoads: Array<(value: unknown) => void> = [];
+      vi.mocked(invoke).mockImplementation((cmd) => {
+        if (cmd === 'load_track') {
+          return new Promise(resolve => { pendingLoads.push(resolve); });
+        }
+        if (cmd === 'get_duration') return Promise.resolve(222);
+        if (cmd === 'is_playing') return Promise.resolve(false);
+        return Promise.resolve(null);
+      });
+
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      let olderLoad!: Promise<Error | null>;
+      let newerLoad!: Promise<void>;
+      act(() => {
+        olderLoad = result.current.loadTrack(mockTrack()).then(
+          () => null,
+          error => error as Error,
+        );
+        newerLoad = result.current.loadTrack(mockTrack({
+          id: 'track-2',
+          path: '/music/newer.mp3',
+          duration: 222,
+        }));
+      });
+
+      expect(result.current.isLoading).toBe(true);
+      expect(pendingLoads).toHaveLength(2);
+
+      await act(async () => {
+        pendingLoads[0](undefined);
+        await Promise.resolve();
+      });
+
+      expect((await olderLoad)?.message).toContain('Stale load request');
+      expect(result.current.isLoading).toBe(true);
+      expect(storeMock.setDuration).not.toHaveBeenCalled();
+
+      await act(async () => {
+        pendingLoads[1](undefined);
+        await newerLoad;
+      });
+
+      expect(storeMock.setDuration).toHaveBeenCalledTimes(1);
+      expect(storeMock.setDuration).toHaveBeenCalledWith(222);
+      expect(result.current.isLoading).toBe(false);
     });
 
     it('should throw after max retries exhausted', async () => {

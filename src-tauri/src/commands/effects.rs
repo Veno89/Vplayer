@@ -1,7 +1,7 @@
 // Audio effects commands
+use crate::AppState;
 use crate::effects::EffectsConfig;
 use crate::error::{AppError, AppResult};
-use crate::AppState;
 
 /// Set audio effects configuration
 #[tauri::command]

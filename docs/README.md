@@ -18,11 +18,12 @@
 ```bash
 git clone https://github.com/Veno89/Vplayer.git
 cd Vplayer
-npm install
+npm ci
 npm run tauri:dev
 ```
 
-**Prerequisites**: Node.js 18+, Rust (2021 edition), Tauri CLI v2.x
+**Prerequisites**: Node.js 24.15+ (`.node-version` pins 24.20.0), npm 12.0.2,
+Rust 1.98 (2024 edition), Tauri CLI 2.11.x
 
 ---
 
@@ -32,15 +33,17 @@ npm run tauri:dev
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| Native backend & IPC | Rust + Tauri | Tauri 2.9, Rust 2021 edition |
-| Audio engine | Rodio + Symphonia | rodio 0.21, symphonia 0.5 |
-| Metadata / tags | Lofty | 0.18 |
-| Database | SQLite (rusqlite) | 0.30 (bundled) |
-| UI framework | React | 19.x |
+| Native backend & IPC | Rust + Tauri | Tauri 2.11, Rust 1.98 (2024 edition) |
+| Audio engine | Rodio + Symphonia | rodio 0.22, symphonia 0.6 |
+| Metadata / tags | Lofty | 0.25 |
+| Database | SQLite (rusqlite) | 0.40 (bundled) |
+| UI framework | React | 19.2 |
 | State management | Zustand (sliced, persisted) | 5.x |
-| Styling | Tailwind CSS | 3.x |
-| Build tooling | Vite | 7.x |
-| Testing | Vitest + React Testing Library | vitest 4.x |
+| Styling | Tailwind CSS | 4.3 |
+| Build tooling | Vite | 8.2 |
+| Language tooling | TypeScript | 7.0 |
+| Package manager | npm | 12.0 |
+| Testing | Vitest + React Testing Library | Vitest 4.1 |
 
 ### System Design
 ```
@@ -209,7 +212,8 @@ Mode notes:
 
 1. **All IPC goes through `TauriAPI.ts`** — never call `invoke()` directly from components.
 2. **Granular Zustand selectors** — always `useStore(s => s.field)`, never `useStore()`.
-3. **All source files are TypeScript** (`.ts` / `.tsx`).
+3. **All production source files are TypeScript** (`.ts` / `.tsx`); the remaining
+   `.js` files are legacy test/setup helpers only.
 4. **Windows are self-sufficient** — each reads its own state from `useStore` / `usePlayerContext`. No prop drilling.
 5. **`useToast()` and `useUpdater()`** are Zustand singletons — safe to call from anywhere.
 
@@ -222,7 +226,7 @@ Mode notes:
 
 ### Adding a Window
 
-1. Create `src/windows/MyWindow.jsx` — the component is self-sufficient (reads its own state):
+1. Create `src/windows/MyWindow.tsx` — the component is self-sufficient (reads its own state):
 ```jsx
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
@@ -239,7 +243,7 @@ export function MyWindow() {
 }
 ```
 
-2. Register in `src/windowRegistry.jsx`:
+2. Register in `src/windowRegistry.tsx`:
 ```jsx
 import { MyWindow } from './windows/MyWindow';
 import { MyIcon } from 'lucide-react';
@@ -287,7 +291,7 @@ npm run test:watch      # Interactive watch mode
 cd src-tauri && cargo test  # Rust tests
 ```
 
-Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. The v0.9.48 release gate runs **184 tests across 15 files**.
+Test files live next to the code they test or in `__tests__/` subdirectories. The test environment is `jsdom` with Tauri API mocks in `src/test/setupTests.js`. The current upgrade gate runs **186 tests across 16 files**.
 
 ### Building
 
@@ -369,7 +373,7 @@ conn.execute("INSERT INTO tracks (path) VALUES (?1)", params![path])?;
 
 ### TypeScript / React
 - Functional components with hooks
-- All source files use `.ts` / `.tsx`
+- All production source files use `.ts` / `.tsx`
 - Extract business logic to custom hooks — keep components focused on rendering
 - Use granular Zustand selectors, never destructure the entire store
 
@@ -401,4 +405,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.48 | **Updated**: September 2026
+**Version**: 0.9.49 | **Updated**: September 2026

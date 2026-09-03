@@ -1,8 +1,9 @@
 // Library track CRUD commands — split from library.rs
+use crate::AppState;
+use crate::database_library_integrity::DuplicateSensitivity;
 use crate::error::{AppError, AppResult};
 use crate::scanner::{Scanner, Track};
-use crate::AppState;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use log::info;
 
 #[derive(serde::Serialize)]
@@ -118,41 +119,13 @@ pub fn find_duplicates(
 ) -> AppResult<Vec<Vec<Track>>> {
     let level = sensitivity.as_deref().unwrap_or("medium");
     info!("Finding duplicate tracks (sensitivity={})", level);
-    let mut groups = state
+    let sensitivity = DuplicateSensitivity::parse(level).ok_or_else(|| {
+        AppError::Validation("sensitivity must be low, medium, or high".to_string())
+    })?;
+    state
         .db
-        .find_duplicates()
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    // Filter groups based on sensitivity
-    match level {
-        "low" => {
-            // Low: keep only groups where all tracks share the exact same file name
-            groups.retain(|grp| {
-                if grp.len() < 2 {
-                    return false;
-                }
-                let first_name = std::path::Path::new(&grp[0].path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_lowercase());
-                grp.iter().all(|t| {
-                    std::path::Path::new(&t.path)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_lowercase())
-                        == first_name
-                })
-            });
-        }
-        "high" => {
-            // High: keep everything the DB returns (title+artist+album, ≤2s duration)
-            // — no extra filtering
-        }
-        _ => {
-            // Medium (default): keep groups where all durations are within 2 seconds
-            // This is already enforced by the DB query, so nothing to filter
-        }
-    }
-
-    Ok(groups)
+        .find_duplicates_with_sensitivity(sensitivity)
+        .map_err(|e| AppError::Database(e.to_string()))
 }
 
 #[tauri::command]
@@ -291,7 +264,7 @@ pub fn update_track_tags(
     tags: TagUpdate,
     state: tauri::State<'_, AppState>,
 ) -> AppResult<()> {
-    use crate::tag_service::{apply_tags_to_file, TagUpdateInput};
+    use crate::tag_service::{TagUpdateInput, apply_tags_to_file};
 
     // Validate path before writing to the file system
     crate::validation::validate_path(&track_path)

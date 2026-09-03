@@ -8,7 +8,7 @@ const DSP_BLOCK_PROCESSING_ENV: &str = "VPLAYER_DSP_BLOCK_PROCESSING";
  *
  * Provides high-quality real-time audio effects processing:
  * - 10-band Equalizer (Biquad IIR)
- * - Tempo/speed control (applied at Sink level)
+ * - Tempo/speed control (applied at Player level)
  * - Reverb (Freeverb-style Schroeder-Moorer)
  * - Bass boost (Low-shelf)
  * - Echo/delay (Feedback delay)
@@ -37,7 +37,7 @@ pub const DEFAULT_EFFECT_ORDER: [EffectId; 4] = [
 /// Audio effects configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EffectsConfig {
-    /// Speed multiplier (0.5 to 2.0). Applied at the `Sink` level.
+    /// Speed multiplier (0.5 to 2.0). Applied at the `Player` level.
     pub tempo: f32,
     pub reverb_mix: f32,       // Reverb wet/dry mix (0.0 to 1.0)
     pub reverb_room_size: f32, // Room size (0.0 to 1.0)

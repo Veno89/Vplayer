@@ -60,19 +60,19 @@ export function NewPlaylistDialog({
                     onChange={(e) => onNameChange(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && onCreate()}
                     placeholder="Playlist name"
-                    className="w-full px-3 py-2 bg-slate-900 text-white rounded border border-slate-700 focus:outline-none focus:border-blue-500 mb-3"
+                    className="w-full px-3 py-2 bg-slate-900 text-white rounded-sm border border-slate-700 focus:outline-hidden focus:border-blue-500 mb-3"
                     autoFocus
                 />
                 <div className="flex gap-2 justify-end">
                     <button
                         onClick={onClose}
-                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={onCreate}
-                        className={`px-3 py-1.5 text-sm text-white rounded transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
+                        className={`px-3 py-1.5 text-sm text-white rounded-sm transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
                     >
                         Create
                     </button>
@@ -122,7 +122,7 @@ export function PlaylistPickerDialog({
                             <button
                                 key={pl.id}
                                 onClick={() => onAdd(pl.id, track.id)}
-                                className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded transition-colors"
+                                className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded-sm transition-colors"
                             >
                                 {pl.name}
                             </button>
@@ -132,7 +132,7 @@ export function PlaylistPickerDialog({
                 <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
                     <button
                         onClick={onClose}
-                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
                     >
                         Cancel
                     </button>
@@ -184,7 +184,7 @@ export function RatingDialog({
                 <div className="flex gap-2 justify-end">
                     <button
                         onClick={onClose}
-                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
                     >
                         Cancel
                     </button>
@@ -235,7 +235,7 @@ export function BatchPlaylistPickerDialog({
                             <button
                                 key={pl.id}
                                 onClick={() => onAdd(pl.id)}
-                                className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded transition-colors"
+                                className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded-sm transition-colors"
                             >
                                 {pl.name}
                             </button>
@@ -245,7 +245,7 @@ export function BatchPlaylistPickerDialog({
                 <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
                     <button
                         onClick={onClose}
-                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
                     >
                         Cancel
                     </button>

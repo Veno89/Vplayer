@@ -76,20 +76,20 @@ export function HistoryWindow() {
           onClick={loadHistory}
           onMouseDown={e => e.stopPropagation()}
           disabled={loading}
-          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded transition-colors disabled:opacity-50"
+          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-sm transition-colors disabled:opacity-50"
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 bg-slate-800/50 rounded p-1" role="tablist" aria-label="Listening history">
+      <div className="flex gap-2 bg-slate-800/50 rounded-sm p-1" role="tablist" aria-label="Listening history">
         <button
           onClick={() => setActiveTab('recent')}
           onMouseDown={e => e.stopPropagation()}
           role="tab"
           aria-selected={activeTab === 'recent'}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-sm text-sm transition-all ${
             activeTab === 'recent'
               ? `${currentColors.primary} text-white`
               : 'text-slate-400 hover:text-white'
@@ -103,7 +103,7 @@ export function HistoryWindow() {
           onMouseDown={e => e.stopPropagation()}
           role="tab"
           aria-selected={activeTab === 'most'}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-sm text-sm transition-all ${
             activeTab === 'most'
               ? `${currentColors.primary} text-white`
               : 'text-slate-400 hover:text-white'
@@ -137,11 +137,11 @@ export function HistoryWindow() {
                     <button
                       type="button"
                       key={`recent-${track.id}-${index}`}
-                      className="group flex items-center gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer w-full text-left"
+                      className="group flex items-center gap-3 p-2 rounded-sm bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer w-full text-left"
                       onClick={() => handleTrackClick(track)}
                       onMouseDown={e => e.stopPropagation()}
                     >
-                      <div className="flex-shrink-0 w-8 text-center">
+                      <div className="shrink-0 w-8 text-center">
                         <PlayCircle className="w-5 h-5 text-slate-500 group-hover:text-white transition-colors inline-block" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -152,7 +152,7 @@ export function HistoryWindow() {
                           {track.artist || 'Unknown Artist'}
                         </div>
                       </div>
-                      <div className="flex-shrink-0 text-xs text-slate-500">
+                      <div className="shrink-0 text-xs text-slate-500">
                         {formatDate(track.last_played)}
                       </div>
                     </button>
@@ -176,11 +176,11 @@ export function HistoryWindow() {
                     <button
                       type="button"
                       key={`most-${track.id}-${index}`}
-                      className="group flex items-center gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer w-full text-left"
+                      className="group flex items-center gap-3 p-2 rounded-sm bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer w-full text-left"
                       onClick={() => handleTrackClick(track)}
                       onMouseDown={e => e.stopPropagation()}
                     >
-                      <div className="flex-shrink-0 w-8 text-center">
+                      <div className="shrink-0 w-8 text-center">
                         <span className={`text-sm font-bold ${
                           index < 3 ? currentColors.accent : 'text-slate-500'
                         }`}>
@@ -195,7 +195,7 @@ export function HistoryWindow() {
                           {track.artist || 'Unknown Artist'}
                         </div>
                       </div>
-                      <div className="flex-shrink-0 text-xs text-slate-500 font-medium">
+                      <div className="shrink-0 text-xs text-slate-500 font-medium">
                         {track.play_count || 0} plays
                       </div>
                     </button>

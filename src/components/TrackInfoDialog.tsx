@@ -81,7 +81,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
     if (!track) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[10002] backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[10002] backdrop-blur-xs" onClick={onClose}>
             <div
                 ref={dialogRef}
                 role="dialog"
@@ -106,7 +106,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                 {/* Content */}
                 <div className="p-6 overflow-y-auto custom-scrollbar">
                     {error && (
-                        <div role="alert" className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded text-red-200 text-sm">
+                        <div role="alert" className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-sm text-red-200 text-sm">
                             {error}
                         </div>
                     )}
@@ -120,7 +120,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                 type="text"
                                 value={formData.title}
                                 onChange={e => setFormData({ ...formData, title: e.target.value })}
-                                className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                className="w-full bg-slate-900/50 border border-slate-700 rounded-sm px-3 py-2 text-white focus:outline-hidden focus:border-cyan-500 transition-colors"
                                 placeholder="Track Title"
                             />
                         </div>
@@ -136,7 +136,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                     type="text"
                                     value={formData.artist}
                                     onChange={e => setFormData({ ...formData, artist: e.target.value })}
-                                    className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                    className="w-full bg-slate-900/50 border border-slate-700 rounded-sm px-3 py-2 text-white focus:outline-hidden focus:border-cyan-500 transition-colors"
                                     placeholder="Artist"
                                 />
                             </div>
@@ -149,7 +149,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                     type="text"
                                     value={formData.album}
                                     onChange={e => setFormData({ ...formData, album: e.target.value })}
-                                    className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                    className="w-full bg-slate-900/50 border border-slate-700 rounded-sm px-3 py-2 text-white focus:outline-hidden focus:border-cyan-500 transition-colors"
                                     placeholder="Album"
                                 />
                             </div>
@@ -164,7 +164,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                     type="text"
                                     value={formData.genre}
                                     onChange={e => setFormData({ ...formData, genre: e.target.value })}
-                                    className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                    className="w-full bg-slate-900/50 border border-slate-700 rounded-sm px-3 py-2 text-white focus:outline-hidden focus:border-cyan-500 transition-colors"
                                     placeholder="Genre"
                                 />
                             </div>
@@ -177,7 +177,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                                     type="text"
                                     value={formData.year}
                                     onChange={e => setFormData({ ...formData, year: e.target.value })}
-                                    className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                    className="w-full bg-slate-900/50 border border-slate-700 rounded-sm px-3 py-2 text-white focus:outline-hidden focus:border-cyan-500 transition-colors"
                                     placeholder="Year"
                                 />
                             </div>
@@ -212,7 +212,7 @@ export function TrackInfoDialog({ track, onClose, onSave }: TrackInfoDialogProps
                     <button
                         type="submit"
                         form="tag-form"
-                        className="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-500 hover:to-blue-500 transition-all shadow-lg shadow-cyan-900/20 disabled:opacity-50 flex items-center gap-2"
+                        className="px-6 py-2 bg-linear-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-500 hover:to-blue-500 transition-all shadow-lg shadow-cyan-900/20 disabled:opacity-50 flex items-center gap-2"
                         disabled={isLoading}
                     >
                         {isLoading ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

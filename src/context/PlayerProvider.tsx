@@ -5,6 +5,7 @@ import { PlaybackProvider, usePlaybackContext, type LibraryContextValue } from '
 import type { AudioService, Track } from '../types';
 import type { CrossfadeAPI } from '../hooks/useCrossfade';
 import type { ToastAPI } from '../hooks/useToast';
+import type { PlaylistsAPI } from '../hooks/usePlaylists';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-export focused hooks for consumers that only need a specific domain
@@ -49,6 +50,9 @@ export interface PlayerContextValue {
   // Library
   library: LibraryContextValue;
 
+  // Selected playlist and its tracks
+  playlists: PlaylistsAPI;
+
   // Toast (singleton — also available via useToast() directly)
   toast: ToastAPI;
 }
@@ -70,7 +74,7 @@ function PlayerContextBridge({ children }: { children: ReactNode }) {
   const {
     handleNextTrack, handlePrevTrack, handleSeek,
     handleVolumeChange, handleVolumeUp, handleVolumeDown,
-    handleToggleMute, togglePlay, playbackTracks, library, toast,
+    handleToggleMute, togglePlay, playbackTracks, library, playlists, toast,
   } = usePlaybackContext();
 
   const value = useMemo<PlayerContextValue>(() => ({
@@ -81,13 +85,14 @@ function PlayerContextBridge({ children }: { children: ReactNode }) {
     crossfade,
     playbackTracks,
     library,
+    playlists,
     toast,
   }), [
     audio, audioIsLoading, audioBackendError,
     handleNextTrack, handlePrevTrack, handleSeek,
     handleVolumeChange, handleVolumeUp, handleVolumeDown,
     handleToggleMute, togglePlay,
-    crossfade, playbackTracks, library, toast,
+    crossfade, playbackTracks, library, playlists, toast,
   ]);
 
   return (
@@ -108,22 +113,20 @@ function PlayerContextBridge({ children }: { children: ReactNode }) {
  *   EffectsProvider      — crossfade
  *   PlaybackProvider     — player actions + library + track loading + side-effects
  *
- * Cross-provider communication uses ref bridges (crossfadeRef, playerHookRef,
- * tracksRef) created here and passed as props.
+ * Cross-provider communication uses the crossfadeRef and playerHookRef bridges
+ * created here and passed as props.
  */
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const crossfadeRef = useRef<CrossfadeAPI | null>(null);
   const playerHookRef = useRef<{ handleNextTrack: () => void } | null>(null);
-  const tracksRef = useRef<Track[]>([]);
 
   return (
     <AudioEngineProvider
       crossfadeRef={crossfadeRef}
       playerHookRef={playerHookRef}
-      tracksRef={tracksRef}
     >
       <EffectsProvider crossfadeRef={crossfadeRef}>
-        <PlaybackProvider playerHookRef={playerHookRef} tracksRef={tracksRef}>
+        <PlaybackProvider playerHookRef={playerHookRef}>
           <PlayerContextBridge>
             {children}
           </PlayerContextBridge>

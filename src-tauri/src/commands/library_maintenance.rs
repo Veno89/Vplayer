@@ -1,6 +1,9 @@
 // Library maintenance commands — split from library.rs
-use crate::error::{AppError, AppResult};
 use crate::AppState;
+use crate::database_library_integrity::{
+    DuplicateCleanupResult, DuplicateSensitivity, LibraryIntegrityReport, LibraryRepairResult,
+};
+use crate::error::{AppError, AppResult};
 use log::info;
 use tauri::{Emitter, Manager};
 #[tauri::command]
@@ -12,32 +15,36 @@ pub fn clear_failed_tracks(state: tauri::State<'_, AppState>) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn check_missing_files(
+pub async fn check_missing_files(
     state: tauri::State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> AppResult<Vec<(String, String)>> {
-    info!("Checking for missing files");
-    use std::path::Path;
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        info!("Checking for missing files");
+        use std::path::Path;
 
-    let all_paths = state
-        .db
-        .get_all_track_paths()
-        .map_err(|e| AppError::Database(e.to_string()))?;
-    let total = all_paths.len();
-    let mut missing = Vec::new();
+        let all_paths = db
+            .get_all_track_paths()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let total = all_paths.len();
+        let mut missing = Vec::new();
 
-    for (checked, (track_id, path)) in all_paths.into_iter().enumerate() {
-        if !Path::new(&path).exists() {
-            missing.push((track_id, path));
+        for (checked, (track_id, path)) in all_paths.into_iter().enumerate() {
+            if !Path::new(&path).exists() {
+                missing.push((track_id, path));
+            }
+            // Emit progress every 500 tracks so the UI can show a spinner/counter.
+            if (checked + 1) % 500 == 0 || (checked + 1) == total {
+                let _ = app_handle.emit("missing-files-progress", (checked + 1, total));
+            }
         }
-        // Emit progress every 500 tracks so the UI can show a spinner/counter.
-        if (checked + 1) % 500 == 0 || (checked + 1) == total {
-            let _ = app_handle.emit("missing-files-progress", (checked + 1, total));
-        }
-    }
 
-    info!("Found {} missing files", missing.len());
-    Ok(missing)
+        info!("Found {} missing files", missing.len());
+        Ok(missing)
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(format!("Missing-file check task failed: {e}")))?
 }
 
 #[tauri::command]
@@ -47,6 +54,90 @@ pub fn remove_duplicate_folders(state: tauri::State<'_, AppState>) -> AppResult<
         .db
         .remove_duplicate_folders()
         .map_err(|e| AppError::Database(e.to_string()))
+}
+
+#[tauri::command]
+pub fn get_library_integrity(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<LibraryIntegrityReport> {
+    state
+        .db
+        .get_library_integrity()
+        .map_err(|e| AppError::Database(e.to_string()))
+}
+
+/// Snapshot the database and then remove track records that are outside every
+/// registered library folder. The operation only changes SQLite records; audio
+/// files are never opened for writing or deleted.
+#[tauri::command]
+pub async fn repair_library_integrity(
+    state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> AppResult<LibraryRepairResult> {
+    let backup_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to resolve app data directory: {e}"
+            )))
+        })?
+        .join("library-repair-backups");
+    std::fs::create_dir_all(&backup_dir).map_err(AppError::Io)?;
+
+    let backup_path = backup_dir.join(format!(
+        "vplayer-before-library-repair-{}-{}.db",
+        crate::time_utils::now_millis(),
+        uuid::Uuid::new_v4()
+    ));
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        info!(
+            "Repairing library integrity with pre-repair snapshot at {}",
+            backup_path.display()
+        );
+        db.repair_library_integrity(&backup_path)
+            .map_err(|e| AppError::Database(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(format!("Library repair task failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn remove_library_duplicates(
+    sensitivity: String,
+    state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> AppResult<DuplicateCleanupResult> {
+    let sensitivity = DuplicateSensitivity::parse(&sensitivity).ok_or_else(|| {
+        AppError::Validation("sensitivity must be low, medium, or high".to_string())
+    })?;
+    let backup_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| {
+            AppError::Io(std::io::Error::other(format!(
+                "Failed to resolve app data directory: {e}"
+            )))
+        })?
+        .join("library-repair-backups");
+    std::fs::create_dir_all(&backup_dir).map_err(AppError::Io)?;
+    let backup_path = backup_dir.join(format!(
+        "vplayer-before-duplicate-cleanup-{}-{}.db",
+        crate::time_utils::now_millis(),
+        uuid::Uuid::new_v4()
+    ));
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        info!(
+            "Removing library duplicates with pre-cleanup snapshot at {}",
+            backup_path.display()
+        );
+        db.remove_library_duplicates(sensitivity, &backup_path)
+            .map_err(|e| AppError::Database(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(format!("Duplicate cleanup task failed: {e}")))?
 }
 
 #[tauri::command]

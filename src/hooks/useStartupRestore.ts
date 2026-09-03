@@ -14,21 +14,23 @@ interface TrackLoadingState {
 export function useStartupRestore(
   tracks: Track[],
   trackLoading: TrackLoadingState,
+  sourceReady = true,
 ): void {
-  const setCurrentTrack = useStore(s => s.setCurrentTrack);
+  const restorePlaybackTrack = useStore(s => s.restorePlaybackTrack);
   const setPlaying = useStore(s => s.setPlaying);
   const resumeLastTrack = useStore(s => s.resumeLastTrack);
   const autoPlayOnStartup = useStore(s => s.autoPlayOnStartup);
 
   useEffect(() => {
-    if (trackLoading.hasRestoredTrack || !tracks?.length) return;
+    if (trackLoading.hasRestoredTrack || !sourceReady) return;
 
     if (resumeLastTrack) {
       const savedTrackId = useStore.getState().lastTrackId;
-      if (savedTrackId) {
-        const trackIndex = tracks.findIndex(t => t.id === savedTrackId);
-        if (trackIndex !== -1) {
-          setCurrentTrack(trackIndex);
+      if (savedTrackId && tracks.length > 0) {
+        // Startup restoration is deliberately scoped to the selected playlist.
+        // Never reuse a stale active source (for example, the library from an
+        // older session) merely because it contains the saved track ID.
+        if (restorePlaybackTrack(tracks, savedTrackId)) {
           if (autoPlayOnStartup) {
             setTimeout(() => setPlaying(true), 500);
           }
@@ -37,5 +39,5 @@ export function useStartupRestore(
     }
 
     trackLoading.setHasRestoredTrack(true);
-  }, [tracks, trackLoading, setCurrentTrack, resumeLastTrack, autoPlayOnStartup, setPlaying]);
+  }, [tracks, trackLoading, sourceReady, restorePlaybackTrack, resumeLastTrack, autoPlayOnStartup, setPlaying]);
 }

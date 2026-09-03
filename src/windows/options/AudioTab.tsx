@@ -219,7 +219,7 @@ function DeviceOption({ device, isSelected, onSelect, disabled }: DeviceOptionPr
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
       {/* Radio indicator */}
-      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
         isSelected ? 'border-violet-500 bg-violet-500' : 'border-slate-600'
       }`}>
         {isSelected && <Check className="w-3 h-3 text-white" />}
@@ -239,7 +239,7 @@ function DeviceOption({ device, isSelected, onSelect, disabled }: DeviceOptionPr
       </div>
       
       {/* Speaker icon */}
-      <Speaker className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-violet-400' : 'text-slate-600'}`} />
+      <Speaker className={`w-5 h-5 shrink-0 ${isSelected ? 'text-violet-400' : 'text-slate-600'}`} />
     </button>
   );
 }

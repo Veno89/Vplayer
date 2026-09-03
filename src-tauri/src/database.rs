@@ -101,9 +101,11 @@ mod tests {
             .expect("add_folder_with_tracks failed");
 
         let folders = db.get_all_folders().expect("get_all_folders failed");
-        assert!(folders
-            .iter()
-            .any(|(id, path, _, _)| id == folder_id && path == folder_path));
+        assert!(
+            folders
+                .iter()
+                .any(|(id, path, _, _)| id == folder_id && path == folder_path)
+        );
 
         let all_tracks = db.get_all_tracks().expect("get_all_tracks failed");
         assert_eq!(all_tracks.len(), 2);
@@ -189,9 +191,10 @@ mod tests {
         )
         .expect("add folder B failed");
 
-        assert!(db
-            .remove_folder_with_tracks("folder_a", "C:/Music/B")
-            .is_err());
+        assert!(
+            db.remove_folder_with_tracks("folder_a", "C:/Music/B")
+                .is_err()
+        );
 
         let folders = db.get_all_folders().expect("get folders failed");
         assert_eq!(folders.len(), 2);
@@ -385,6 +388,8 @@ mod tests {
         let db = Arc::new(Database::new(&db_path).expect("db init failed"));
 
         let track = sample_track("track_concurrent_1", "C:/Music/Test/concurrent.mp3");
+        db.add_folder("concurrent-folder", "C:/Music/Test", "Test", now_millis())
+            .expect("register test library root");
         db.add_track(&track).expect("seed track failed");
 
         let thread_count = 8;

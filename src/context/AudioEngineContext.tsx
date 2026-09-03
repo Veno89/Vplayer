@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore';
 import { useToast } from '../hooks/useToast';
 import { TauriAPI } from '../services/TauriAPI';
 import { log } from '../utils/logger';
-import type { AudioService, Track } from '../types';
+import type { AudioService } from '../types';
 import type { CrossfadeAPI } from '../hooks/useCrossfade';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,15 +29,12 @@ export interface AudioEngineProviderProps {
   crossfadeRef: MutableRefObject<CrossfadeAPI | null>;
   /** Ref set by PlaybackProvider — used in onEnded for handleNextTrack. */
   playerHookRef: MutableRefObject<{ handleNextTrack: () => void } | null>;
-  /** Ref set by PlaybackProvider — fallback tracks for onEnded. */
-  tracksRef: MutableRefObject<Track[]>;
 }
 
 export function AudioEngineProvider({
   children,
   crossfadeRef,
   playerHookRef,
-  tracksRef,
 }: AudioEngineProviderProps) {
   const volume = useStore(s => s.volume);
   const toast = useToast();
@@ -78,9 +75,7 @@ export function AudioEngineProvider({
 
       // Read fresh state from store to avoid stale closures
       const state = useStore.getState();
-      const pbTracks = state.activePlaybackTracks?.length > 0
-        ? state.activePlaybackTracks
-        : tracksRef.current;
+      const pbTracks = state.activePlaybackTracks;
       const currentRepeatMode = state.repeatMode;
       const currentTrackIdx = state.currentTrack;
 

@@ -1,11 +1,11 @@
 // ReplayGain commands
+use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::replaygain::{
-    analyze_album_replaygain as analyze_album_replaygain_data, analyze_track,
-    get_album_replaygain as get_album_replaygain_data, get_replaygain, store_replaygain,
-    AlbumReplayGainData, ReplayGainData,
+    AlbumReplayGainData, ReplayGainData, analyze_album_replaygain as analyze_album_replaygain_data,
+    analyze_track, get_album_replaygain as get_album_replaygain_data, get_replaygain,
+    store_replaygain,
 };
-use crate::AppState;
 use log::info;
 
 /// Analyze track for ReplayGain data and store in database.

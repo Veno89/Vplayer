@@ -1,5 +1,6 @@
 import type { AppStore, PlayerSlice, PlayerSliceState } from '../types';
 import { Track } from '../../types';
+import { selectCurrentTrackData } from '../selectors';
 
 type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void;
 type GetFn = () => AppStore;
@@ -86,6 +87,46 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             };
         }),
 
+    setPlaylistPlaybackTracks: (tracks) =>
+        set((state) => {
+            const trackId = state.currentTrackId;
+            const remapped = trackId
+                ? tracks.findIndex(track => track.id === trackId)
+                : -1;
+
+            if (remapped !== -1) {
+                return {
+                    activePlaybackTracks: tracks,
+                    currentTrack: remapped,
+                };
+            }
+
+            // An absent or empty selected playlist is a real empty playback
+            // source. Never fall back to the library or keep old audio active.
+            return {
+                activePlaybackTracks: tracks,
+                currentTrack: null,
+                currentTrackId: null,
+                loadingTrackIndex: null,
+                playing: false,
+            };
+        }),
+
+    restorePlaybackTrack: (tracks, trackId) => {
+        const trackIndex = tracks.findIndex(track => track.id === trackId);
+        if (trackIndex === -1) return false;
+
+        // Restore the source, index and stable identity atomically so renderers
+        // never observe a track pointer that belongs to a different list.
+        set({
+            activePlaybackTracks: tracks,
+            currentTrack: trackIndex,
+            currentTrackId: trackId,
+            progress: 0,
+        });
+        return true;
+    },
+
     // === Restore Actions ===
     setLastTrackId: (id: string | null) => set({ lastTrackId: id }),
     setLastPosition: (position: number) => set({ lastPosition: position }),
@@ -93,20 +134,15 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
 
     getCurrentTrackData: () => {
         const state = get();
-        if (!state.currentTrackId) return null;
-        // Fast path: index matches ID
-        const atIndex = state.activePlaybackTracks[state.currentTrack ?? -1];
-        if (atIndex?.id === state.currentTrackId) return atIndex;
-        // Self-heal: find by ID, fix stale index
-        const idx = state.activePlaybackTracks.findIndex(
-            t => t.id === state.currentTrackId
-        );
-        if (idx !== -1) {
+        const track = selectCurrentTrackData(state);
+        if (!track) return null;
+
+        const idx = state.activePlaybackTracks.indexOf(track);
+        if (idx !== state.currentTrack) {
             console.warn('[getCurrentTrackData] Self-healed stale index:', state.currentTrack, '→', idx);
             set({ currentTrack: idx });
-            return state.activePlaybackTracks[idx];
         }
-        return null;
+        return track;
     },
 
     getPlaybackTracks: () => {
@@ -273,7 +309,6 @@ export const playerPersistState = (state: PlayerSliceState) => ({
     volume: state.volume,
     shuffle: state.shuffle,
     repeatMode: state.repeatMode,
-    currentTrackId: state.currentTrackId,
     lastTrackId: state.lastTrackId,
     lastPosition: state.lastPosition,
     lastPlaylistId: state.lastPlaylistId,

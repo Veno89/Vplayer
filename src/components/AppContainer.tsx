@@ -79,7 +79,7 @@ export const AppContainer = ({ children }: { children: ReactNode }) => {
       
       {/* Drop zone overlay */}
       {dragDrop.isDraggingExternal && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-xs flex items-center justify-center pointer-events-none">
           <div 
             className="flex flex-col items-center gap-4 p-12 rounded-2xl border-4 border-dashed"
             style={{ 
@@ -106,7 +106,7 @@ export const AppContainer = ({ children }: { children: ReactNode }) => {
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       {audioBackendError && (
-        <div className="fixed top-0 left-0 right-0 z-[100] bg-red-900/90 backdrop-blur-sm text-white px-4 py-3 text-center text-sm border-b border-red-700">
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-red-900/90 backdrop-blur-xs text-white px-4 py-3 text-center text-sm border-b border-red-700">
           <div className="font-semibold">Audio System Unavailable</div>
           <div className="text-xs mt-1 text-red-200">
             {audioBackendError}. Playback controls are disabled. Please restart the application.

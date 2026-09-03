@@ -2,6 +2,31 @@ import React from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
+type AccentColor = 'amber' | 'blue' | 'cyan' | 'emerald' | 'indigo' | 'orange' | 'pink' | 'purple' | 'red' | 'teal' | 'violet';
+
+interface AccentStyle {
+  accent: string;
+  color: string;
+  peerCheckedBackground: string;
+  text: string;
+}
+
+const ACCENT_STYLES: Record<AccentColor, AccentStyle> = {
+  amber: { accent: 'accent-amber-500', color: 'var(--color-amber-500)', peerCheckedBackground: 'peer-checked:bg-amber-500', text: 'text-amber-400' },
+  blue: { accent: 'accent-blue-500', color: 'var(--color-blue-500)', peerCheckedBackground: 'peer-checked:bg-blue-500', text: 'text-blue-400' },
+  cyan: { accent: 'accent-cyan-500', color: 'var(--color-cyan-500)', peerCheckedBackground: 'peer-checked:bg-cyan-500', text: 'text-cyan-400' },
+  emerald: { accent: 'accent-emerald-500', color: 'var(--color-emerald-500)', peerCheckedBackground: 'peer-checked:bg-emerald-500', text: 'text-emerald-400' },
+  indigo: { accent: 'accent-indigo-500', color: 'var(--color-indigo-500)', peerCheckedBackground: 'peer-checked:bg-indigo-500', text: 'text-indigo-400' },
+  orange: { accent: 'accent-orange-500', color: 'var(--color-orange-500)', peerCheckedBackground: 'peer-checked:bg-orange-500', text: 'text-orange-400' },
+  pink: { accent: 'accent-pink-500', color: 'var(--color-pink-500)', peerCheckedBackground: 'peer-checked:bg-pink-500', text: 'text-pink-400' },
+  purple: { accent: 'accent-purple-500', color: 'var(--color-purple-500)', peerCheckedBackground: 'peer-checked:bg-purple-500', text: 'text-purple-400' },
+  red: { accent: 'accent-red-500', color: 'var(--color-red-500)', peerCheckedBackground: 'peer-checked:bg-red-500', text: 'text-red-400' },
+  teal: { accent: 'accent-teal-500', color: 'var(--color-teal-500)', peerCheckedBackground: 'peer-checked:bg-teal-500', text: 'text-teal-400' },
+  violet: { accent: 'accent-violet-500', color: 'var(--color-violet-500)', peerCheckedBackground: 'peer-checked:bg-violet-500', text: 'text-violet-400' },
+};
+
+const getAccentStyle = (color: AccentColor = 'cyan') => ACCENT_STYLES[color];
+
 // ── Prop Interfaces ─────────────────────────────────────────────────
 
 interface SettingToggleProps {
@@ -10,7 +35,7 @@ interface SettingToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   icon?: LucideIcon;
-  accentColor?: string;
+  accentColor?: AccentColor;
 }
 
 interface SettingSliderProps {
@@ -25,7 +50,7 @@ interface SettingSliderProps {
   minLabel?: string;
   maxLabel?: string;
   icon?: LucideIcon;
-  accentColor?: string;
+  accentColor?: AccentColor;
 }
 
 interface SelectOption {
@@ -53,7 +78,7 @@ interface SettingCardProps {
   title?: string;
   icon?: LucideIcon;
   children: React.ReactNode;
-  accent?: string;
+  accent?: AccentColor;
 }
 
 type ButtonVariant = 'default' | 'primary' | 'success' | 'warning' | 'danger';
@@ -88,7 +113,7 @@ interface SettingBadgeProps {
  * Reusable toggle switch with label and description
  */
 export function SettingToggle({ label, description, checked, onChange, icon: Icon, accentColor }: SettingToggleProps) {
-  const accent = accentColor || 'cyan';
+  const accentStyle = getAccentStyle(accentColor);
   
   return (
     <label
@@ -104,7 +129,7 @@ export function SettingToggle({ label, description, checked, onChange, icon: Ico
           onMouseDown={e => e.stopPropagation()}
           className="sr-only peer"
         />
-        <div className={`w-9 h-5 bg-slate-700 rounded-full peer peer-checked:bg-${accent}-500 transition-colors`} />
+        <div className={`w-9 h-5 bg-slate-700 rounded-full peer ${accentStyle.peerCheckedBackground} transition-colors`} />
         <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-transform peer-checked:translate-x-4`} />
       </div>
       
@@ -139,6 +164,10 @@ export function SettingSlider({
   accentColor = 'cyan'
 }: SettingSliderProps) {
   const displayValue = formatValue ? formatValue(value) : value;
+  const accentStyle = getAccentStyle(accentColor);
+  const fillPercentage = max === min
+    ? 0
+    : Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
   
   return (
     <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/20">
@@ -147,7 +176,7 @@ export function SettingSlider({
           {Icon && <Icon className="w-4 h-4 text-slate-400" />}
           <span className="text-slate-300 text-sm font-medium">{label}</span>
         </div>
-        <span className={`text-${accentColor}-400 text-sm font-semibold tabular-nums`}>
+        <span className={`${accentStyle.text} text-sm font-semibold tabular-nums`}>
           {displayValue}
         </span>
       </div>
@@ -166,13 +195,10 @@ export function SettingSlider({
           value={value}
           onChange={e => onChange(Number(e.target.value))}
           onMouseDown={e => e.stopPropagation()}
-          className={`w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-${accentColor}-500`}
+          className={`w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer ${accentStyle.accent}`}
           style={{
-            background: `linear-gradient(to right, var(--tw-gradient-stops))`,
-            '--tw-gradient-from': `rgb(var(--color-${accentColor}-500))`,
-            '--tw-gradient-to': 'rgb(51 65 85)',
-            '--tw-gradient-stops': `var(--tw-gradient-from) ${((value - min) / (max - min)) * 100}%, var(--tw-gradient-to) ${((value - min) / (max - min)) * 100}%`
-          } as React.CSSProperties}
+            background: `linear-gradient(to right, ${accentStyle.color} ${fillPercentage}%, var(--color-slate-700) ${fillPercentage}%)`,
+          }}
         />
       </div>
       
@@ -206,7 +232,7 @@ export function SettingSelect({ label, description, value, onChange, options, ic
           value={value}
           onChange={e => onChange(e.target.value)}
           onMouseDown={e => e.stopPropagation()}
-          className="w-full bg-slate-800/80 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm appearance-none cursor-pointer hover:border-slate-500 focus:border-cyan-500 focus:outline-none transition-colors"
+          className="w-full bg-slate-800/80 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm appearance-none cursor-pointer hover:border-slate-500 focus:border-cyan-500 focus:outline-hidden transition-colors"
         >
           {options.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -242,11 +268,13 @@ export function SettingSection({ title, icon: Icon, children, description }: Set
  * Card for grouping related settings
  */
 export function SettingCard({ title, icon: Icon, children, accent = 'cyan' }: SettingCardProps) {
+  const accentStyle = getAccentStyle(accent);
+
   return (
-    <div className={`p-4 rounded-xl border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50`}>
+    <div className={`p-4 rounded-xl border border-slate-700/50 bg-linear-to-br from-slate-800/50 to-slate-900/50`}>
       {title && (
         <div className="flex items-center gap-2 mb-4">
-          {Icon && <Icon className={`w-5 h-5 text-${accent}-400`} />}
+          {Icon && <Icon className={`w-5 h-5 ${accentStyle.text}`} />}
           <h4 className="text-white text-sm font-semibold">{title}</h4>
         </div>
       )}

@@ -7,7 +7,6 @@ import { AutoSizer } from '../components/AutoSizer';
 import { StarRating } from '../components/StarRating';
 import { TrackInfoDialog } from '../components/TrackInfoDialog'; // New
 import { formatDuration, formatTotalDuration } from '../utils/formatters';
-import { usePlaylists } from '../hooks/usePlaylists';
 import { usePlaylistActions } from '../hooks/usePlaylistActions';
 import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
 import type { MenuItem } from '../components/ContextMenu';
@@ -54,7 +53,7 @@ interface TrackMenuEventLike {
 
 export const PlaylistWindow = React.memo(function PlaylistWindow() {
   // ── Store state ───────────────────────────────────────────────────
-  const currentTrack = useStore(s => s.currentTrack) ?? 0;
+  const currentTrack = useStore(s => s.currentTrack);
   const currentTrackId = useStore(s => s.currentTrackId);
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const loadingTrackIndex = useStore(s => s.loadingTrackIndex);
@@ -63,7 +62,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   const setTagEditorTrack = useStore(s => s.setTagEditorTrack);
 
   // ── Context ───────────────────────────────────────────────────────
-  const { playbackTracks: tracks, library, toast } = usePlayerContext();
+  const { playbackTracks: tracks, library, playlists, toast } = usePlayerContext();
   const { removeTrack, refreshTracks } = library;
 
   // ── Derived ───────────────────────────────────────────────────────
@@ -107,7 +106,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   const containerRef = useRef<HTMLDivElement>(null);
   const trackListRef = useRef<TrackListHandle>(null);
 
-  const playlists = usePlaylists();
   const onRatingChange = useCallback(async (trackId: string, rating: number) => {
     try {
       await TauriAPI.setTrackRating(trackId, rating);
@@ -126,7 +124,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   );
   const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
   const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
-  const getCurrentTrackData = useStore(state => state.getCurrentTrackData);
   const activePlaybackTracks = useStore(state => state.activePlaybackTracks);
 
   // Listen for global track drop events from VPlayer (internal library drops)
@@ -272,6 +269,26 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     return result;
   }, [playlists.playlistTracks, debouncedSearch, sortConfig]);
 
+  // Map every playlist indicator through the stable track ID. Source indices
+  // are not interchangeable when this playlist is filtered or sorted.
+  const displayCurrentTrack = useMemo(() => {
+    if (!currentTrackId) return null;
+    const index = displayTracks.findIndex(track => track.id === currentTrackId);
+    return index === -1 ? null : index;
+  }, [currentTrackId, displayTracks]);
+
+  const displayLoadingTrack = useMemo(() => {
+    if (loadingTrackIndex === null) return null;
+    const loadingTrackId = activePlaybackTracks[loadingTrackIndex]?.id;
+    if (!loadingTrackId) return null;
+    const index = displayTracks.findIndex(track => track.id === loadingTrackId);
+    return index === -1 ? null : index;
+  }, [activePlaybackTracks, displayTracks, loadingTrackIndex]);
+
+  const currentTrackInDisplayedSource = activePlaybackTracks === displayTracks
+    ? currentTrack
+    : null;
+
   // Use the extracted playlist actions hook
   const {
     handleSort,
@@ -288,7 +305,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
   } = usePlaylistActions({
     playlists,
     displayTracks,
-    currentTrack,
+    currentTrack: currentTrackInDisplayedSource,
     setCurrentTrack,
     draggedIndex,
     setDraggedIndex,
@@ -325,13 +342,6 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     setPlaying(true);
 
   }, [displayTracks, onActiveTracksChange, setCurrentTrack, setPlaying]);
-
-  // The displayCurrentTrack is derived from currentTrackId — immune to index staleness
-  const displayCurrentTrack = useMemo(() => {
-    if (!currentTrackId) return null;
-    const idx = displayTracks.findIndex(t => t.id === currentTrackId);
-    return idx !== -1 ? idx : null;
-  }, [currentTrackId, displayTracks]);
 
   // Auto-scroll to current track when it changes
   useEffect(() => {
@@ -501,19 +511,19 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
                 onChange={(e) => setNewPlaylistName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
                 placeholder="Playlist name"
-                className="w-full px-3 py-2 bg-slate-900 text-white rounded border border-slate-700 focus:outline-none focus:border-blue-500 mb-3"
+                className="w-full px-3 py-2 bg-slate-900 text-white rounded-sm border border-slate-700 focus:outline-hidden focus:border-blue-500 mb-3"
                 autoFocus
               />
               <div className="flex gap-2 justify-end">
                 <button
                   onClick={() => setShowNewPlaylistDialog(false)}
-                  className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                  className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreatePlaylist}
-                  className={`px-3 py-1.5 text-sm text-white rounded transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
+                  className={`px-3 py-1.5 text-sm text-white rounded-sm transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
                 >
                   Create
                 </button>
@@ -562,9 +572,9 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
 
       {/* Adding Progress Indicator */}
       {playlists.addingProgress.isAdding && (
-        <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mx-3 mb-3">
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded-sm p-3 mx-3 mb-3">
           <div className="flex items-center gap-3">
-            <Loader className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+            <Loader className="w-5 h-5 text-blue-400 animate-spin shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-blue-300 text-sm font-medium mb-1">
                 Adding tracks to playlist...
@@ -576,7 +586,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
           </div>
           <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-2">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300 ease-out"
+              className="h-full bg-linear-to-r from-blue-500 to-cyan-500 transition-all duration-300 ease-out"
               style={{ width: `${(playlists.addingProgress.current / playlists.addingProgress.total) * 100}%` }}
             />
           </div>
@@ -634,7 +644,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             currentTrack={displayCurrentTrack}
             onSelect={handleTrackSelect}
             currentColors={currentColors}
-            loadingTrackIndex={loadingTrackIndex}
+            loadingTrackIndex={displayLoadingTrack}
             onShowMenu={handleShowMenu}
             isDraggable={!!playlists.currentPlaylist}
             onDragStart={handleDragStart}
@@ -676,19 +686,19 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
               onChange={(e) => setNewPlaylistName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
               placeholder="Playlist name"
-              className="w-full px-3 py-2 bg-slate-900 text-white rounded border border-slate-700 focus:outline-none focus:border-blue-500 mb-3"
+              className="w-full px-3 py-2 bg-slate-900 text-white rounded-sm border border-slate-700 focus:outline-hidden focus:border-blue-500 mb-3"
               autoFocus
             />
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowNewPlaylistDialog(false)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreatePlaylist}
-                className={`px-3 py-1.5 text-sm text-white rounded transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
+                className={`px-3 py-1.5 text-sm text-white rounded-sm transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
               >
                 Create
               </button>
@@ -732,7 +742,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
                         console.error('Failed to add to playlist:', err);
                       }
                     }}
-                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded transition-colors"
+                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded-sm transition-colors"
                   >
                     {pl.name}
                   </button>
@@ -742,7 +752,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
               <button
                 onClick={() => setShowPlaylistPicker(null)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
               >
                 Cancel
               </button>
@@ -778,7 +788,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowRatingDialog(null)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
               >
                 Cancel
               </button>
@@ -810,7 +820,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
                         console.error('Failed to add tracks to playlist:', err);
                       }
                     }}
-                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded transition-colors"
+                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded-sm transition-colors"
                   >
                     {pl.name}
                   </button>
@@ -820,7 +830,7 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
             <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
               <button
                 onClick={() => setShowBatchPlaylistPicker(false)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
               >
                 Cancel
               </button>
@@ -834,7 +844,11 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
       {displayTracks.length > 0 && (
         <div className="border-t border-slate-700 pt-2 px-3 text-xs text-slate-400 flex justify-between">
           <span>
-            Playing: Track {currentTrack !== null ? currentTrack + 1 : 0} of {displayTracks.length}
+            {displayCurrentTrack !== null
+              ? `Playing: Track ${displayCurrentTrack + 1} of ${displayTracks.length}`
+              : currentTrackId
+                ? 'Playing track is not in this playlist'
+                : 'No track playing'}
           </span>
           <span>
             Total: {formatTotalDuration(displayTracks.reduce((sum: number, t: Track) => sum + (t.duration || 0), 0))}

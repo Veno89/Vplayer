@@ -44,6 +44,8 @@ fn sample_track(id: &str, path: &str, title: &str, artist: &str, rating: i32) ->
 fn get_filtered_tracks_respects_artist_search_and_rating() {
     let db_path = temp_db_path("library_filter");
     let db = Database::new(&db_path).expect("db init should succeed");
+    db.add_folder("filter-folder", "C:/Music", "Music", now_millis())
+        .expect("register test library root");
 
     let t1 = sample_track(
         "lib_it_1",
@@ -98,14 +100,91 @@ fn get_filtered_tracks_respects_artist_search_and_rating() {
         .expect("filtered tracks query should succeed");
 
     assert_eq!(filtered.len(), 2);
-    assert!(filtered
-        .iter()
-        .all(|t| t.artist.as_deref() == Some("Band A")));
+    assert!(
+        filtered
+            .iter()
+            .all(|t| t.artist.as_deref() == Some("Band A"))
+    );
     assert!(filtered.iter().all(|t| t.rating >= 4));
 
     let ids: Vec<&str> = filtered.iter().map(|t| t.id.as_str()).collect();
     assert!(ids.contains(&"lib_it_1"));
     assert!(ids.contains(&"lib_it_3"));
+
+    drop(db);
+    cleanup_db_files(&db_path);
+}
+
+#[test]
+fn folder_filter_uses_case_insensitive_directory_boundaries_and_both_separators() {
+    let db_path = temp_db_path("folder_filter_boundary");
+    let db = Database::new(&db_path).expect("db init should succeed");
+    db.add_folder("music-folder", "C:/Music", "Music", now_millis())
+        .expect("register Music root");
+    db.add_folder(
+        "music-backslash-root",
+        "C:\\Music",
+        "Music alternate separator",
+        now_millis(),
+    )
+    .expect("register alternate-separator Music root");
+    db.add_folder(
+        "archive-folder",
+        "C:/Music Archive",
+        "Music Archive",
+        now_millis(),
+    )
+    .expect("register adjacent archive root");
+
+    let tracks = [
+        sample_track(
+            "music-forward",
+            "C:/Music/Album/forward.mp3",
+            "Forward",
+            "Artist",
+            0,
+        ),
+        sample_track(
+            "music-backslash",
+            "c:\\MUSIC\\Album\\backslash.mp3",
+            "Backslash",
+            "Artist",
+            0,
+        ),
+        sample_track(
+            "music-archive",
+            "C:/Music Archive/archived.mp3",
+            "Archived",
+            "Artist",
+            0,
+        ),
+    ];
+    for track in &tracks {
+        db.add_track(track).expect("seed track should succeed");
+    }
+
+    let filtered = db
+        .get_filtered_tracks(TrackFilter {
+            search_query: None,
+            artist: None,
+            album: None,
+            genre: None,
+            sort_by: Some("title".to_string()),
+            sort_desc: false,
+            play_count_min: None,
+            play_count_max: None,
+            min_rating: None,
+            duration_from: None,
+            duration_to: None,
+            folder_id: Some("music-folder".to_string()),
+        })
+        .expect("folder-filtered query should succeed");
+
+    let ids: Vec<&str> = filtered.iter().map(|track| track.id.as_str()).collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"music-forward"));
+    assert!(ids.contains(&"music-backslash"));
+    assert!(!ids.contains(&"music-archive"));
 
     drop(db);
     cleanup_db_files(&db_path);

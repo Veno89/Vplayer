@@ -15,36 +15,42 @@ concurrency:
 jobs:
   validate:
     name: Validate release source
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 45
 
     steps:
       - name: Checkout exact tag
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
 
+      - name: Setup npm
+        run: npm install --global npm@12.0.2
+
+      - name: Verify toolchain contract
+        run: npm run check:toolchains
+
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # pinned action
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # pinned action
         with:
-          toolchain: 1.91.0
+          toolchain: 1.98.0
           components: rustfmt, clippy
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           shared-key: release-validation
           cache-on-failure: true
 
       - name: Install exact frontend dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
       - name: Verify tag and version contract
         run: npm run check:versions
@@ -52,16 +58,14 @@ jobs:
       - name: Verify frontend
         run: npm run verify:frontend
 
-      - name: Verify production dependency advisories
-        run: npm audit --omit=dev --audit-level=high
+      - name: Verify dependency advisories
+        run: npm audit --audit-level=high
 
       - name: Install pinned RustSec scanner
         run: cargo install cargo-audit --locked --version 0.22.2
 
       - name: Verify Rust dependency advisories
-        # RUSTSEC-2026-0235 is present only behind rust_decimal's inactive optional
-        # rkyv feature; cargo tree for the Windows release target does not select it.
-        run: cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2026-0235
+        run: cargo audit --file src-tauri/Cargo.lock
 
       - name: Verify Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
@@ -78,37 +82,43 @@ jobs:
   draft-release:
     name: Build signed updater draft
     needs: validate
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 60
     permissions:
       contents: write
 
     steps:
       - name: Checkout exact tag
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
 
+      - name: Setup npm
+        run: npm install --global npm@12.0.2
+
+      - name: Verify toolchain contract
+        run: npm run check:toolchains
+
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # pinned action
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # pinned action
         with:
-          toolchain: 1.91.0
+          toolchain: 1.98.0
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           shared-key: release-build
           cache-on-failure: true
 
       - name: Install exact frontend dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
       - name: Verify release inputs
         shell: pwsh
@@ -126,7 +136,7 @@ jobs:
 
       - name: Build and create draft release
         id: tauri
-        uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa # v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -182,7 +192,7 @@ jobs:
 
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $evidence = [ordered]@{
-            schemaVersion = 1
+            schemaVersion = 2
             product = 'VPlayer'
             version = $version
             tag = $env:GITHUB_REF_NAME
@@ -190,6 +200,16 @@ jobs:
             repository = $env:GITHUB_REPOSITORY
             workflowRun = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
             generatedAtUtc = [DateTime]::UtcNow.ToString('o')
+            nodeVersion = (& node --version).TrimStart('v')
+            npmVersion = (& npm.cmd --version).Trim()
+            rustcVersion = (& rustc --version).Trim()
+            cargoVersion = (& cargo --version).Trim()
+            runner = [ordered]@{
+              os = $env:RUNNER_OS
+              arch = $env:RUNNER_ARCH
+              imageOS = $env:ImageOS
+              imageVersion = $env:ImageVersion
+            }
             updaterSignaturePresent = $true
             authenticodePolicy = 'Drafts may be unsigned; publish only installers whose status is Valid.'
             installers = $installerEvidence

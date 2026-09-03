@@ -130,7 +130,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
             <button
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: false } }))}
-              className="p-1 hover:bg-white/10 rounded transition-colors"
+              className="p-1 hover:bg-white/10 rounded-sm transition-colors"
               aria-label={`Restore ${title} window`}
             >
               <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#9633;</span>
@@ -188,7 +188,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setWindows((prev) => ({ ...prev, [id]: { ...prev[id], minimized: true } }))}
-            className="p-1 hover:bg-white/10 rounded transition-colors"
+            className="p-1 hover:bg-white/10 rounded-sm transition-colors"
             aria-label={`Minimize ${title} window`}
           >
             <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#8211;</span>
@@ -196,7 +196,7 @@ export const Window = React.memo(function Window({ id, title, icon: Icon, childr
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => toggleWindow(id)}
-            className="p-1 hover:bg-red-500/20 rounded transition-colors"
+            className="p-1 hover:bg-red-500/20 rounded-sm transition-colors"
             aria-label={`Close ${title} window`}
           >
             <span className="w-3 h-3" style={{ color: colors.textMuted || '#94a3b8' }}>&#10005;</span>

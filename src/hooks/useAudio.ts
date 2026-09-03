@@ -16,7 +16,14 @@ const LONG_IDLE_THRESHOLD_SECONDS = 5 * 60; // 5 minutes
 
 // Timeout for backend operations to prevent UI freezing
 const BACKEND_TIMEOUT_MS = 5000;
+let lastLoadGeneration = 0;
 let lastLoadRequestId = 0;
+
+const nextLoadRequestId = (): number => {
+  const requestId = Math.max(lastLoadRequestId + 1, Date.now() * 1000);
+  lastLoadRequestId = requestId;
+  return requestId;
+};
 
 /** Wrap a promise with a timeout. */
 const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation timed out'): Promise<T> =>
@@ -196,13 +203,16 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
 
   // ── loadTrack ─────────────────────────────────────────────────────
   const loadTrack = useCallback(async (track: Track) => {
-    const requestId = Math.max(lastLoadRequestId + 1, Date.now() * 1000);
-    lastLoadRequestId = requestId;
+    const loadGeneration = ++lastLoadGeneration;
+    const isCurrentLoad = () => loadGeneration === lastLoadGeneration;
     // Self-healing: if we have a stale error from a previous device disconnect,
     // check if a device is available again before giving up.
     if (audioBackendError) {
       try {
         const health = await TauriAPI.getAudioHealth();
+        if (!isCurrentLoad()) {
+          throw new Error('Stale load request ignored');
+        }
         if (health.device_available) {
           log.info('[Audio] Device reappeared — clearing stale backend error');
           setAudioBackendError(null);
@@ -211,6 +221,12 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
           throw new Error('Audio device still unavailable. Please reconnect and try again.');
         }
       } catch (checkErr) {
+        // A newer track request may supersede this one while the health check
+        // is in flight. Preserve that cancellation signal so callers can
+        // ignore it instead of presenting a false device-unavailable error.
+        if (!isCurrentLoad() || String(checkErr).includes('Stale load request')) {
+          throw new Error('Stale load request ignored');
+        }
         throw new Error('Audio system unavailable. Please reconnect your audio device.');
       }
     }
@@ -219,21 +235,30 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     let lastError: unknown = null;
 
     while (attempt <= AUDIO_RETRY_CONFIG.MAX_RETRIES) {
-      if (requestId !== lastLoadRequestId) {
+      if (!isCurrentLoad()) {
         throw new Error('Stale load request ignored');
       }
       try {
         setIsLoading(true);
-        // Timeout fix: prevent hanging forever
+        // A frontend timeout does not cancel the original Tauri invocation.
+        // Give every retry a fresh ID so the backend can reject older work
+        // instead of loading the same track for every queued attempt.
+        const requestId = nextLoadRequestId();
         await withTimeout(
           TauriAPI.loadTrack(track.id, track.path, requestId),
           BACKEND_TIMEOUT_MS,
         );
+        if (!isCurrentLoad()) {
+          throw new Error('Stale load request ignored');
+        }
         currentTrackRef.current = track;
 
         // Get real duration from backend and write to store
         // Timeout fix here too
         const realDuration = await withTimeout(TauriAPI.getDuration(), 2000).catch(() => 0);
+        if (!isCurrentLoad()) {
+          throw new Error('Stale load request ignored');
+        }
         const dur = realDuration > 0 ? realDuration : track.duration || 0;
         useStore.getState().setDuration(dur);
         useStore.getState().setProgress(0);
@@ -242,9 +267,18 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         retryCountRef.current = 0;
         return;
       } catch (err) {
-        if (requestId !== lastLoadRequestId || String(err).includes('Stale load request')) {
-          setIsLoading(false);
+        if (!isCurrentLoad() || String(err).includes('Stale load request')) {
+          if (isCurrentLoad()) setIsLoading(false);
           throw new Error('Stale load request ignored');
+        }
+        const errorMessage = (err as Error).message || String(err);
+        if (errorMessage.toLowerCase().includes('timed out')) {
+          // Tauri invoke timeouts do not cancel native work. Retrying here
+          // would queue another live load and could play/decode the same track
+          // multiple times once the backend responds.
+          setIsLoading(false);
+          retryCountRef.current = 0;
+          throw new Error(`Failed to load track: ${errorMessage}`);
         }
         lastError = err;
         attempt++;
@@ -262,7 +296,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
       }
     }
 
-    setIsLoading(false);
+    if (isCurrentLoad()) setIsLoading(false);
     throw lastError || new Error('Failed to load track');
   }, [audioBackendError]);
 

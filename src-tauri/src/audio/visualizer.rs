@@ -15,6 +15,8 @@ pub struct VisualizerBuffer {
     samples: Box<[AtomicU32]>,
     /// Total number of samples ever pushed (monotonically increasing).
     write_pos: AtomicU64,
+    /// Sample rate of the mono frames currently stored in the ring.
+    sample_rate: AtomicU32,
     /// Collection is disabled unless the visualizer is actually on screen.
     active: AtomicBool,
     capacity: usize,
@@ -29,6 +31,7 @@ impl VisualizerBuffer {
         Self {
             samples: samples.into_boxed_slice(),
             write_pos: AtomicU64::new(0),
+            sample_rate: AtomicU32::new(44_100),
             active: AtomicBool::new(false),
             capacity,
         }
@@ -39,14 +42,16 @@ impl VisualizerBuffer {
         if !self.active.load(Ordering::Relaxed) {
             return;
         }
-        let total = self.write_pos.fetch_add(1, Ordering::Relaxed);
+        let total = self.write_pos.load(Ordering::Relaxed);
         let pos = (total % self.capacity as u64) as usize;
         self.samples[pos].store(sample.to_bits(), Ordering::Relaxed);
+        // Publish the new length only after the sample itself is visible.
+        self.write_pos.store(total + 1, Ordering::Release);
     }
 
     /// Get a copy of current samples for visualization.
     pub fn get_samples(&self) -> Vec<f32> {
-        let total = self.write_pos.load(Ordering::Relaxed);
+        let total = self.write_pos.load(Ordering::Acquire);
         let len = (total.min(self.capacity as u64)) as usize;
         let mut result = Vec::with_capacity(len);
 
@@ -60,7 +65,27 @@ impl VisualizerBuffer {
 
     /// Clear the buffer.
     pub fn clear(&self) {
-        self.write_pos.store(0, Ordering::Relaxed);
+        self.write_pos.store(0, Ordering::Release);
+    }
+
+    /// Change the source sample rate and discard samples from the old frequency axis.
+    pub fn set_sample_rate(&self, sample_rate: u32) {
+        let sample_rate = sample_rate.max(1);
+        if self.sample_rate.load(Ordering::Relaxed) != sample_rate {
+            self.clear();
+            self.sample_rate.store(sample_rate, Ordering::Release);
+        }
+    }
+
+    /// Return a consistent sample/rate snapshot for one FFT analysis.
+    pub fn get_snapshot(&self) -> (Vec<f32>, u32) {
+        loop {
+            let sample_rate = self.sample_rate.load(Ordering::Acquire);
+            let samples = self.get_samples();
+            if self.sample_rate.load(Ordering::Acquire) == sample_rate {
+                return (samples, sample_rate);
+            }
+        }
     }
 
     /// Enable collection only while a visible visualizer needs samples.
@@ -148,5 +173,18 @@ mod tests {
         buf.set_active(false);
         buf.push(3.0);
         assert!(buf.get_samples().is_empty());
+    }
+
+    #[test]
+    fn test_visualizer_sample_rate_change_discards_old_samples() {
+        let buf = VisualizerBuffer::new(8);
+        buf.set_active(true);
+        buf.push(1.0);
+
+        buf.set_sample_rate(48_000);
+        let (samples, sample_rate) = buf.get_snapshot();
+
+        assert!(samples.is_empty());
+        assert_eq!(sample_rate, 48_000);
     }
 }

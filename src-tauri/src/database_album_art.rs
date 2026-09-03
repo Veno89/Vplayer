@@ -1,5 +1,5 @@
 use crate::database::Database;
-use rusqlite::{params, params_from_iter, Result};
+use rusqlite::{Result, params, params_from_iter};
 use std::collections::HashMap;
 
 impl Database {

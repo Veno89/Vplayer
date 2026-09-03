@@ -73,7 +73,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [appVersion, setAppVersion] = useState('0.9.48');
+  const [appVersion, setAppVersion] = useState('0.9.49');
 
   useEffect(() => {
     loadStats();
@@ -320,7 +320,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
         {duplicateGroups && duplicateGroups.length > 0 && (
           <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
             {duplicateGroups.map((group, gi) => (
-              <div key={gi} className="p-2 rounded bg-slate-800/50 border border-slate-700/50">
+              <div key={gi} className="p-2 rounded-sm bg-slate-800/50 border border-slate-700/50">
                 <p className="text-xs text-amber-400 font-medium mb-1">
                   Group {gi + 1}: {group[0]?.title || 'Unknown'} — {group[0]?.artist || 'Unknown'}
                 </p>
@@ -374,7 +374,7 @@ export function AdvancedTab({ debugVisible, setDebugVisible }: AdvancedTabProps)
       <SettingCard title="Danger Zone" icon={AlertTriangle} accent="red">
         <div className="p-4 rounded-xl border-2 border-dashed border-red-500/30 bg-red-500/5">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-white text-sm font-medium">Reset All Settings</p>
               <p className="text-slate-500 text-xs mt-1">

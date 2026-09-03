@@ -44,6 +44,8 @@ fn sample_track(id: &str, title: &str, artist: &str, rating: i32) -> Track {
 fn get_tracks_page_returns_ordered_slice_and_total() {
     let db_path = temp_db_path("tracks_page");
     let db = Database::new(&db_path).expect("db init should succeed");
+    db.add_folder("page-folder", "C:/Music", "Music", now_millis())
+        .expect("register test library root");
 
     let seed = vec![
         sample_track("page_track_1", "Alpha", "Band A", 5),

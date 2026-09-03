@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useId, useRef } from 'react';
-import { FixedSizeList as ListVirtual } from 'react-window';
-import type { ListChildComponentProps, Align } from 'react-window';
+import { List as ListVirtual } from 'react-window';
+import type { Align, ListImperativeAPI, RowComponentProps } from 'react-window';
 import { Loader, MoreVertical, GripVertical, Check } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { StarRating } from './StarRating';
@@ -119,10 +119,17 @@ interface SimpleTrackListProps {
   onPlayTrack?: (index: number) => void;
 }
 
+const trackRowKey = (index: number, data: TrackRowData) => data.tracks[index]?.id ?? index;
+
 /**
  * Unified track row component with configurable features
  */
-const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<TrackRowData>) => {
+const TrackRow = ({
+  ariaAttributes,
+  index,
+  style,
+  ...data
+}: RowComponentProps<TrackRowData>): React.ReactElement | null => {
   const {
     listId,
     tracks,
@@ -180,6 +187,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
 
   return (
     <div
+      {...ariaAttributes}
       id={`${listId}-track-${index}`}
       role="option"
       aria-selected={isSelected || isActive}
@@ -220,7 +228,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
       {/* Selection Checkbox / Drag Handle */}
       {isMultiSelectMode ? (
         <div className="w-6 flex items-center justify-center">
-          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${isSelected
+          <div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${isSelected
             ? 'bg-cyan-500 border-cyan-500'
             : 'border-slate-500 hover:border-cyan-400'
             }`}>
@@ -236,7 +244,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
       {/* Track Number */}
       {showNumber && (
         <span
-          className="text-center text-slate-500 text-xs flex-shrink-0"
+          className="text-center text-slate-500 text-xs shrink-0"
           style={{ width: columnWidths?.number || 40 }}
         >
           {isLoading ? (
@@ -256,7 +264,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
           {track.title || 'Unknown'}
         </span>
         {queuePos !== undefined && (
-          <span className="flex-shrink-0 text-cyan-400 text-xs font-bold">({queuePos})</span>
+          <span className="shrink-0 text-cyan-400 text-xs font-bold">({queuePos})</span>
         )}
       </div>
 
@@ -327,7 +335,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
               };
               onShowMenu(index, menuEvent);
             }}
-            className="p-1 hover:bg-slate-600 rounded transition-colors"
+            className="p-1 hover:bg-slate-600 rounded-sm transition-colors"
             title="More options"
             aria-label={`More options for ${track.title || track.name || 'track'}`}
           >
@@ -337,43 +345,7 @@ const TrackRow = React.memo(({ data, index, style }: ListChildComponentProps<Tra
       )}
     </div>
   );
-}, (prevProps: ListChildComponentProps<TrackRowData>, nextProps: ListChildComponentProps<TrackRowData>) => {
-  const prevTrack = prevProps.data.tracks[prevProps.index];
-  const nextTrack = nextProps.data.tracks[nextProps.index];
-
-  // Compare columnWidths object
-  const prevWidths = prevProps.data.columnWidths;
-  const nextWidths = nextProps.data.columnWidths;
-  const widthsEqual = prevWidths === nextWidths || (
-    prevWidths?.number === nextWidths?.number &&
-    prevWidths?.title === nextWidths?.title &&
-    prevWidths?.artist === nextWidths?.artist &&
-    prevWidths?.album === nextWidths?.album &&
-    prevWidths?.rating === nextWidths?.rating &&
-    prevWidths?.duration === nextWidths?.duration
-  );
-
-  return (
-    widthsEqual &&
-    prevProps.index === nextProps.index &&
-    prevProps.style === nextProps.style &&
-    prevTrack?.id === nextTrack?.id &&
-    prevTrack?.title === nextTrack?.title &&
-    prevTrack?.artist === nextTrack?.artist &&
-    prevTrack?.album === nextTrack?.album &&
-    prevTrack?.duration === nextTrack?.duration &&
-    prevTrack?.rating === nextTrack?.rating &&
-    prevProps.data.currentTrack === nextProps.data.currentTrack &&
-    prevProps.data.loadingTrackIndex === nextProps.data.loadingTrackIndex &&
-    prevProps.data.draggedIndex === nextProps.data.draggedIndex &&
-    prevProps.data.focusedIndex === nextProps.data.focusedIndex &&
-    prevProps.data.selectedIndices === nextProps.data.selectedIndices &&
-    prevProps.data.isMultiSelectMode === nextProps.data.isMultiSelectMode &&
-    prevProps.data.queuePositions?.get(prevTrack?.id ?? '') === nextProps.data.queuePositions?.get(nextTrack?.id ?? '')
-  );
-});
-
-TrackRow.displayName = 'TrackRow';
+};
 
 // Force HMR update
 /**
@@ -413,7 +385,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<ListVirtual<TrackRowData>>(null);
+  const listRef = useRef<ListImperativeAPI>(null);
 
   // Use external or local selection state
   const actualSelectedIndices = selectedIndices ?? localSelectedIndices;
@@ -422,7 +394,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   // Expose scrollToItem via ref
   React.useImperativeHandle(ref, () => ({
     scrollToItem: (index: number, align?: Align) => {
-      listRef.current?.scrollToItem(index, align);
+      listRef.current?.scrollToRow({ index, align });
     },
     getSelectedTracks: () => {
       return Array.from(actualSelectedIndices).map(i => tracks[i]).filter(Boolean);
@@ -528,7 +500,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         e.preventDefault();
         setFocusedIndex(prev => {
           const next = Math.min(prev + 1, tracks.length - 1);
-          listRef.current?.scrollToItem(next, 'smart');
+          listRef.current?.scrollToRow({ index: next, align: 'smart' });
           return next;
         });
         break;
@@ -536,7 +508,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         e.preventDefault();
         setFocusedIndex(prev => {
           const next = Math.max(prev - 1, 0);
-          listRef.current?.scrollToItem(next, 'smart');
+          listRef.current?.scrollToRow({ index: next, align: 'smart' });
           return next;
         });
         break;
@@ -558,18 +530,18 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       case 'Home':
         e.preventDefault();
         setFocusedIndex(0);
-        listRef.current?.scrollToItem(0, 'start');
+        listRef.current?.scrollToRow({ index: 0, align: 'start' });
         break;
       case 'End':
         e.preventDefault();
         setFocusedIndex(tracks.length - 1);
-        listRef.current?.scrollToItem(tracks.length - 1, 'end');
+        listRef.current?.scrollToRow({ index: tracks.length - 1, align: 'end' });
         break;
       case 'PageDown':
         e.preventDefault();
         setFocusedIndex(prev => {
           const next = Math.min(prev + 10, tracks.length - 1);
-          listRef.current?.scrollToItem(next, 'smart');
+          listRef.current?.scrollToRow({ index: next, align: 'smart' });
           return next;
         });
         break;
@@ -577,7 +549,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         e.preventDefault();
         setFocusedIndex(prev => {
           const next = Math.max(prev - 10, 0);
-          listRef.current?.scrollToItem(next, 'smart');
+          listRef.current?.scrollToRow({ index: next, align: 'smart' });
           return next;
         });
         break;
@@ -644,7 +616,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="outline-none focus:outline-none"
+      className="outline-hidden focus:outline-hidden"
       role="listbox"
       aria-label="Track list"
       aria-activedescendant={tracks[focusedIndex] ? `${listId}-track-${focusedIndex}` : undefined}
@@ -663,7 +635,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
                   onBatchAction('queue', Array.from(actualSelectedIndices).map(i => tracks[i]));
                 }
               }}
-              className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors"
+              className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-sm transition-colors"
             >
               Add to Queue
             </button>
@@ -673,7 +645,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
                   onBatchAction('playlist', Array.from(actualSelectedIndices).map(i => tracks[i]));
                 }
               }}
-              className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors"
+              className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-sm transition-colors"
             >
               Add to Playlist
             </button>
@@ -682,7 +654,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
                 setActualSelectedIndices(new Set());
                 setIsMultiSelectMode(false);
               }}
-              className="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
+              className="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-sm transition-colors"
             >
               Cancel
             </button>
@@ -690,17 +662,20 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         </div>
       )}
       <ListVirtual
-        ref={listRef}
-        height={isMultiSelectMode && actualSelectedIndices.size > 0
-          ? (height || 300) - 44
-          : (height || 300)}
-        itemCount={tracks.length}
-        itemSize={itemSize}
-        width="100%"
-        itemData={itemData}
-      >
-        {TrackRow}
-      </ListVirtual>
+        listRef={listRef}
+        role="presentation"
+        rowComponent={TrackRow}
+        rowCount={tracks.length}
+        rowHeight={itemSize}
+        rowKey={trackRowKey}
+        rowProps={itemData}
+        style={{
+          height: isMultiSelectMode && actualSelectedIndices.size > 0
+            ? (height || 300) - 44
+            : (height || 300),
+          width: '100%',
+        }}
+      />
     </div>
   );
 });
@@ -793,7 +768,7 @@ export function SimpleTrackList({
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="flex flex-col outline-none focus:outline-none"
+      className="flex flex-col outline-hidden focus:outline-hidden"
       role="listbox"
       aria-label="Track list"
       aria-activedescendant={tracks[focusedIndex] ? `${listId}-track-${focusedIndex}` : undefined}
@@ -801,7 +776,12 @@ export function SimpleTrackList({
       {tracks.map((track, index) => (
         <TrackRow
           key={track.id || index}
-          data={itemData}
+          {...itemData}
+          ariaAttributes={{
+            role: 'listitem',
+            'aria-posinset': index + 1,
+            'aria-setsize': tracks.length,
+          }}
           index={index}
           style={{}}
         />

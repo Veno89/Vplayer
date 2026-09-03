@@ -238,7 +238,7 @@ export function LibraryStatsWindow() {
             <div className="mt-3 space-y-2">
               {perfStats.recommendations.vacuum_recommended && (
                 <div className="p-3 bg-yellow-900/20 border border-yellow-700/50 rounded-lg flex items-center gap-3">
-                  <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+                  <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
                   <p className="text-yellow-300 text-sm flex-1">Database optimization recommended</p>
                   <button
                     onClick={handleVacuum}

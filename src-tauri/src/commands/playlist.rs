@@ -1,8 +1,8 @@
 // Playlist commands
+use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::playlist_io::PlaylistIO;
 use crate::scanner::{Scanner, Track};
-use crate::AppState;
 use log::{info, warn};
 
 #[tauri::command]

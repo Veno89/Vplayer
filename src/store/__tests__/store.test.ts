@@ -4,7 +4,8 @@
  * A-B repeat, shuffle, layout application, theme CRUD.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { selectPersistedState, useStore } from '../useStore';
+import { migratePersistedState, normalizeWindowLayout, selectPersistedState, useStore } from '../useStore';
+import { selectCurrentTrackData } from '../selectors';
 
 const makeMockTrack = (overrides = {}) => ({
   id: `track-${Math.random().toString(36).slice(2, 8)}`,
@@ -157,6 +158,66 @@ describe('playerSlice', () => {
       useStore.getState().setRepeatMode('off');
       expect(useStore.getState().repeatMode).toBe('off');
     });
+
+    it('restores the source and current track as one consistent state', () => {
+      const tracks = [makeMockTrack({ id: 'a' }), makeMockTrack({ id: 'b' })];
+
+      expect(useStore.getState().restorePlaybackTrack(tracks, 'b')).toBe(true);
+      expect(useStore.getState()).toMatchObject({
+        activePlaybackTracks: tracks,
+        currentTrack: 1,
+        currentTrackId: 'b',
+      });
+      expect(selectCurrentTrackData(useStore.getState())?.id).toBe('b');
+    });
+
+    it('resolves current track data by ID when its cached index is stale', () => {
+      const tracks = [makeMockTrack({ id: 'a' }), makeMockTrack({ id: 'b' })];
+      useStore.setState({ activePlaybackTracks: tracks, currentTrack: 0, currentTrackId: 'b' });
+
+      expect(selectCurrentTrackData(useStore.getState())?.id).toBe('b');
+    });
+
+    it('treats an empty selected playlist as an empty playback source', () => {
+      const libraryTrack = makeMockTrack({ id: 'library-only' });
+      useStore.setState({
+        activePlaybackTracks: [libraryTrack],
+        currentTrack: 0,
+        currentTrackId: libraryTrack.id,
+        loadingTrackIndex: 0,
+        playing: true,
+      });
+
+      useStore.getState().setPlaylistPlaybackTracks([]);
+
+      expect(useStore.getState()).toMatchObject({
+        activePlaybackTracks: [],
+        currentTrack: null,
+        currentTrackId: null,
+        loadingTrackIndex: null,
+        playing: false,
+      });
+    });
+
+    it('keeps playing when the selected playlist still contains the current track', () => {
+      const trackA = makeMockTrack({ id: 'a' });
+      const trackB = makeMockTrack({ id: 'b' });
+      useStore.setState({
+        activePlaybackTracks: [trackA, trackB],
+        currentTrack: 1,
+        currentTrackId: 'b',
+        playing: true,
+      });
+
+      useStore.getState().setPlaylistPlaybackTracks([trackB, trackA]);
+
+      expect(useStore.getState()).toMatchObject({
+        activePlaybackTracks: [trackB, trackA],
+        currentTrack: 0,
+        currentTrackId: 'b',
+        playing: true,
+      });
+    });
   });
 });
 
@@ -175,6 +236,24 @@ describe('persistence hot path', () => {
 
     useStore.getState().setVolume(0.41);
     expect(selectPersistedState(useStore.getState())).not.toBe(afterTick);
+  });
+
+  it('persists the resume bookmark but not runtime playback pointers', () => {
+    const track = makeMockTrack({ id: 'resume-me' });
+    useStore.setState({
+      activePlaybackTracks: [track],
+      currentTrack: 0,
+      currentTrackId: track.id,
+      lastTrackId: track.id,
+      lastPosition: 42,
+    });
+
+    const persisted = selectPersistedState(useStore.getState());
+    expect(persisted.lastTrackId).toBe('resume-me');
+    expect(persisted.lastPosition).toBe(42);
+    expect(persisted).not.toHaveProperty('currentTrack');
+    expect(persisted).not.toHaveProperty('currentTrackId');
+    expect(persisted).not.toHaveProperty('activePlaybackTracks');
   });
 });
 
@@ -232,6 +311,71 @@ describe('uiSlice', () => {
   });
 
   describe('layouts', () => {
+    it('upgrades legacy stacked player windows without introducing overlap', () => {
+      const normalized = normalizeWindowLayout({
+        player: {
+          x: 40, y: 40, width: 420, height: 400,
+          visible: true, minimized: false, zIndex: 10,
+        },
+        equalizer: {
+          x: 40, y: 460, width: 420, height: 340,
+          visible: true, minimized: false, zIndex: 11,
+        },
+      });
+
+      expect(normalized.player.height).toBe(420);
+      expect(normalized.equalizer.height).toBe(380);
+      expect(normalized.equalizer.y).toBe(480);
+      expect(normalized.equalizer.y - (normalized.player.y + normalized.player.height)).toBe(20);
+    });
+
+    it('migrates legacy Full Studio anchors into the default viewport', () => {
+      const migrated = migratePersistedState({
+        currentLayout: 'full',
+        windows: {
+          player: { x: 40, y: 40, width: 420, height: 420, visible: true, minimized: false },
+          equalizer: { x: 40, y: 480, width: 420, height: 380, visible: true, minimized: false },
+          playlist: { x: 480, y: 40, width: 680, height: 480, visible: true, minimized: false },
+          visualizer: { x: 480, y: 540, width: 680, height: 260, visible: true, minimized: false },
+          library: { x: 1180, y: 40, width: 420, height: 760, visible: true, minimized: false },
+        },
+      }, 2);
+
+      const migratedWindows = migrated.windows!;
+      expect(migratedWindows.library).toMatchObject({ x: 840, y: 20, width: 400, height: 820 });
+      expect(migratedWindows.equalizer).toMatchObject({ x: 20, y: 460, height: 380 });
+      expect(migratedWindows.visualizer).toMatchObject({ x: 420, y: 540, height: 300 });
+    });
+
+    it('drops stale runtime playback pointers while preserving the resume bookmark', () => {
+      const migrated = migratePersistedState({
+        currentTrack: 9,
+        currentTrackId: 'stale-track',
+        activePlaybackTracks: [makeMockTrack({ id: 'stale-track' })],
+        lastTrackId: 'resume-track',
+        lastPosition: 73,
+      }, 3);
+
+      expect(migrated).not.toHaveProperty('currentTrack');
+      expect(migrated).not.toHaveProperty('currentTrackId');
+      expect(migrated).not.toHaveProperty('activePlaybackTracks');
+      expect(migrated).toMatchObject({ lastTrackId: 'resume-track', lastPosition: 73 });
+    });
+
+    it('keeps every visible layout window inside the default 1260 by 860 workspace', () => {
+      for (const layout of useStore.getState().getLayouts()) {
+        useStore.getState().applyLayout(layout.name);
+        const visibleWindows = Object.values(useStore.getState().windows).filter(window => window.visible);
+
+        for (const window of visibleWindows) {
+          expect(window.x, `${layout.name} left edge`).toBeGreaterThanOrEqual(0);
+          expect(window.y, `${layout.name} top edge`).toBeGreaterThanOrEqual(0);
+          expect(window.x + window.width, `${layout.name} right edge`).toBeLessThanOrEqual(1260);
+          expect(window.y + window.height, `${layout.name} bottom edge`).toBeLessThanOrEqual(860);
+        }
+      }
+    });
+
     it('applies a layout template', () => {
       useStore.getState().applyLayout('mini');
       // mini layout has only player visible

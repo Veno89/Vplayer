@@ -7,13 +7,18 @@ VPlayer releases are built from immutable `vMAJOR.MINOR.PATCH` tags. The tag mus
 ## Required gates
 
 The release workflow must pass the frontend typecheck, tests, and production build; the
-production npm advisory gate; Rust formatting, compilation, strict Clippy, and all Rust
+full npm dependency advisory gate; Rust formatting, compilation, strict Clippy, and all Rust
 tests. The workflow also installs a pinned `cargo-audit` release and checks the lockfile
-against current RustSec data. `RUSTSEC-2026-0235` is explicitly ignored because it exists
-only behind `rust_decimal`'s inactive optional `rkyv` feature and is absent from the Windows
-release target graph; the exception must be removed if that feature ever becomes active.
-Release actions are pinned to full commit SHAs, the Rust toolchain is pinned to 1.91.0,
-and the workflow checks out full history so the exact tagged revision is retained.
+against current RustSec data without ignored advisories. Release actions are pinned to full
+commit SHAs, Node is pinned by `.node-version` to 24.20.0 LTS, Rust is pinned by
+`rust-toolchain.toml` and the workflow to 1.98.0, and the workflow checks out full history so
+the exact tagged revision is retained.
+
+The same frontend and native gates, including a no-bundle Tauri integration build, run on
+every pull request and every push to `main`. This validates Dependabot and ordinary changes
+before a release tag is created. CI deliberately uses `windows-latest` as an early compatibility
+signal. Artifact-producing release jobs use the explicit `windows-2025` runner family, and the
+generated evidence records the actual hosted image, Node, npm, rustc, and Cargo versions.
 
 The workflow creates a **draft** GitHub release only after those gates pass. It requires the
 Tauri updater private key and password, verifies that updater `.sig` files exist, and attaches:
@@ -42,3 +47,11 @@ same tag, and re-check the evidence. Never describe updater-only signing as Auth
 4. Create the annotated version tag on that exact commit and push the tag.
 5. Inspect the draft's checksums, dependency manifests, updater signature, commit, and
    Authenticode status. Publish only when all evidence is correct and Authenticode is valid.
+
+## Dependency and toolchain maintenance
+
+Dependabot checks npm, Cargo, and GitHub Actions weekly. At least monthly, also check the
+current Node LTS patch and npm release, the current stable Rust release, and the pinned
+`cargo-audit` release. Keep `.node-version`, `package.json` (`engines` and `packageManager`),
+`rust-toolchain.toml`, `src-tauri/Cargo.toml` (`rust-version`), and both workflows synchronized,
+then regenerate the relevant lockfile and run the full frontend and native gates.

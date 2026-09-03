@@ -64,7 +64,7 @@ export function AppearanceTab({
             <button
               onClick={onOpenThemeEditor}
               onMouseDown={e => e.stopPropagation()}
-              className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all hover:scale-105"
+              className="px-3 py-1.5 bg-linear-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all hover:scale-105"
             >
               <Sparkles className="w-3 h-3" />
               Create Custom
@@ -113,7 +113,7 @@ export function AppearanceTab({
               <button
                 onClick={() => setBackgroundImage(null)}
                 onMouseDown={e => e.stopPropagation()}
-                className="absolute top-2 right-2 px-2 py-1 bg-red-500/80 hover:bg-red-500 rounded text-xs font-medium transition-colors"
+                className="absolute top-2 right-2 px-2 py-1 bg-red-500/80 hover:bg-red-500 rounded-sm text-xs font-medium transition-colors"
               >
                 Remove
               </button>
@@ -249,7 +249,7 @@ function ThemeCard({ scheme, isSelected, onSelect }: ThemeCardProps) {
       {/* Label and color dot */}
       <div className="flex items-center gap-1.5">
         <div 
-          className={`w-4 h-4 rounded-full flex-shrink-0 ${scheme.isGradient ? `bg-gradient-to-r ${scheme.gradient}` : ''}`}
+          className={`w-4 h-4 rounded-full shrink-0 ${scheme.isGradient ? `bg-linear-to-r ${scheme.gradient}` : ''}`}
           style={!scheme.isGradient ? { backgroundColor: scheme.color } : {}}
         />
         <span className="text-white text-[10px] font-medium truncate">{scheme.label}</span>

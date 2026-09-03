@@ -1,6 +1,6 @@
 // Folder watcher commands
-use crate::error::{AppError, AppResult};
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]

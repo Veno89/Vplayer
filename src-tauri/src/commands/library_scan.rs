@@ -1,11 +1,11 @@
 // Library scanning commands — split from library.rs
+use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::scanner::{Scanner, Track};
 use crate::time_utils::now_millis;
-use crate::AppState;
 use log::info;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Window;
 
 fn register_scan(state: &AppState, scan_id: &str) -> AppResult<Arc<AtomicBool>> {

@@ -3,6 +3,7 @@ pub mod database;
 pub mod database_album_art;
 pub mod database_failed_tracks;
 pub mod database_folders;
+pub mod database_library_integrity;
 pub mod database_playlist;
 pub mod database_schema;
 pub mod database_tracks;

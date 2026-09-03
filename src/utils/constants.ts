@@ -4,10 +4,10 @@ export const SEEK_THRESHOLD_SECONDS = 3;
 
 // Per-window minimum sizes for proper content display
 export const WINDOW_MIN_SIZES = {
-  player: { width: 340, height: 320 },      // Album art + controls + progress
+  player: { width: 340, height: 420 },      // Full controls without a vertical scrollbar
   playlist: { width: 300, height: 200 },    // Header + at least a few tracks
   library: { width: 400, height: 350 },     // Folders + search + track list
-  equalizer: { width: 380, height: 260 },   // All 10 EQ bands + presets
+  equalizer: { width: 380, height: 380 },   // Presets + all EQ bands without scrolling
   visualizer: { width: 300, height: 150 },  // Enough canvas space
   queue: { width: 300, height: 250 },       // Header + queue items
   options: { width: 480, height: 480 },     // Tabs + content + layout previews

@@ -9,7 +9,7 @@
  */
 import { create } from 'zustand';
 import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
-import type { AppStore } from './types';
+import type { AppStore, WindowPosition, WindowsState } from './types';
 import {
   createPlayerSlice,
   playerPersistState,
@@ -22,6 +22,8 @@ import {
   getInitialWindows
 } from './slices';
 import { pruneExpiredDiscographyData } from './slices/musicBrainzSlice';
+import { WINDOW_MIN_SIZES } from '../utils/constants';
+import { LAYOUT_TEMPLATES } from '../utils/layoutTemplates';
 
 export const STORE_RESET_PENDING_KEY = 'vplayer-reset-pending';
 
@@ -131,6 +133,99 @@ function sanitizePersistedState(value: unknown, current: AppStore): Partial<AppS
   return safe as Partial<AppStore>;
 }
 
+export function migratePersistedState(value: unknown, persistedVersion: number): PersistedAppState {
+  if (!isPlainObject(value) || persistedVersion >= 4) return value as PersistedAppState;
+
+  const migrated: Record<string, unknown> = { ...value };
+
+  if (persistedVersion < 3 && value.currentLayout === 'full' && isPlainObject(value.windows)) {
+    const windows = value.windows as Record<string, unknown>;
+    const player = windows.player;
+    const equalizer = windows.equalizer;
+    const playlist = windows.playlist;
+    const library = windows.library;
+    const usesLegacyFullAnchors = isPlainObject(player) && player.x === 40
+      && isPlainObject(equalizer) && equalizer.x === 40
+      && isPlainObject(playlist) && playlist.x === 480
+      && isPlainObject(library) && library.x === 1180;
+
+    if (usesLegacyFullAnchors) {
+      const migratedWindows: Record<string, unknown> = { ...windows };
+      for (const [id, layoutWindow] of Object.entries(LAYOUT_TEMPLATES.full.windows)) {
+        const existing = windows[id];
+        migratedWindows[id] = isPlainObject(existing)
+          ? {
+              ...existing,
+              x: layoutWindow.x,
+              y: layoutWindow.y,
+              width: layoutWindow.width,
+              height: layoutWindow.height,
+            }
+          : layoutWindow;
+      }
+      migrated.windows = migratedWindows;
+    }
+  }
+
+  // Runtime playback pointers are only valid together with their in-memory
+  // source list. Keep the resume bookmark instead and rebuild these on startup.
+  delete migrated.currentTrack;
+  delete migrated.currentTrackId;
+  delete migrated.activePlaybackTracks;
+
+  return migrated as PersistedAppState;
+}
+
+/**
+ * Bring persisted windows forward when a release raises a content-safe minimum.
+ * Windows stacked directly below a growing panel keep their existing gap instead
+ * of being overlapped by the larger panel.
+ */
+export function normalizeWindowLayout(windows: WindowsState): WindowsState {
+  const original = Object.fromEntries(
+    Object.entries(windows).map(([id, window]) => [id, { ...window }]),
+  ) as WindowsState;
+  const normalized = Object.fromEntries(
+    Object.entries(windows).map(([id, window]) => {
+      const minimum = (WINDOW_MIN_SIZES as Record<string, { width: number; height: number }>)[id]
+        ?? { width: 250, height: 150 };
+      return [id, {
+        ...window,
+        width: Math.max(minimum.width, window.width),
+        height: Math.max(minimum.height, window.height),
+      }];
+    }),
+  ) as WindowsState;
+
+  const verticallyOrdered = Object.entries(original)
+    .sort(([, left], [, right]) => left.y - right.y);
+
+  for (const [sourceId, oldSource] of verticallyOrdered) {
+    const source = normalized[sourceId];
+    if (!source) continue;
+    const oldBottom = oldSource.y + oldSource.height;
+    const bottomShift = source.y + source.height - oldBottom;
+    if (bottomShift <= 0) continue;
+
+    for (const [targetId, oldTarget] of verticallyOrdered) {
+      if (targetId === sourceId) continue;
+      const oldGap = oldTarget.y - oldBottom;
+      if (oldGap < 0 || oldGap > 24) continue;
+
+      const overlapsHorizontally = Math.max(oldSource.x, oldTarget.x)
+        < Math.min(oldSource.x + oldSource.width, oldTarget.x + oldTarget.width);
+      if (!overlapsHorizontally) continue;
+
+      const target = normalized[targetId];
+      if (target) {
+        target.y = Math.max(target.y, oldTarget.y + bottomShift);
+      }
+    }
+  }
+
+  return normalized;
+}
+
 export const useStore = create<AppStore>()(
   persist<AppStore, [], [], PersistedAppState>(
     (set, get) => ({
@@ -142,9 +237,9 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: 'vplayer-storage',
-      version: 2,
+      version: 4,
       storage: deduplicatingStorage,
-      migrate: (persistedState) => persistedState as PersistedAppState,
+      migrate: migratePersistedState,
       partialize: selectPersistedState,
       // Merge persisted state with fresh defaults to add new windows
       merge: (persistedState, currentState) => {
@@ -155,19 +250,25 @@ export const useStore = create<AppStore>()(
         merged.shuffleOrder = [];
         merged.shuffleSignature = '';
         merged.shuffleHistory = [];
+        merged.currentTrack = null;
+        merged.currentTrackId = null;
+        merged.activePlaybackTracks = [];
         
         // If rememberWindowPositions was disabled, discard persisted window positions
         if (persisted?.rememberWindowPositions === false) {
-          merged.windows = getInitialWindows();
+          merged.windows = normalizeWindowLayout(getInitialWindows());
         } else if (isPlainObject(persisted?.windows)) {
           // Ensure new windows from layouts are added to existing persisted windows
           const defaultWindows = getInitialWindows();
-          const safeWindows = Object.fromEntries(
-            Object.entries(persisted.windows).filter(([id, value]) =>
-              id in defaultWindows && isPlainObject(value)
-            ),
-          );
-          merged.windows = { ...defaultWindows, ...safeWindows };
+          const safeWindows = Object.fromEntries(Object.entries(defaultWindows).map(([id, fallback]) => {
+            const candidate = persisted.windows?.[id];
+            return [id, isPlainObject(candidate)
+              ? { ...fallback, ...candidate } as WindowPosition
+              : fallback];
+          })) as WindowsState;
+          merged.windows = normalizeWindowLayout(safeWindows);
+        } else {
+          merged.windows = normalizeWindowLayout(merged.windows);
         }
 
         // Prune expired discography cache entries on hydration

@@ -80,14 +80,14 @@ export function WindowsTab({ windows, toggleWindow }: WindowsTabProps) {
     <div className="space-y-6">
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+        <div className="p-4 rounded-xl bg-linear-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
           <div className="flex items-center gap-2 mb-1">
             <Eye className="w-4 h-4 text-emerald-400" />
             <span className="text-slate-400 text-xs">Visible</span>
           </div>
           <p className="text-white text-2xl font-bold">{visibleCount}</p>
         </div>
-        <div className="p-4 rounded-xl bg-gradient-to-br from-slate-500/10 to-slate-600/10 border border-slate-500/20">
+        <div className="p-4 rounded-xl bg-linear-to-br from-slate-500/10 to-slate-600/10 border border-slate-500/20">
           <div className="flex items-center gap-2 mb-1">
             <EyeOff className="w-4 h-4 text-slate-400" />
             <span className="text-slate-400 text-xs">Hidden</span>
@@ -175,7 +175,7 @@ export function WindowsTab({ windows, toggleWindow }: WindowsTabProps) {
       </SettingCard>
 
       {/* Tips */}
-      <div className="p-4 rounded-xl bg-gradient-to-br from-cyan-500/5 to-blue-500/5 border border-cyan-500/20">
+      <div className="p-4 rounded-xl bg-linear-to-br from-cyan-500/5 to-blue-500/5 border border-cyan-500/20">
         <h4 className="text-cyan-400 text-sm font-medium mb-2">💡 Tips</h4>
         <ul className="space-y-1 text-xs text-slate-400">
           <li>• Drag window title bars to move them around</li>

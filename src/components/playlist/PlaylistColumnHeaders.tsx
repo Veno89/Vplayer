@@ -83,7 +83,7 @@ export function PlaylistColumnHeaders({
 
             {/* Number (resizable) */}
             <div
-                className="relative flex items-center justify-center flex-shrink-0 px-1"
+                className="relative flex items-center justify-center shrink-0 px-1"
                 style={{ width: columnWidths.number || 40 }}
             >
                 #

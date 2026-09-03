@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use vplayer::database::Database;
-use vplayer::scanner::{Track, TRACK_SELECT_COLUMNS};
-use vplayer::smart_playlists::{save_smart_playlist, Rule, SmartPlaylist};
+use vplayer::scanner::{TRACK_SELECT_COLUMNS, Track};
+use vplayer::smart_playlists::{Rule, SmartPlaylist, save_smart_playlist};
 use vplayer::time_utils::now_millis;
 
 fn temp_db_path(test_name: &str) -> PathBuf {

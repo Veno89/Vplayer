@@ -3,6 +3,7 @@ import { Play, Pause, SkipForward, SkipBack, Maximize2, X, Volume2, VolumeX } fr
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
 import { useStore } from '../store/useStore';
+import { selectCurrentTrackData } from '../store/selectors';
 import { usePlayerContext } from '../context/PlayerProvider';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 
@@ -23,11 +24,11 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
   const tracks = playbackTracks;
   const isMuted = volume === 0; // TODO: wire up when mute state is in store
   const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
-  const currentTrackData = useStore(s => s.getCurrentTrackData)();
+  const currentTrackData = useStore(selectCurrentTrackData);
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
 
   return (
-    <div className="flex flex-col bg-slate-900/95 backdrop-blur-sm text-white rounded-lg shadow-2xl border border-slate-700 overflow-hidden">
+    <div className="flex flex-col bg-slate-900/95 backdrop-blur-xs text-white rounded-lg shadow-2xl border border-slate-700 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-700">
         <div className="flex items-center gap-2">
@@ -37,14 +38,14 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
         <div className="flex gap-1">
           <button
             onClick={onMaximize}
-            className="p-1 hover:bg-slate-700 rounded transition-colors"
+            className="p-1 hover:bg-slate-700 rounded-sm transition-colors"
             title="Maximize"
           >
             <Maximize2 className="w-3 h-3" />
           </button>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-red-500 rounded transition-colors"
+            className="p-1 hover:bg-red-500 rounded-sm transition-colors"
             title="Close"
           >
             <X className="w-3 h-3" />
@@ -61,10 +62,10 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
               trackId={currentTrackData.id}
               trackPath={currentTrackData.path}
               size="medium"
-              className="flex-shrink-0"
+              className="shrink-0"
             />
           ) : (
-            <div className="w-12 h-12 bg-slate-800 rounded flex-shrink-0" />
+            <div className="w-12 h-12 bg-slate-800 rounded-sm shrink-0" />
           )}
 
           {/* Track Info */}
@@ -88,7 +89,7 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
         <div className="mt-3">
           <div className="w-full bg-slate-800 rounded-full h-1 overflow-hidden">
             <div 
-              className={`h-full bg-gradient-to-r ${currentColors.primary} transition-all`}
+              className={`h-full bg-linear-to-r ${currentColors.primary} transition-all`}
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -103,7 +104,7 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
           {/* Volume */}
           <button
             onClick={handleToggleMute}
-            className="p-1.5 hover:bg-slate-800 rounded transition-colors"
+            className="p-1.5 hover:bg-slate-800 rounded-sm transition-colors"
             title={isMuted ? 'Unmute' : 'Mute'}
           >
             {isMuted || volume === 0 ? (
@@ -118,7 +119,7 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
             <button
               onClick={handlePrevTrack}
               disabled={tracks.length === 0}
-              className="p-1.5 hover:bg-slate-800 rounded transition-colors disabled:opacity-30"
+              className="p-1.5 hover:bg-slate-800 rounded-sm transition-colors disabled:opacity-30"
               title="Previous"
             >
               <SkipBack className="w-4 h-4" />
@@ -127,7 +128,7 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
             <button
               onClick={togglePlay}
               disabled={tracks.length === 0 || currentTrack === null}
-              className={`p-2 bg-gradient-to-r ${currentColors.primary} hover:opacity-90 rounded-full transition-all disabled:opacity-30`}
+              className={`p-2 bg-linear-to-r ${currentColors.primary} hover:opacity-90 rounded-full transition-all disabled:opacity-30`}
               title={playing ? 'Pause' : 'Play'}
             >
               {playing ? (
@@ -140,7 +141,7 @@ export function MiniPlayerWindow({ onMaximize, onClose }: MiniPlayerWindowProps)
             <button
               onClick={handleNextTrack}
               disabled={tracks.length === 0}
-              className="p-1.5 hover:bg-slate-800 rounded transition-colors disabled:opacity-30"
+              className="p-1.5 hover:bg-slate-800 rounded-sm transition-colors disabled:opacity-30"
               title="Next"
             >
               <SkipForward className="w-4 h-4" />

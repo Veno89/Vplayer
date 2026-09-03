@@ -101,6 +101,8 @@ describe('usePlaybackEffects', () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -341,6 +343,163 @@ describe('usePlaybackEffects', () => {
 
     expect(toastMock.showError).toHaveBeenCalledWith('Failed to play track');
     expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
+  });
+
+  it('does not start a compensating fade-out when fade-in setup fails', async () => {
+    storeMock.playing = false;
+    storeMock.fadeOnPause = true;
+    const { rerender } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    // The first call sets initial volume. Fail the fade-to-zero call that
+    // begins the false -> true transition.
+    audioMock.changeVolume.mockRejectedValueOnce(new Error('Volume change timed out'));
+    storeMock.playing = true;
+    rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
+
+    // Simulate Zustand applying the rollback. It must not be interpreted as a
+    // new pause transition, which would enqueue ten more volume changes.
+    storeMock.playing = false;
+    rerender();
+
+    expect(audioMock.pause).not.toHaveBeenCalled();
+    expect(audioMock.changeVolume).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a delayed play failure after a newer playback intent', async () => {
+    let rejectOlderPlay!: (reason?: unknown) => void;
+    const olderPlay = new Promise<void>((_resolve, reject) => {
+      rejectOlderPlay = reject;
+    });
+    audioMock.play
+      .mockImplementationOnce(() => olderPlay)
+      .mockResolvedValue(undefined);
+    storeMock.playing = false;
+
+    const { rerender } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    storeMock.playing = true;
+    rerender();
+    storeMock.playing = false;
+    rerender();
+    storeMock.playing = true;
+    rerender();
+
+    expect(audioMock.play).toHaveBeenCalledTimes(2);
+    expect(audioMock.pause).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rejectOlderPlay(new Error('Old play failed late'));
+      await Promise.resolve();
+    });
+
+    expect(storeMock.setPlaying).not.toHaveBeenCalled();
+    expect(toastMock.showError).not.toHaveBeenCalled();
+  });
+
+  it('ignores a delayed pause failure after playback was requested again', async () => {
+    let rejectOlderPause!: (reason?: unknown) => void;
+    const olderPause = new Promise<void>((_resolve, reject) => {
+      rejectOlderPause = reject;
+    });
+    audioMock.pause.mockImplementationOnce(() => olderPause);
+    storeMock.playing = false;
+
+    const { rerender } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    storeMock.playing = true;
+    rerender();
+    storeMock.playing = false;
+    rerender();
+    storeMock.playing = true;
+    rerender();
+
+    await act(async () => {
+      rejectOlderPause(new Error('Old pause failed late'));
+      await Promise.resolve();
+    });
+
+    expect(storeMock.setPlaying).not.toHaveBeenCalled();
+    expect(toastMock.showError).not.toHaveBeenCalled();
+  });
+
+  it('cancels an in-progress fade-out when playback resumes', async () => {
+    vi.useFakeTimers();
+    storeMock.playing = true;
+    storeMock.fadeOnPause = true;
+    storeMock.fadeDuration = 100;
+
+    const { rerender } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    storeMock.playing = false;
+    rerender();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30);
+    });
+    expect(audioMock.changeVolume).toHaveBeenCalledTimes(4);
+    expect(audioMock.pause).not.toHaveBeenCalled();
+
+    audioMock.changeVolume.mockClear();
+    audioMock.pause.mockClear();
+
+    storeMock.playing = true;
+    rerender();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    const resumedVolumes = audioMock.changeVolume.mock.calls.map((call: [number]) => call[0]);
+    expect(resumedVolumes).toHaveLength(11);
+    expect(resumedVolumes[0]).toBe(0);
+    expect(resumedVolumes.at(-1)).toBeCloseTo(0.8);
+    expect(audioMock.pause).not.toHaveBeenCalled();
+  });
+
+  it('cancels active fade writes when the hook unmounts', async () => {
+    vi.useFakeTimers();
+    storeMock.playing = true;
+    storeMock.fadeOnPause = true;
+    storeMock.fadeDuration = 100;
+
+    const { rerender, unmount } = renderHook(() =>
+      usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }),
+    );
+
+    storeMock.playing = false;
+    rerender();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(audioMock.changeVolume).toHaveBeenCalledTimes(3);
+
+    audioMock.changeVolume.mockClear();
+    audioMock.pause.mockClear();
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(audioMock.changeVolume).not.toHaveBeenCalled();
+    expect(audioMock.pause).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

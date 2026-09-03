@@ -31,7 +31,7 @@ export function EqualizerWindow() {
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-3 h-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2" style={{ color: colors.text || '#f8fafc' }}>
@@ -46,7 +46,7 @@ export function EqualizerWindow() {
         <button
           onClick={handleReset}
           onMouseDown={e => e.stopPropagation()}
-          className="px-3 py-1 text-xs rounded transition-colors flex items-center gap-1 hover:opacity-80"
+          className="px-3 py-1 text-xs rounded-sm transition-colors flex items-center gap-1 hover:opacity-80"
           style={{ 
             background: colors.backgroundSecondary || '#1e293b',
             color: colors.textMuted || '#94a3b8',
@@ -66,7 +66,7 @@ export function EqualizerWindow() {
             key={presetKey}
             onClick={() => applyPreset(presetKey)}
             onMouseDown={e => e.stopPropagation()}
-            className={`px-3 py-1 text-xs rounded transition-all ${
+            className={`px-3 py-1 text-xs rounded-sm transition-all ${
               currentPreset === presetKey
                 ? `${colors.primary} text-white font-medium`
                 : 'hover:opacity-80'
@@ -84,7 +84,7 @@ export function EqualizerWindow() {
       </div>
 
       {/* EQ Sliders */}
-      <div className="flex justify-around items-end gap-2 h-full">
+      <div className="flex flex-1 min-h-0 justify-around items-end gap-2">
         {eqBands.map((band, idx) => {
           // Calculate fill percentage for visual feedback
           const fillPercent = band.value;

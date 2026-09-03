@@ -1,7 +1,7 @@
 // Lyrics commands
+use crate::AppState;
 use crate::error::{AppError, AppResult};
 use crate::lyrics::Lrc;
-use crate::AppState;
 
 /// Load lyrics from an LRC file for a given track.
 /// Returns the parsed LRC data including lines and metadata.

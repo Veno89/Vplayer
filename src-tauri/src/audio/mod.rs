@@ -4,7 +4,7 @@
 //! - playback_state: Position tracking, timing
 //! - preload: Gapless playback preloading
 //! - volume_manager: Volume, ReplayGain, balance
-//! - device: Device detection, DeviceState, SendOutputStream
+//! - device: Device detection, DeviceState, dedicated device-sink ownership
 //! - effects: EQ and effects processing
 //! - visualizer: Audio visualization buffer
 //!
@@ -21,7 +21,7 @@ pub mod volume_manager;
 
 use crate::context_log::LogContext;
 use log::{error, info, warn};
-use rodio::{Decoder, Sink, Source};
+use rodio::{ChannelCount, Decoder, Player, SampleRate, Source};
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -114,6 +114,23 @@ pub struct BroadcastSnapshot {
     pub duration: f64,
 }
 
+fn admit_load_request(latest: &AtomicU64, request_id: u64) -> AppResult<()> {
+    let previous = latest.fetch_max(request_id, Ordering::SeqCst);
+    if request_id <= previous {
+        Err(AppError::Audio("Stale load request ignored".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn playback_speed(tempo: f32) -> f32 {
+    if tempo.is_finite() {
+        tempo.clamp(0.5, 2.0)
+    } else {
+        1.0
+    }
+}
+
 /// Thin coordinator that owns focused sub-structs.
 ///
 /// Each sub-struct groups related state behind a single Mutex, reducing the
@@ -122,7 +139,7 @@ pub struct BroadcastSnapshot {
 /// The non-Send CPAL output stream remains on a dedicated owner thread; this
 /// coordinator stores only Send-safe control and mixer handles.
 pub struct AudioPlayer {
-    sink: Mutex<Sink>,
+    sink: Mutex<Player>,
     playback: Mutex<PlaybackState>,
     preload: Mutex<PreloadManager>,
     volume_mgr: Mutex<VolumeManager>,
@@ -154,7 +171,7 @@ impl AudioPlayer {
                     "Audio player initialized successfully on device: {:?}",
                     device_name
                 );
-                let sink = Sink::connect_new(&mixer);
+                let sink = Player::connect_new(&mixer);
                 (sink, DeviceState::new(stream, mixer, device_name))
             }
             Err(error) => {
@@ -162,8 +179,11 @@ impl AudioPlayer {
                 // output endpoint. Playback will attach to a real stream during
                 // recovery as soon as a device appears.
                 warn!("Starting audio player in device-less mode: {error}");
-                let (mixer, source) = rodio::mixer::mixer(2, 44_100);
-                let sink = Sink::connect_new(&mixer);
+                let (mixer, source) = rodio::mixer::mixer(
+                    ChannelCount::new(2).expect("stereo channel count is non-zero"),
+                    SampleRate::new(44_100).expect("fallback sample rate is non-zero"),
+                );
+                let sink = Player::connect_new(&mixer);
                 (sink, DeviceState::dormant(mixer, source))
             }
         };
@@ -216,12 +236,7 @@ impl AudioPlayer {
     }
 
     pub fn load_request(&self, path: String, request_id: u64) -> AppResult<()> {
-        let previous = self
-            .latest_load_request
-            .fetch_max(request_id, Ordering::SeqCst);
-        if request_id < previous {
-            return Err(AppError::Audio("Stale load request ignored".to_string()));
-        }
+        admit_load_request(&self.latest_load_request, request_id)?;
 
         if self.get_preloaded_path().as_deref() == Some(path.as_str()) {
             return self.swap_to_preloaded_generation(request_id, Some(path.as_str()));
@@ -252,9 +267,6 @@ impl AudioPlayer {
         let duration = source.total_duration().unwrap_or(Duration::ZERO);
         ctx.info(&format!("Loaded, duration={:?}", duration));
 
-        // Clear visualizer buffer for new track
-        self.visualizer_buffer.clear();
-
         // Wrap source with effects processor for EQ and visualizer
         let effects_source = EffectsSource::new(
             source,
@@ -273,6 +285,7 @@ impl AudioPlayer {
         if self.latest_load_request.load(Ordering::SeqCst) != request_id {
             return Err(AppError::Audio("Stale load request ignored".to_string()));
         }
+        self.visualizer_buffer.clear();
         sink.clear();
         sink.append(effects_source);
         sink.pause();
@@ -302,8 +315,11 @@ impl AudioPlayer {
             new_device_name
         );
 
-        let new_sink = Sink::connect_new(&new_mixer);
+        let new_sink = Player::connect_new(&new_mixer);
         new_sink.set_volume(lock_or_recover(&self.volume_mgr).effective_volume());
+        new_sink.set_speed(playback_speed(
+            lock_or_recover(&self.effects_processor).get_config().tempo,
+        ));
 
         lock_or_recover(&self.device).replace(
             new_stream,
@@ -351,10 +367,10 @@ impl AudioPlayer {
         if let Some(path) = current_path {
             info!("Reloading track after reinit: {}", path);
             self.load(path)?;
-            if current_position > 0.5 {
-                if let Err(e) = self.seek(current_position) {
-                    warn!("Failed to restore position after reinit: {}", e);
-                }
+            if current_position > 0.5
+                && let Err(e) = self.seek(current_position)
+            {
+                warn!("Failed to restore position after reinit: {}", e);
             }
         }
 
@@ -416,8 +432,8 @@ impl AudioPlayer {
 
             self.reinit_and_reload()?;
         } else if needs_reload {
-            // Sink is empty but we have a track - reload it
-            info!("Sink is empty but track is loaded - attempting reload/resume");
+            // Player is empty but we have a track - reload it
+            info!("Player is empty but track is loaded - attempting reload/resume");
             let current_path = lock_or_recover(&self.playback).current_path.clone();
             let current_position = self.get_position();
 
@@ -427,10 +443,10 @@ impl AudioPlayer {
                     error!("Failed to reload track for resume: {}", e);
                     return Err(e);
                 }
-                if current_position > 0.5 {
-                    if let Err(e) = self.seek(current_position) {
-                        warn!("Failed to restore position for resume: {}", e);
-                    }
+                if current_position > 0.5
+                    && let Err(e) = self.seek(current_position)
+                {
+                    warn!("Failed to restore position for resume: {}", e);
                 }
             }
         }
@@ -677,7 +693,7 @@ impl AudioPlayer {
         // Reuse the existing device mixer
         let device = lock_or_recover(&self.device);
         let generation = device.generation;
-        let new_sink = Sink::connect_new(device.mixer()?);
+        let new_sink = Player::connect_new(device.mixer()?);
         drop(device); // release device lock before acquiring sink lock
 
         // Wrap source with effects processor for EQ and visualizer (same as load())
@@ -692,6 +708,9 @@ impl AudioPlayer {
 
         let current_volume = lock_or_recover(&self.sink).volume();
         new_sink.set_volume(current_volume);
+        new_sink.set_speed(playback_speed(
+            lock_or_recover(&self.effects_processor).get_config().tempo,
+        ));
         new_sink.append(effects_source);
         new_sink.pause();
 
@@ -718,17 +737,19 @@ impl AudioPlayer {
         if self.latest_load_request.load(Ordering::SeqCst) != request_id {
             return Err(AppError::Audio("Stale load request ignored".to_string()));
         }
-        if let Some(expected) = expected_path {
-            if self.get_preloaded_path().as_deref() != Some(expected) {
-                return Err(AppError::Audio(
-                    "Preloaded track does not match request".to_string(),
-                ));
-            }
+        if let Some(expected) = expected_path
+            && self.get_preloaded_path().as_deref() != Some(expected)
+        {
+            return Err(AppError::Audio(
+                "Preloaded track does not match request".to_string(),
+            ));
         }
 
         let current_gen = lock_or_recover(&self.device).generation;
         let taken = lock_or_recover(&self.preload).take_if_current(current_gen);
         if let Some((new_sink, new_path, duration)) = taken {
+            let current_speed =
+                playback_speed(lock_or_recover(&self.effects_processor).get_config().tempo);
             // Hold a single sink lock across stop → replace → play to prevent
             // another thread from observing a half-swapped state.
             {
@@ -736,6 +757,10 @@ impl AudioPlayer {
                 if self.latest_load_request.load(Ordering::SeqCst) != request_id {
                     return Err(AppError::Audio("Stale load request ignored".to_string()));
                 }
+                // A preload can sit while volume or tempo changes. Refresh both
+                // at commit time so the next track inherits current settings.
+                new_sink.set_volume(sink.volume());
+                new_sink.set_speed(current_speed);
                 sink.stop();
                 *sink = new_sink;
                 sink.play();
@@ -775,8 +800,8 @@ impl AudioPlayer {
     // ── Effects ─────────────────────────────────────────────────────
 
     pub fn set_effects(&self, config: EffectsConfig) {
-        // Apply tempo/speed at the Sink level (changes playback rate)
-        let tempo = config.tempo.clamp(0.5, 2.0);
+        // Apply tempo/speed at the Player level (changes playback rate)
+        let tempo = playback_speed(config.tempo);
         let requires_processing = config.requires_sample_processing();
         lock_or_recover(&self.sink).set_speed(tempo);
         lock_or_recover(&self.effects_processor).update_config(config);
@@ -816,10 +841,8 @@ impl AudioPlayer {
 
         match self.reinit_and_reload() {
             Ok(()) => {
-                if was_playing {
-                    if let Err(e) = self.play() {
-                        warn!("Failed to resume playback after recovery: {}", e);
-                    }
+                if was_playing && let Err(e) = self.play() {
+                    warn!("Failed to resume playback after recovery: {}", e);
                 }
 
                 info!("Audio system recovery completed successfully");
@@ -874,8 +897,8 @@ impl AudioPlayer {
     }
 
     /// Get current audio samples for visualization
-    pub fn get_visualizer_samples(&self) -> Vec<f32> {
-        self.visualizer_buffer.get_samples()
+    pub fn get_visualizer_samples(&self) -> (Vec<f32>, u32) {
+        self.visualizer_buffer.get_snapshot()
     }
 
     /// Avoid per-sample atomic writes when no visible visualizer consumes them.
@@ -886,10 +909,29 @@ impl AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioPlayer, BroadcastWake};
-    use std::sync::{mpsc, Arc};
+    use super::{AudioPlayer, BroadcastWake, admit_load_request, playback_speed};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::{Arc, mpsc};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn load_request_admission_rejects_duplicate_and_older_ids() {
+        let latest = AtomicU64::new(0);
+
+        assert!(admit_load_request(&latest, 10).is_ok());
+        assert!(admit_load_request(&latest, 10).is_err());
+        assert!(admit_load_request(&latest, 11).is_ok());
+        assert!(admit_load_request(&latest, 10).is_err());
+    }
+
+    #[test]
+    fn playback_speed_clamps_and_recovers_invalid_tempo() {
+        assert_eq!(playback_speed(0.1), 0.5);
+        assert_eq!(playback_speed(1.25), 1.25);
+        assert_eq!(playback_speed(4.0), 2.0);
+        assert_eq!(playback_speed(f32::NAN), 1.0);
+    }
 
     #[test]
     fn wait_idle_times_out_without_signal() {

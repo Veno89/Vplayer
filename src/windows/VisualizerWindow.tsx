@@ -10,12 +10,30 @@ type VisualizerMode = typeof VISUALIZER_MODES[number];
 const DATA_INTERVAL_MS = 50; // 20 native FFT analyses per second
 const RENDER_INTERVAL_MS = 1000 / 30;
 const MAX_CANVAS_DPR = 1.5;
+const SPECTRUM_ATTACK_MS = 45;
+const SPECTRUM_RELEASE_MS = 160;
 
 const BACKEND_MODES: Record<VisualizerMode, string> = {
   bars: 'Spectrum',
   wave: 'Waveform',
   circular: 'CircularSpectrum',
 };
+
+/** Apply frame-rate-independent smoothing with responsive peaks and a softer release. */
+export function smoothSpectrumFrame(current: number[], target: number[], elapsedMs: number): void {
+  const safeElapsedMs = Math.max(0, Math.min(elapsedMs, 250));
+  current.length = target.length;
+
+  for (let i = 0; i < target.length; i++) {
+    const currentValue = Number.isFinite(current[i]) ? current[i] : 0;
+    const targetValue = Number.isFinite(target[i])
+      ? Math.max(0, Math.min(1, target[i]))
+      : 0;
+    const timeConstant = targetValue > currentValue ? SPECTRUM_ATTACK_MS : SPECTRUM_RELEASE_MS;
+    const blend = 1 - Math.exp(-safeElapsedMs / timeConstant);
+    current[i] = currentValue + (targetValue - currentValue) * blend;
+  }
+}
 
 /**
  * Real-time audio visualizer using FFT analysis from Rust backend
@@ -31,7 +49,6 @@ export function VisualizerWindow() {
   const visualizerActive = isPlaying && appVisible;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
-  const renderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Store visualization data from backend
   const spectrumRef = useRef(new Array(64).fill(0));
@@ -107,7 +124,7 @@ export function VisualizerWindow() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
-      if (animationRef.current) {
+      if (animationRef.current !== null) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
       }
@@ -140,23 +157,24 @@ export function VisualizerWindow() {
     resizeObserver?.observe(canvas);
     if (!resizeObserver) window.addEventListener('resize', updateCanvasSize);
 
-    const draw = () => {
+    let lastDrawAt = performance.now() - RENDER_INTERVAL_MS;
+    const draw = (timestamp: number) => {
       if (!appVisible) {
         animationRef.current = null;
-        renderTimerRef.current = null;
         return;
       }
+
+      const elapsedMs = timestamp - lastDrawAt;
+      if (elapsedMs < RENDER_INTERVAL_MS) {
+        animationRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastDrawAt = timestamp;
 
       let shouldContinueAnimating = isPlaying;
 
       if (isPlaying) {
-        // Apply smoothing to spectrum for fluid motion (using refs updated by interval)
-        const smoothing = 0.7;
-        for (let i = 0; i < spectrumRef.current.length; i++) {
-          smoothedSpectrumRef.current[i] =
-            smoothedSpectrumRef.current[i] * smoothing +
-            spectrumRef.current[i] * (1 - smoothing);
-        }
+        smoothSpectrumFrame(smoothedSpectrumRef.current, spectrumRef.current, elapsedMs);
       } else {
         // Decay toward silence while paused, then stop the animation loop.
         const decay = 0.9;
@@ -192,25 +210,18 @@ export function VisualizerWindow() {
       }
 
       if (shouldContinueAnimating) {
-        renderTimerRef.current = setTimeout(() => {
-          animationRef.current = requestAnimationFrame(draw);
-        }, RENDER_INTERVAL_MS);
+        animationRef.current = requestAnimationFrame(draw);
       } else {
         animationRef.current = null;
-        renderTimerRef.current = null;
       }
     };
 
-    draw();
+    animationRef.current = requestAnimationFrame(draw);
 
     return () => {
-      if (animationRef.current) {
+      if (animationRef.current !== null) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
-      }
-      if (renderTimerRef.current) {
-        clearTimeout(renderTimerRef.current);
-        renderTimerRef.current = null;
       }
       resizeObserver?.disconnect();
       if (!resizeObserver) window.removeEventListener('resize', updateCanvasSize);
@@ -384,7 +395,7 @@ export function VisualizerWindow() {
         <button
           onClick={cycleMode}
           onMouseDown={e => e.stopPropagation()}
-          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded transition-colors flex items-center gap-2"
+          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-sm transition-colors flex items-center gap-2"
           title="Change Mode"
         >
           {mode === 'bars' && <BarChart3 className="w-3 h-3" />}

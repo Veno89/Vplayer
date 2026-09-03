@@ -23,12 +23,12 @@ export function PlaylistSearchBar({
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder="Search tracks (try 'jbwm' for 'Just Be What Moves')..."
-                    className="w-full bg-slate-800/50 border border-slate-700 rounded pl-10 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                    className="w-full bg-slate-800/50 border border-slate-700 rounded-sm pl-10 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
                 />
                 {value && (
                     <button
                         onClick={onClear}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded-sm transition-colors"
                         title="Clear search"
                     >
                         <X className="w-4 h-4 text-slate-400" />

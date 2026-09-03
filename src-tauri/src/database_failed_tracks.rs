@@ -1,6 +1,6 @@
 use crate::database::Database;
 use crate::time_utils::now_millis;
-use rusqlite::{params, Result};
+use rusqlite::{Result, params};
 
 impl Database {
     // Failed tracks management

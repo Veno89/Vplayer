@@ -1,5 +1,5 @@
 use rusqlite::types::Value;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 
 /// Allowed column names for smart playlist queries.
@@ -127,7 +127,24 @@ pub struct Rule {
 impl SmartPlaylist {
     /// Build a parameterized SQL query from the playlist rules.
     /// Returns (sql_string, params_vec) to be used with rusqlite execute.
+    // The app's binary uses the registered-library variant below, while the
+    // library target keeps this unscoped builder as its public/test API.
+    #[allow(dead_code)]
     pub fn to_sql(&self) -> Result<(String, Vec<Value>)> {
+        self.build_sql(None)
+    }
+
+    /// Build the same rule query while restricting results to a trusted,
+    /// parameterized registered-library predicate supplied by `Database`.
+    pub fn to_scoped_sql(
+        &self,
+        library_scope: &str,
+        library_scope_params: Vec<Value>,
+    ) -> Result<(String, Vec<Value>)> {
+        self.build_sql(Some((library_scope, library_scope_params)))
+    }
+
+    fn build_sql(&self, library_scope: Option<(&str, Vec<Value>)>) -> Result<(String, Vec<Value>)> {
         let mut conditions = Vec::new();
         let mut sql_params: Vec<Value> = Vec::new();
 
@@ -145,19 +162,19 @@ impl SmartPlaylist {
                 }
                 "contains" => {
                     sql_params.push(Value::Text(format!("%{}%", escape_like(&rule.value))));
-                    format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
+                    format!("{} LIKE ? ESCAPE '\\'", rule.field)
                 }
                 "not_contains" => {
                     sql_params.push(Value::Text(format!("%{}%", escape_like(&rule.value))));
-                    format!("{} NOT LIKE ? ESCAPE '\\\\'", rule.field)
+                    format!("{} NOT LIKE ? ESCAPE '\\'", rule.field)
                 }
                 "starts_with" => {
                     sql_params.push(Value::Text(format!("{}%", escape_like(&rule.value))));
-                    format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
+                    format!("{} LIKE ? ESCAPE '\\'", rule.field)
                 }
                 "ends_with" => {
                     sql_params.push(Value::Text(format!("%{}", escape_like(&rule.value))));
-                    format!("{} LIKE ? ESCAPE '\\\\'", rule.field)
+                    format!("{} LIKE ? ESCAPE '\\'", rule.field)
                 }
                 "greater_than" => {
                     sql_params.push(comparison_value(&rule.field, &rule.value)?);
@@ -250,11 +267,17 @@ impl SmartPlaylist {
         }
 
         let join_operator = if self.match_all { " AND " } else { " OR " };
-        let where_clause = if conditions.is_empty() {
+        let mut where_clause = if conditions.is_empty() {
             String::from("1=1")
         } else {
             conditions.join(join_operator)
         };
+
+        if let Some((scope, mut scope_params)) = library_scope {
+            where_clause = format!("({scope}) AND ({where_clause})");
+            scope_params.append(&mut sql_params);
+            sql_params = scope_params;
+        }
 
         let mut query = format!(
             "SELECT {} FROM tracks WHERE {}",
@@ -592,5 +615,88 @@ mod tests {
 
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].id, "t1");
+    }
+
+    #[test]
+    fn scoped_sql_excludes_orphans_and_respects_path_boundaries() {
+        let conn = Connection::open_in_memory().expect("in-memory db open failed");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE folders (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                date_added INTEGER NOT NULL
+            );
+            CREATE TABLE tracks (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                genre TEXT,
+                year INTEGER,
+                track_number INTEGER,
+                disc_number INTEGER,
+                duration REAL NOT NULL,
+                date_added INTEGER NOT NULL,
+                rating INTEGER DEFAULT 0,
+                play_count INTEGER DEFAULT 0,
+                last_played INTEGER DEFAULT 0
+            );
+            INSERT INTO folders (id, path, name, date_added)
+            VALUES ('slash-root', 'C:/Music', 'Music', 1),
+                   ('backslash-root', 'D:\Audio', 'Audio', 1);
+            INSERT INTO tracks (
+                id, path, name, title, duration, date_added, rating, play_count, last_played
+            ) VALUES
+                ('slash-valid', 'c:/MUSIC/Album/song.mp3', 'song.mp3', 'Slash', 180, 1, 0, 0, 0),
+                ('backslash-valid', 'd:\AUDIO\Album\song.mp3', 'song.mp3', 'Backslash', 180, 1, 0, 0, 0),
+                ('adjacent-orphan', 'C:/Music Archive/song.mp3', 'song.mp3', 'Adjacent', 180, 1, 0, 0, 0),
+                ('other-orphan', 'E:/Elsewhere/song.mp3', 'song.mp3', 'Other', 180, 1, 0, 0, 0);
+            "#,
+        )
+        .expect("scoped smart-playlist schema setup failed");
+
+        let playlist = SmartPlaylist {
+            id: "scoped".to_string(),
+            name: "Registered tracks".to_string(),
+            description: String::new(),
+            rules: vec![Rule {
+                field: "title".to_string(),
+                operator: "contains".to_string(),
+                value: "slash".to_string(),
+            }],
+            match_all: true,
+            limit: Some(10),
+            sort_by: Some("title".to_string()),
+            sort_desc: false,
+            live_update: true,
+            created_at: 0,
+        };
+
+        let (scope, scope_params) =
+            crate::database::Database::registered_track_scope(&conn, "tracks.path")
+                .expect("registered scope should build");
+        let (sql, query_params) = playlist
+            .to_scoped_sql(&scope, scope_params)
+            .expect("scoped query should build");
+        let mut stmt = conn.prepare(&sql).expect("scoped query should prepare");
+        let tracks = stmt
+            .query_map(
+                rusqlite::params_from_iter(query_params.iter()),
+                Track::from_row,
+            )
+            .expect("scoped query should execute")
+            .collect::<Result<Vec<_>>>()
+            .expect("scoped results should collect");
+
+        let ids: Vec<&str> = tracks.iter().map(|track| track.id.as_str()).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"slash-valid"));
+        assert!(ids.contains(&"backslash-valid"));
+        assert!(!ids.contains(&"adjacent-orphan"));
+        assert!(!ids.contains(&"other-orphan"));
     }
 }

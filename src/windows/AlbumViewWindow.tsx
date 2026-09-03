@@ -268,7 +268,7 @@ export function AlbumViewWindow() {
                   key={size}
                   onClick={() => setGridSize(size)}
                   onMouseDown={e => e.stopPropagation()}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-2 py-1 text-xs rounded-sm transition-colors ${
                     gridSize === size 
                       ? `${currentColors.primary} text-white` 
                       : 'text-slate-400 hover:text-white'
@@ -285,7 +285,7 @@ export function AlbumViewWindow() {
               <button
                 onClick={() => setViewMode('grid')}
                 onMouseDown={e => e.stopPropagation()}
-                className={`p-1.5 rounded transition-colors ${
+                className={`p-1.5 rounded-sm transition-colors ${
                   viewMode === 'grid' ? currentColors.accent : 'text-slate-400 hover:text-white'
                 }`}
                 title="Grid view"
@@ -295,7 +295,7 @@ export function AlbumViewWindow() {
               <button
                 onClick={() => setViewMode('list')}
                 onMouseDown={e => e.stopPropagation()}
-                className={`p-1.5 rounded transition-colors ${
+                className={`p-1.5 rounded-sm transition-colors ${
                   viewMode === 'list' ? currentColors.accent : 'text-slate-400 hover:text-white'
                 }`}
                 title="List view"
@@ -314,14 +314,14 @@ export function AlbumViewWindow() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search albums or artists..."
-            className="w-full bg-slate-800/50 border border-slate-700 rounded-lg pl-10 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            className="w-full bg-slate-800/50 border border-slate-700 rounded-lg pl-10 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500"
             onMouseDown={e => e.stopPropagation()}
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
               onMouseDown={e => e.stopPropagation()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded-sm"
             >
               <X className="w-4 h-4 text-slate-400" />
             </button>
@@ -363,7 +363,7 @@ export function AlbumViewWindow() {
                   />
                   
                   {/* Play overlay on hover */}
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 flex items-center justify-center transition-all">
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 flex items-center justify-center transition-all">
                     <button
                       onClick={(e) => handlePlayAlbum(album, e)}
                       onMouseDown={e => e.stopPropagation()}
@@ -415,7 +415,7 @@ export function AlbumViewWindow() {
                   trackId={album.coverTrackId}
                   trackPath={album.coverTrackPath}
                   size="small"
-                  className="w-12 h-12 rounded shadow"
+                  className="w-12 h-12 rounded-sm shadow-sm"
                   prefetchedDataUri={prefetchedArtByTrackId[album.coverTrackId]}
                   deferAutoFetch={isBatchPrefetching}
                 />

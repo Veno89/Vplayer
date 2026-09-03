@@ -196,7 +196,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               ${item.danger ? 'hover:bg-red-600/20 hover:text-red-400' : ''}
             `}
           >
-            {Icon && <Icon className="w-4 h-4 flex-shrink-0" />}
+            {Icon && <Icon className="w-4 h-4 shrink-0" />}
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
               <span className="text-xs text-slate-500">{item.shortcut}</span>

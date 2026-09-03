@@ -167,8 +167,9 @@ export function SmartPlaylistsWindow() {
           </button>
           
           <div className="flex items-start gap-4">
-            <div className={`w-20 h-20 rounded-lg ${currentColors.primary} bg-opacity-20 flex items-center justify-center`}>
-              <Icon className={`w-10 h-10 ${selectedPlaylist.color}`} />
+            <div className="relative w-20 h-20 rounded-lg flex items-center justify-center overflow-hidden">
+              <div aria-hidden="true" className={`absolute inset-0 ${currentColors.primary} opacity-20`} />
+              <Icon className={`relative w-10 h-10 ${selectedPlaylist.color}`} />
             </div>
             
             <div className="flex-1">
@@ -232,8 +233,9 @@ export function SmartPlaylistsWindow() {
                 className="group cursor-pointer p-4 rounded-lg bg-slate-800/30 border border-slate-700 hover:border-slate-600 hover:bg-slate-800/50 transition-all text-left"
               >
                 <div className="flex items-start gap-4">
-                  <div className={`w-16 h-16 rounded-lg ${currentColors.primary} bg-opacity-20 flex items-center justify-center flex-shrink-0 group-hover:bg-opacity-30 transition-all`}>
-                    <Icon className={`w-8 h-8 ${playlist.color}`} />
+                  <div className="relative w-16 h-16 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                    <div aria-hidden="true" className={`absolute inset-0 ${currentColors.primary} opacity-20 group-hover:opacity-30 transition-opacity`} />
+                    <Icon className={`relative w-8 h-8 ${playlist.color}`} />
                   </div>
                   
                   <div className="flex-1 min-w-0">

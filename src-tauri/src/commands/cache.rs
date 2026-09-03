@@ -1,6 +1,6 @@
 // Cache and system commands
-use crate::error::{AppError, AppResult};
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use log::info;
 use tauri::{AppHandle, Manager};
 
@@ -117,11 +117,18 @@ pub fn get_database_size(app: AppHandle) -> AppResult<u64> {
 pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<serde_json::Value> {
     use log::warn;
     let conn = state.db.conn();
+    let (track_scope, track_scope_values) =
+        crate::database::Database::registered_track_scope(&conn, "path")
+            .map_err(|e| AppError::Database(format!("Failed to scope library tracks: {e}")))?;
 
     // Get database stats — log any errors before defaulting so diagnostic runs
     // don't silently present zeros for a locked or corrupt database.
     let track_count: i32 = conn
-        .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+        .query_row(
+            &format!("SELECT COUNT(*) FROM tracks WHERE {track_scope}"),
+            rusqlite::params_from_iter(track_scope_values.iter()),
+            |row| row.get(0),
+        )
         .inspect_err(|e| warn!("get_performance_stats: track count failed: {}", e))
         .unwrap_or(0);
     let playlist_count: i32 = conn
@@ -160,12 +167,14 @@ pub fn get_performance_stats(state: tauri::State<'_, AppState>) -> AppResult<ser
     // Calculate average query times (simplified - just track count queries)
     let query_time_ms = {
         let conn = state.db.conn();
+        let (scope, values) = crate::database::Database::registered_track_scope(&conn, "path")
+            .map_err(|e| AppError::Database(format!("Failed to scope benchmark tracks: {e}")))?;
         let start = std::time::Instant::now();
         let mut stmt = conn
-            .prepare("SELECT id FROM tracks LIMIT 1000")
+            .prepare(&format!("SELECT id FROM tracks WHERE {scope} LIMIT 1000"))
             .map_err(|e| AppError::Database(format!("Query error: {}", e)))?;
         let _track_ids: Vec<String> = stmt
-            .query_map([], |row| row.get(0))
+            .query_map(rusqlite::params_from_iter(values.iter()), |row| row.get(0))
             .map_err(|e| AppError::Database(format!("Query error: {}", e)))?
             .filter_map(Result::ok)
             .collect();

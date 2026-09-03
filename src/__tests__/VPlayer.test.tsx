@@ -11,13 +11,17 @@ describe('VPlayer UI', () => {
   it('renders main player and can open options', async () => {
     render(<App />);
     // Settings button has aria-label="Open Settings" (may be inside a lazy-loaded window)
-    const settingsBtn = await screen.findByRole('button', { name: /open settings/i });
+    const settingsBtn = await screen.findByRole(
+      'button',
+      { name: /open settings/i },
+      { timeout: 5000 },
+    );
     expect(settingsBtn).toBeInTheDocument();
     // click should not throw and should keep app rendered
     fireEvent.click(settingsBtn);
     // Wait for the options modal to appear - look for Settings header and Appearance tab (default)
     await waitFor(() => {
       expect(screen.getByText('Settings')).toBeInTheDocument();
-    });
+    }, { timeout: 5000 });
   });
 });

@@ -3,6 +3,7 @@ import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, R
 import { formatDuration } from '../utils/formatters';
 import { AlbumArt } from '../components/AlbumArt';
 import { useStore } from '../store/useStore';
+import { selectCurrentTrackData } from '../store/selectors';
 import { usePlayerContext } from '../context/PlayerProvider';
 import { useCurrentColors } from '../hooks/useStoreHooks';
 import { WaveformSeekbar } from '../components/WaveformSeekbar';
@@ -27,13 +28,13 @@ export function PlayerWindow() {
   const clearABRepeat = useStore(s => s.clearABRepeat);
 
   // ── Context ───────────────────────────────────────────────────────
-  const { handleNextTrack: nextTrack, handlePrevTrack: prevTrack, handleSeek: seekToPercent, handleVolumeChange: setVolume, handleToggleMute: toggleMute, audioIsLoading: isLoading, audioBackendError, playbackTracks: tracks } = usePlayerContext();
+  const { handleNextTrack: nextTrack, handlePrevTrack: prevTrack, handleSeek: seekToPercent, handleVolumeChange: setVolume, handleToggleMute: toggleMute, audioIsLoading: isLoading, audioBackendError, playbackTracks: tracks, library } = usePlayerContext();
 
   // ── Derived ───────────────────────────────────────────────────────
   const currentColors = useCurrentColors();
   const isMuted = volume === 0;
   const togglePlay = useCallback(() => setPlaying(p => !p), [setPlaying]);
-  const currentTrackData = useStore(s => s.getCurrentTrackData)();
+  const currentTrackData = useStore(selectCurrentTrackData);
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
   const isDisabled = !!audioBackendError; // Disable controls if audio backend has failed
 
@@ -153,7 +154,7 @@ export function PlayerWindow() {
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-3 h-full">
       {/* Header Buttons */}
       <div className="flex justify-between">
         <button
@@ -192,7 +193,7 @@ export function PlayerWindow() {
             className="shadow-lg"
           />
         ) : (
-          <div className={`w-20 h-20 bg-gradient-to-br ${currentColors.primary} rounded-lg flex items-center justify-center shadow-lg`}>
+          <div className={`w-20 h-20 bg-linear-to-br ${currentColors.primary} rounded-lg flex items-center justify-center shadow-lg`}>
             <Music className="w-10 h-10 text-white" />
           </div>
         )}
@@ -212,7 +213,11 @@ export function PlayerWindow() {
           ) : (
             <>
               <h3 className="text-white font-semibold">No Track Selected</h3>
-              <p className="text-slate-400 text-sm">Add music to your library</p>
+              <p className="text-slate-400 text-sm">
+                {library.tracks.length > 0
+                  ? 'Add tracks to a playlist to start listening'
+                  : 'Add music to your library'}
+              </p>
             </>
           )}
         </div>
@@ -277,7 +282,7 @@ export function PlayerWindow() {
           )}
           
           <div 
-            className={`h-full bg-gradient-to-r ${currentColors.primary} rounded-full transition-all relative`}
+            className={`h-full bg-linear-to-r ${currentColors.primary} rounded-full transition-all relative`}
             style={{ width: `${progressPercent}%` }}
           >
             {/* Progress handle indicator - always visible when there's progress */}
@@ -351,7 +356,7 @@ export function PlayerWindow() {
             togglePlay(); 
           }}
           disabled={!tracks?.length || currentTrack === null || isDisabled}
-          className={`p-4 bg-gradient-to-r ${currentColors.primary} hover:opacity-90 rounded-full transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed`}
+          className={`p-4 bg-linear-to-r ${currentColors.primary} hover:opacity-90 rounded-full transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed`}
           title={playing ? 'Pause' : 'Play'}
           aria-label={playing ? 'Pause' : 'Play'}
           aria-pressed={playing}
@@ -412,7 +417,7 @@ export function PlayerWindow() {
             toggleMute?.();
           }}
           disabled={isDisabled}
-          className="p-1 hover:bg-slate-800 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="p-1 hover:bg-slate-800 rounded-sm transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title={isMuted ? 'Unmute' : 'Mute'}
           aria-label={isMuted ? 'Unmute' : 'Mute'}
           aria-pressed={isMuted}
@@ -457,7 +462,7 @@ export function PlayerWindow() {
               }
             }}
             disabled={isDisabled}
-            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-sm transition-all ${
               abRepeat?.pointA !== null 
                 ? 'bg-green-700 text-white' 
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
@@ -478,7 +483,7 @@ export function PlayerWindow() {
               }
             }}
             disabled={isDisabled || abRepeat?.pointA === null}
-            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-sm transition-all ${
               abRepeat?.pointB !== null 
                 ? 'bg-green-700 text-white' 
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
@@ -495,7 +500,7 @@ export function PlayerWindow() {
                 e.stopPropagation();
                 clearABRepeat?.();
               }}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-red-700/50 text-red-300 hover:bg-red-700 transition-all"
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded-sm bg-red-700/50 text-red-300 hover:bg-red-700 transition-all"
               title="Clear A-B loop"
             >
               <X className="w-3 h-3" />

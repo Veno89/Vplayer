@@ -93,24 +93,24 @@ use crate::database::TrackFilter;
 impl QueryBuilder {
     /// Populate WHERE clauses and params from a `TrackFilter`.
     pub fn apply_track_filter(&mut self, filter: &TrackFilter) -> &mut Self {
-        if let Some(query) = &filter.search_query {
-            if !query.is_empty() {
-                // Escape SQLite LIKE metacharacters so the user's text is matched
-                // literally. Order: escape the escape char (\) first, then % and _.
-                let escaped = query
-                    .replace('\\', "\\\\")
-                    .replace('%', "\\%")
-                    .replace('_', "\\_");
-                let pattern = format!("%{}%", escaped);
-                self.and_where_multi(
-                    "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')",
-                    vec![
-                        Value::from(pattern.clone()),
-                        Value::from(pattern.clone()),
-                        Value::from(pattern),
-                    ],
-                );
-            }
+        if let Some(query) = &filter.search_query
+            && !query.is_empty()
+        {
+            // Escape SQLite LIKE metacharacters so the user's text is matched
+            // literally. Order: escape the escape char (\) first, then % and _.
+            let escaped = query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{}%", escaped);
+            self.and_where_multi(
+                "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')",
+                vec![
+                    Value::from(pattern.clone()),
+                    Value::from(pattern.clone()),
+                    Value::from(pattern),
+                ],
+            );
         }
 
         if let Some(artist) = &filter.artist {
@@ -146,16 +146,27 @@ impl QueryBuilder {
         }
 
         if let Some(folder_id) = &filter.folder_id {
-            // Escape SQLite LIKE metacharacters in the folder path before using
-            // it as a prefix pattern. The REPLACE chain escapes `\` first (the
-            // escape char itself), then `%` and `_`, so folder names containing
-            // any of these (e.g. "My_Music" or "50%Off") are matched literally.
-            // The `ESCAPE '\'` clause activates the escaping for this LIKE only.
+            // Compare normalized paths at a directory boundary. A plain
+            // `folder_path || '%'` prefix would make `C:/Music` also match
+            // `C:/Music Archive`. Normalizing separators here also lets a
+            // forward-slash folder root select tracks stored with backslashes
+            // (and vice versa), while NOCASE matches Windows path semantics.
+            // LIKE metacharacters in the registered folder path remain literal.
             self.and_where(
-                "path LIKE REPLACE(REPLACE(REPLACE(\
-                    (SELECT path FROM folders WHERE id = ?), \
-                    '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%' \
-                ESCAPE '\\'",
+                "EXISTS (\
+                    SELECT 1 FROM folders AS selected_folder \
+                    WHERE selected_folder.id = ? \
+                      AND (\
+                        (REPLACE(tracks.path, '\\', '/') COLLATE NOCASE) = \
+                            RTRIM(REPLACE(selected_folder.path, '\\', '/'), '/') \
+                        OR (REPLACE(tracks.path, '\\', '/') COLLATE NOCASE) LIKE \
+                            REPLACE(REPLACE(\
+                                RTRIM(REPLACE(selected_folder.path, '\\', '/'), '/'), \
+                                '%', '\\%'\
+                            ), '_', '\\_') || '/%' \
+                            ESCAPE '\\'\
+                      )\
+                )",
                 Value::from(folder_id.clone()),
             );
         }

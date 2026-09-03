@@ -45,7 +45,7 @@ export function PlaylistHeader({
                 {/* Auto-scroll toggle */}
                 <button
                     onClick={onToggleAutoScroll}
-                    className={`p-1.5 rounded transition-colors ${autoScroll
+                    className={`p-1.5 rounded-sm transition-colors ${autoScroll
                             ? `${currentColors.accent} bg-slate-800`
                             : 'text-slate-400 hover:bg-slate-700'
                         }`}
@@ -57,7 +57,7 @@ export function PlaylistHeader({
                 {showScrollButton && (
                     <button
                         onClick={onScrollToCurrentTrack}
-                        className="p-1.5 text-slate-400 hover:bg-slate-700 rounded transition-colors"
+                        className="p-1.5 text-slate-400 hover:bg-slate-700 rounded-sm transition-colors"
                         title="Jump to current track"
                     >
                         <ArrowDownToLine className="w-4 h-4" />

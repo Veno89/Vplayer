@@ -216,6 +216,8 @@ export interface PlayerSliceActions {
 
     // Active Playback Actions
     setActivePlaybackTracks: (tracks: Track[]) => void;
+    setPlaylistPlaybackTracks: (tracks: Track[]) => void;
+    restorePlaybackTrack: (tracks: Track[], trackId: string) => boolean;
     getCurrentTrackData: () => Track | null;
     getPlaybackTracks: () => Track[];
 

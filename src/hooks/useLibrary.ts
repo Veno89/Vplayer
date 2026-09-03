@@ -33,12 +33,16 @@ export function useLibrary() {
     setTracks,
     libraryFolders,
     setLibraryFolders,
-    loadTracks,
+    refreshTracks: refreshTrackData,
     loadAllFolders,
     addFolder: addFolderData,
     removeFolder,
     removeTrack
   } = useLibraryData(activeParams);
+
+  const refreshLibraryData = useCallback(async () => {
+    await Promise.all([refreshTrackData(), loadAllFolders()]);
+  }, [loadAllFolders, refreshTrackData]);
 
   // 3. Manage Scanning (Passes data control to scanner)
   const {
@@ -52,7 +56,7 @@ export function useLibrary() {
     cancelScan
   } = useLibraryScanner({
     libraryFolders,
-    loadAllTracks: loadTracks, // Alias for scanner usage
+    loadAllTracks: refreshTrackData,
     loadAllFolders // Pass full reload function
   });
 
@@ -96,7 +100,7 @@ export function useLibrary() {
     removeFolder,
     refreshFolders,
     removeTrack,
-    refreshTracks: loadTracks,
+    refreshTracks: refreshLibraryData,
   }), [
     tracks,
     libraryFolders,
@@ -118,6 +122,6 @@ export function useLibrary() {
     removeFolder,
     refreshFolders,
     removeTrack,
-    loadTracks,
+    refreshLibraryData,
   ]);
 }

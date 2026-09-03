@@ -17,6 +17,7 @@ import { useLibrary } from '../hooks/useLibrary';
 import { useToast } from '../hooks/useToast';
 import { usePlaybackEffects } from '../hooks/usePlaybackEffects';
 import { useStartupRestore } from '../hooks/useStartupRestore';
+import { usePlaylists, type PlaylistsAPI } from '../hooks/usePlaylists';
 import { useAudioEngine } from './AudioEngineContext';
 import { useEffectsContext } from './EffectsContext';
 import type { Track } from '../types';
@@ -67,6 +68,7 @@ export interface PlaybackContextValue {
   togglePlay: () => void;
   playbackTracks: Track[];
   library: LibraryContextValue;
+  playlists: PlaylistsAPI;
   toast: ToastAPI;
 }
 
@@ -81,12 +83,9 @@ export interface PlaybackProviderProps {
   /** Ref bridge — PlaybackProvider writes the playerHook API here so
    *  AudioEngineProvider's onEnded callback can call handleNextTrack. */
   playerHookRef: MutableRefObject<{ handleNextTrack: () => void } | null>;
-  /** Ref bridge — PlaybackProvider writes the library tracks here so
-   *  AudioEngineProvider's onEnded callback can use them as fallback. */
-  tracksRef: MutableRefObject<Track[]>;
 }
 
-export function PlaybackProvider({ children, playerHookRef, tracksRef }: PlaybackProviderProps) {
+export function PlaybackProvider({ children, playerHookRef }: PlaybackProviderProps) {
   const { audio } = useAudioEngine();
   const { crossfade } = useEffectsContext();
   const toast = useToast();
@@ -101,19 +100,35 @@ export function PlaybackProvider({ children, playerHookRef, tracksRef }: Playbac
   const repeatMode = useStore(s => s.repeatMode);
   const setLoadingTrackIndex = useStore(s => s.setLoadingTrackIndex);
   const activePlaybackTracks = useStore(s => s.activePlaybackTracks);
+  const setPlaylistPlaybackTracks = useStore(s => s.setPlaylistPlaybackTracks);
   const progress = useStore(s => s.progress);
   const duration = useStore(s => s.duration);
   const playing = useStore(s => s.playing);
 
   // ── Library (provides tracks + management) ────────────────────────
   const library = useLibrary();
-  const { tracks, removeTrack } = library;
-
-  // Keep tracksRef in sync for AudioEngine's onEnded callback
-  useEffect(() => { tracksRef.current = tracks; });
+  const { removeTrack } = library;
+  const playlists = usePlaylists();
 
   // ── Derived: playback track list ──────────────────────────────────
-  const playbackTracks = activePlaybackTracks?.length > 0 ? activePlaybackTracks : tracks;
+  const playbackTracks = activePlaybackTracks;
+
+  // The selected playlist owns the normal playback source. The library is a
+  // catalogue only: an empty or absent playlist must result in no playable
+  // tracks, even when the library contains music.
+  useEffect(() => {
+    if (!playlists.isReady) return;
+
+    const nextTracks = playlists.playlistTracks;
+    if (useStore.getState().activePlaybackTracks !== nextTracks) {
+      setPlaylistPlaybackTracks(nextTracks);
+    }
+  }, [
+    playlists.currentPlaylist,
+    playlists.isReady,
+    playlists.playlistTracks,
+    setPlaylistPlaybackTracks,
+  ]);
 
   // ── Player actions (next/prev/seek/volume) ────────────────────────
   const storeGetterRef = useRef(() => useStore.getState());
@@ -147,10 +162,10 @@ export function PlaybackProvider({ children, playerHookRef, tracksRef }: Playbac
   });
 
   // ── Startup restore ───────────────────────────────────────────────
-  useStartupRestore(tracks, trackLoading);
+  useStartupRestore(playlists.playlistTracks, trackLoading, playlists.isReady);
 
   // ── Side-effect hooks ─────────────────────────────────────────────
-  usePlaybackEffects({ audio, toast, tracks });
+  usePlaybackEffects({ audio, toast, tracks: playbackTracks });
 
   // ── Derived callbacks ─────────────────────────────────────────────
   const togglePlayCb = useCallback(() => setPlaying((p: boolean) => !p), [setPlaying]);
@@ -166,6 +181,7 @@ export function PlaybackProvider({ children, playerHookRef, tracksRef }: Playbac
     togglePlay: togglePlayCb,
     playbackTracks,
     library,
+    playlists,
     toast,
   }), [
     playerHook.handleNextTrack,
@@ -178,6 +194,7 @@ export function PlaybackProvider({ children, playerHookRef, tracksRef }: Playbac
     togglePlayCb,
     playbackTracks,
     library,
+    playlists,
     toast,
   ]);
 

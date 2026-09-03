@@ -11,6 +11,7 @@ mod database;
 mod database_album_art;
 mod database_failed_tracks;
 mod database_folders;
+mod database_library_integrity;
 mod database_playlist;
 mod database_schema;
 mod database_tracks;
@@ -96,6 +97,7 @@ use commands::{
     get_database_size,
     get_duration,
     get_filtered_tracks,
+    get_library_integrity,
     get_most_played,
     get_performance_stats,
     get_playlist_tracks,
@@ -128,10 +130,12 @@ use commands::{
     recover_audio,
     remove_duplicate_folders,
     remove_folder,
+    remove_library_duplicates,
     remove_track,
     remove_track_from_playlist,
     rename_playlist,
     reorder_playlist_tracks,
+    repair_library_integrity,
     reset_play_count,
     // Library commands
     scan_folder,
@@ -470,18 +474,18 @@ fn main() {
                         button_state,
                         ..
                     } = event
+                        && button == MouseButton::Left
+                        && button_state == MouseButtonState::Up
                     {
-                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
-                            // Show/hide main window on left click
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                if window.is_visible().unwrap_or(false) {
-                                    let _ = window.hide();
-                                    emit_window_visibility(&app_handle, false);
-                                } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                    emit_window_visibility(&app_handle, true);
-                                }
+                        // Show/hide main window on left click
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                                emit_window_visibility(&app_handle, false);
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                emit_window_visibility(&app_handle, true);
                             }
                         }
                     }
@@ -512,6 +516,7 @@ fn main() {
             get_track_ids_for_folder,
             get_all_tracks,
             get_filtered_tracks,
+            get_library_integrity,
             get_tracks_page,
             get_all_folders,
             remove_folder,
@@ -537,6 +542,8 @@ fn main() {
             find_duplicates,
             remove_track,
             remove_duplicate_folders,
+            remove_library_duplicates,
+            repair_library_integrity,
             get_album_art,
             get_album_art_batch,
             extract_and_cache_album_art,

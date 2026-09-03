@@ -34,10 +34,10 @@ export function Toast({ message, type = 'info', onClose, duration = 5000 }: Toas
 
   return (
     <div
-      className={`${colors[type]} border-l-4 text-white px-4 py-3 rounded shadow-lg flex items-center gap-3 min-w-[300px] max-w-[500px] animate-slide-in`}
+      className={`${colors[type]} border-l-4 text-white px-4 py-3 rounded-sm shadow-lg flex items-center gap-3 min-w-[300px] max-w-[500px] animate-slide-in`}
       role="alert"
     >
-      <div className="flex-shrink-0">
+      <div className="shrink-0">
         {icons[type]}
       </div>
       <div className="flex-1">
@@ -45,7 +45,7 @@ export function Toast({ message, type = 'info', onClose, duration = 5000 }: Toas
       </div>
       <button
         onClick={onClose}
-        className="flex-shrink-0 hover:bg-white/20 rounded p-1 transition-colors"
+        className="shrink-0 hover:bg-white/20 rounded-sm p-1 transition-colors"
         aria-label="Close"
       >
         <X className="w-4 h-4" />

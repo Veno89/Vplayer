@@ -219,9 +219,11 @@ fn migration_v0_to_latest_adds_all_columns() {
     assert!(table_exists(&path, "track_album_art"));
     assert!(table_exists(&path, "album_replaygain"));
     assert_eq!(get_schema_version(&path), 11);
-    assert!(get_table_columns(&path, "track_album_art")
-        .iter()
-        .any(|column| column == "cached_at"));
+    assert!(
+        get_table_columns(&path, "track_album_art")
+            .iter()
+            .any(|column| column == "cached_at")
+    );
     cleanup_db_files(&path);
 }
 

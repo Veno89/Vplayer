@@ -150,7 +150,7 @@ export default function ThemeEditorWindow() {
             </div>
             <button
               onClick={handleNewTheme}
-              className="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded text-sm flex items-center gap-2"
+              className="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded-sm text-sm flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               New Theme
@@ -166,7 +166,7 @@ export default function ThemeEditorWindow() {
                 value={themeName}
                 onChange={(e) => setThemeName(e.target.value)}
                 placeholder="Enter theme name"
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded focus:outline-none focus:border-purple-500"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-sm focus:outline-hidden focus:border-purple-500"
               />
             </div>
           )}
@@ -181,7 +181,7 @@ export default function ThemeEditorWindow() {
                     type="color"
                     value={colors[key as keyof ThemeColors]}
                     onChange={(e) => handleColorChange(key as keyof ThemeColors, e.target.value)}
-                    className="w-12 h-12 rounded cursor-pointer border-2 border-white/20"
+                    className="w-12 h-12 rounded-sm cursor-pointer border-2 border-white/20"
                     title={label}
                   />
                   <div className="flex-1">
@@ -217,7 +217,7 @@ export default function ThemeEditorWindow() {
                 Secondary text appears like this in the UI
               </div>
               <button
-                className="px-4 py-2 rounded text-sm font-medium"
+                className="px-4 py-2 rounded-sm text-sm font-medium"
                 style={{
                   backgroundColor: colors.accent,
                   color: colors.text
@@ -232,7 +232,7 @@ export default function ThemeEditorWindow() {
           {editingTheme && (
             <button
               onClick={handleSaveTheme}
-              className="w-full py-3 bg-purple-600 hover:bg-purple-700 rounded font-medium flex items-center justify-center gap-2"
+              className="w-full py-3 bg-purple-600 hover:bg-purple-700 rounded-sm font-medium flex items-center justify-center gap-2"
             >
               <Save className="w-4 h-4" />
               Save Theme
@@ -247,14 +247,14 @@ export default function ThemeEditorWindow() {
                 {Object.entries(colorSchemes).map(([key, scheme]) => (
                   <div
                     key={key}
-                    className="flex items-center justify-between p-3 bg-white/5 rounded hover:bg-white/10 transition-colors"
+                    className="flex items-center justify-between p-3 bg-white/5 rounded-sm hover:bg-white/10 transition-colors"
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex gap-1">
                         {[scheme.accent, scheme.primary, scheme.background, scheme.backgroundSecondary, scheme.text].filter(Boolean).slice(0, 5).map((color, i) => (
                           <div
                             key={i}
-                            className="w-6 h-6 rounded border border-white/20"
+                            className="w-6 h-6 rounded-sm border border-white/20"
                             style={{ backgroundColor: color as string }}
                           />
                         ))}
@@ -264,7 +264,7 @@ export default function ThemeEditorWindow() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleApplyTheme(scheme)}
-                        className="p-2 hover:bg-green-600/20 rounded text-green-400"
+                        className="p-2 hover:bg-green-600/20 rounded-sm text-green-400"
                         title="Apply theme"
                       >
                         <Check className="w-4 h-4" />
@@ -272,7 +272,7 @@ export default function ThemeEditorWindow() {
                       {!['winamp', 'retro', 'modern', 'dark'].includes(key) && (
                         <button
                           onClick={() => handleDeleteTheme(key)}
-                          className="p-2 hover:bg-red-600/20 rounded text-red-400"
+                          className="p-2 hover:bg-red-600/20 rounded-sm text-red-400"
                           title="Delete theme"
                         >
                           <Trash2 className="w-4 h-4" />

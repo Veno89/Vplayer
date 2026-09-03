@@ -146,6 +146,21 @@ describe('TauriAPI', () => {
       expect(invoke).toHaveBeenCalledWith('remove_folder', { folderId: 'folder-1', folderPath: '/music/rock' });
     });
 
+    it('getLibraryIntegrity should invoke get_library_integrity', async () => {
+      await TauriAPI.getLibraryIntegrity();
+      expect(invoke).toHaveBeenCalledWith('get_library_integrity', {});
+    });
+
+    it('repairLibraryIntegrity should invoke repair_library_integrity', async () => {
+      await TauriAPI.repairLibraryIntegrity();
+      expect(invoke).toHaveBeenCalledWith('repair_library_integrity', {});
+    });
+
+    it('removeLibraryDuplicates should invoke the atomic cleanup command', async () => {
+      await TauriAPI.removeLibraryDuplicates('medium');
+      expect(invoke).toHaveBeenCalledWith('remove_library_duplicates', { sensitivity: 'medium' });
+    });
+
     it('showInFolder should bind the path to its track identity', async () => {
       await TauriAPI.showInFolder('track-1', '/music/rock/song.mp3');
       expect(invoke).toHaveBeenCalledWith('show_in_folder', {

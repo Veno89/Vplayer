@@ -37,6 +37,22 @@ function persistCurrentPosition(): void {
 export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsParams): void {
   const prevPlayingRef = useRef<boolean | null>(null);
   const lastIncrementedTrackIdRef = useRef<string | null>(null);
+  const playbackTransitionRef = useRef(0);
+  const fadeIntervalRef = useRef<number | null>(null);
+
+  const clearFadeInterval = () => {
+    if (fadeIntervalRef.current !== null) {
+      window.clearInterval(fadeIntervalRef.current);
+      fadeIntervalRef.current = null;
+    }
+  };
+
+  const clearOwnedFadeInterval = (intervalId: number) => {
+    window.clearInterval(intervalId);
+    if (fadeIntervalRef.current === intervalId) {
+      fadeIntervalRef.current = null;
+    }
+  };
 
   // Store selectors
   const playing = useStore(s => s.playing);
@@ -51,6 +67,12 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
     audio.changeVolume(initialVolume).catch(err =>
       console.error('Failed to set initial volume:', err),
     );
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Invalidate pending async transitions and stop fade writes on unmount.
+  useEffect(() => () => {
+    playbackTransitionRef.current += 1;
+    clearFadeInterval();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── A-B repeat looping + periodic position save ───────────────────
@@ -108,35 +130,63 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
 
     const wasPlaying = prevPlayingRef.current;
     prevPlayingRef.current = playing;
+    const transitionId = ++playbackTransitionRef.current;
+    clearFadeInterval();
 
     const { fadeOnPause: shouldFade, fadeDuration: duration } = useStore.getState();
     const currentVolume = useStore.getState().volume;
+    const isCurrentTransition = () => (
+      playbackTransitionRef.current === transitionId
+      && useStore.getState().playing === playing
+    );
+
+    const rollbackTransition = (
+      rollbackPlaying: boolean,
+      error: unknown,
+      consoleMessage: string,
+      toastMessage: string,
+    ) => {
+      // A newer user intent owns playback now. An older rejection must not
+      // overwrite that state or surface an obsolete error.
+      if (!isCurrentTransition()) return;
+      console.error(consoleMessage, error);
+      toast.showError(toastMessage);
+      clearFadeInterval();
+      prevPlayingRef.current = rollbackPlaying;
+      setPlaying(rollbackPlaying);
+    };
 
     if (playing && !wasPlaying) {
       if (shouldFade && duration > 0) {
         // Fade in: set volume to 0, play, then ramp up
-        audio.changeVolume(0).then(() =>
-          audio.play().then(() => {
+        void (async () => {
+          try {
+            await audio.changeVolume(0);
+            if (!isCurrentTransition()) return;
+            await audio.play();
+            if (!isCurrentTransition()) return;
+
             const steps = 10;
             const stepTime = duration / steps;
             let step = 0;
-            const interval = setInterval(() => {
+            const interval = window.setInterval(() => {
+              if (!isCurrentTransition()) {
+                clearOwnedFadeInterval(interval);
+                return;
+              }
               step++;
               const vol = currentVolume * (step / steps);
-              audio.changeVolume(vol).catch(() => {});
-              if (step >= steps) clearInterval(interval);
-            }, stepTime);
-          })
-        ).catch(err => {
-          console.error('Failed to play with fade:', err);
-          toast.showError('Failed to play track');
-          setPlaying(false);
-        });
+              void audio.changeVolume(vol).catch(() => {});
+              if (step >= steps) clearOwnedFadeInterval(interval);
+            }, Math.max(1, stepTime));
+            fadeIntervalRef.current = interval;
+          } catch (err) {
+            rollbackTransition(false, err, 'Failed to play with fade:', 'Failed to play track');
+          }
+        })();
       } else {
-        audio.play().catch(err => {
-          console.error('Failed to play:', err);
-          toast.showError('Failed to play track');
-          setPlaying(false);
+        void audio.play().catch(err => {
+          rollbackTransition(false, err, 'Failed to play:', 'Failed to play track');
         });
       }
     } else if (!playing && wasPlaying) {
@@ -146,30 +196,32 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
         const steps = 10;
         const stepTime = duration / steps;
         let step = 0;
-        const interval = setInterval(() => {
+        const interval = window.setInterval(() => {
+          if (!isCurrentTransition()) {
+            clearOwnedFadeInterval(interval);
+            return;
+          }
           step++;
           const vol = currentVolume * (1 - step / steps);
-          audio.changeVolume(Math.max(0, vol)).catch(() => {});
+          void audio.changeVolume(Math.max(0, vol)).catch(() => {});
           if (step >= steps) {
-            clearInterval(interval);
-            audio.pause().then(() => {
+            clearOwnedFadeInterval(interval);
+            void audio.pause().then(() => {
+              if (!isCurrentTransition()) return;
               // Playback can advance during the fade; persist the actual
               // paused position instead of only the pre-fade snapshot.
               persistCurrentPosition();
               // Restore volume so next play starts at correct level
-              audio.changeVolume(currentVolume).catch(() => {});
+              void audio.changeVolume(currentVolume).catch(() => {});
             }).catch(err => {
-              console.error('Failed to pause:', err);
-              toast.showError('Failed to pause');
-              setPlaying(true);
+              rollbackTransition(true, err, 'Failed to pause:', 'Failed to pause');
             });
           }
-        }, stepTime);
+        }, Math.max(1, stepTime));
+        fadeIntervalRef.current = interval;
       } else {
-        audio.pause().catch(err => {
-          console.error('Failed to pause:', err);
-          toast.showError('Failed to pause');
-          setPlaying(true);
+        void audio.pause().catch(err => {
+          rollbackTransition(true, err, 'Failed to pause:', 'Failed to pause');
         });
       }
     }

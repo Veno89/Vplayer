@@ -1,7 +1,8 @@
 use crate::database::Database;
 use crate::scanner::Track;
 use log::info;
-use rusqlite::{params, OptionalExtension, Result};
+use rusqlite::types::Value;
+use rusqlite::{OptionalExtension, Result, params, params_from_iter};
 use std::path::Path;
 
 impl Database {
@@ -12,7 +13,7 @@ impl Database {
             .replace('_', "\\_")
     }
 
-    fn folder_track_patterns(folder_path: &str) -> (String, String) {
+    pub(crate) fn folder_track_patterns(folder_path: &str) -> (String, String) {
         let trimmed = folder_path.trim_end_matches(['\\', '/']);
         let base = if trimmed.is_empty() || trimmed.ends_with(':') {
             folder_path
@@ -27,7 +28,7 @@ impl Database {
         }
 
         (
-            format!("{}\\%", escaped_base),
+            format!("{}\\\\%", escaped_base),
             format!("{}/%", escaped_base),
         )
     }
@@ -137,23 +138,14 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()?;
-        if let Some(stored_path) = stored_path.as_deref() {
-            if !stored_path.eq_ignore_ascii_case(folder_path) {
-                return Err(rusqlite::Error::InvalidParameterName(
-                    "folder ID/path mismatch".to_string(),
-                ));
-            }
+        if let Some(stored_path) = stored_path.as_deref()
+            && !stored_path.eq_ignore_ascii_case(folder_path)
+        {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "folder ID/path mismatch".to_string(),
+            ));
         }
         let effective_path = stored_path.as_deref().unwrap_or(folder_path);
-        let (backslash_pattern, slash_pattern) = Self::folder_track_patterns(effective_path);
-
-        tx.execute(
-            "DELETE FROM tracks
-             WHERE path = ?1 COLLATE NOCASE
-                OR path LIKE ?2 ESCAPE '\\' COLLATE NOCASE
-                OR path LIKE ?3 ESCAPE '\\' COLLATE NOCASE",
-            params![effective_path, backslash_pattern, slash_pattern],
-        )?;
         let removed_folders = tx.execute(
             "DELETE FROM folders WHERE id = ?1 OR path = ?2 COLLATE NOCASE",
             params![folder_id, effective_path],
@@ -161,6 +153,32 @@ impl Database {
 
         if removed_folders == 0 {
             return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        // Delete only tracks that were covered by the removed root and are not
+        // still covered by another registered root (for example, a nested music
+        // folder). This prevents the removal from creating orphan records while
+        // preserving tracks that remain part of the registered library.
+        let (backslash_pattern, slash_pattern) = Self::folder_track_patterns(effective_path);
+        let (remaining_scope, scope_values) = Self::registered_track_scope(&tx, "path")?;
+        let mut values = vec![
+            Value::from(effective_path.to_string()),
+            Value::from(backslash_pattern),
+            Value::from(slash_pattern),
+        ];
+        values.extend(scope_values);
+        let removed_tracks = tx.execute(
+            &format!(
+                "DELETE FROM tracks
+                 WHERE (path = ? COLLATE NOCASE
+                    OR path LIKE ? ESCAPE '\\' COLLATE NOCASE
+                    OR path LIKE ? ESCAPE '\\' COLLATE NOCASE)
+                   AND NOT ({remaining_scope})"
+            ),
+            params_from_iter(values.iter()),
+        )?;
+        if removed_tracks > 0 {
+            tx.execute("DELETE FROM album_replaygain", [])?;
         }
 
         tx.commit()?;

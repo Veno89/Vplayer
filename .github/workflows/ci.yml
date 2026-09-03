@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Setup npm
+        run: npm install --global npm@12.0.2
+
+      - name: Verify toolchain contract
+        run: npm run check:toolchains
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Verify version contract
+        run: npm run check:versions
+
+      - name: Verify frontend
+        run: npm run verify:frontend
+
+      - name: Verify dependency advisories
+        run: npm audit --audit-level=high
+
+  native:
+    name: Native
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Setup npm
+        run: npm install --global npm@12.0.2
+
+      - name: Install exact frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # pinned action
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+
+      - name: Verify toolchain contract
+        run: npm run check:toolchains
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          shared-key: ci
+          cache-on-failure: true
+
+      - name: Install pinned RustSec scanner
+        run: cargo install cargo-audit --locked --version 0.22.2
+
+      - name: Verify Rust dependency advisories
+        run: cargo audit --file src-tauri/Cargo.lock
+
+      - name: Verify Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Verify Rust compilation
+        run: cargo check --manifest-path src-tauri/Cargo.toml --locked --all-targets
+
+      - name: Verify Rust lints
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+
+      - name: Verify Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets
+
+      - name: Verify Tauri integration build
+        run: npm run tauri -- build --no-bundle

@@ -2,13 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { List, X, Shuffle, MoveUp, MoveDown, ListX, Search } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useCurrentColors } from '../hooks/useStoreHooks';
-import { usePlayerContext } from '../context/PlayerProvider';
-import type { Track } from '../types';
 
 export function QueueWindow() {
   const currentColors = useCurrentColors();
   const setCurrentTrack = useStore((state) => state.setCurrentTrack);
-  const { library } = usePlayerContext();
   const setActivePlaybackTracks = useStore((state) => state.setActivePlaybackTracks);
   const setPlaying = useStore((state) => state.setPlaying);
   const queue = useStore((state) => state.queue);
@@ -46,14 +43,13 @@ export function QueueWindow() {
   const handleTrackClick = (index: number) => {
     const track = queue[index];
     if (track) {
-      // Find track in main tracks list and play it
-      const trackIndex = library.tracks.findIndex((t: Track) => t.id === track.id);
-      if (trackIndex !== -1) {
-        setActivePlaybackTracks(library.tracks);
-        setCurrentTrack(trackIndex);
-        setPlaying(true);
-        removeFromQueue(index);
-      }
+      // A queued item is an explicit playback request. Build its source from
+      // the queue itself rather than silently expanding it to the full library.
+      const queueSource = [track, ...queue.filter((_, itemIndex) => itemIndex !== index)];
+      setActivePlaybackTracks(queueSource);
+      setCurrentTrack(0);
+      setPlaying(true);
+      removeFromQueue(index);
     }
   };
 
@@ -94,7 +90,7 @@ export function QueueWindow() {
               shuffleQueue();
             }}
             disabled={queue.length === 0}
-            className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-sm transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="Shuffle Queue"
           >
             <Shuffle className="w-4 h-4" />
@@ -106,7 +102,7 @@ export function QueueWindow() {
               handleClearQueue();
             }}
             disabled={queue.length === 0}
-            className="p-2 bg-red-700/20 hover:bg-red-700/40 text-red-400 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
+            className="p-2 bg-red-700/20 hover:bg-red-700/40 text-red-400 rounded-sm transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
             title="Clear Queue"
           >
             <ListX className="w-4 h-4" />
@@ -117,18 +113,18 @@ export function QueueWindow() {
       {/* Queue Stats */}
       {queue.length > 0 && (
         <div className="flex gap-3 text-xs">
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded-sm">
             <span className="text-slate-500">Total:</span>
             <span className="text-white font-medium">{queue.length}</span>
           </div>
           {upcomingCount > 0 && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded">
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded-sm">
               <span className="text-slate-500">Up next:</span>
               <span className={`font-medium ${currentColors.accent}`}>{upcomingCount}</span>
             </div>
           )}
           {searchQuery && filteredQueue.length !== queue.length && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-900/30 rounded">
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-900/30 rounded-sm">
               <span className="text-cyan-400">{filteredQueue.length} match{filteredQueue.length !== 1 ? 'es' : ''}</span>
             </div>
           )}
@@ -144,12 +140,12 @@ export function QueueWindow() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search queue..."
-            className="w-full bg-slate-800/50 border border-slate-700 rounded pl-10 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+            className="w-full bg-slate-800/50 border border-slate-700 rounded-sm pl-10 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded-sm transition-colors"
               title="Clear search"
             >
               <X className="w-4 h-4 text-slate-400" />
@@ -186,7 +182,7 @@ export function QueueWindow() {
                 role="option"
                 tabIndex={0}
                 aria-selected={isSelected}
-                className={`group flex items-center gap-3 p-2 rounded transition-all cursor-pointer ${
+                className={`group flex items-center gap-3 p-2 rounded-sm transition-all cursor-pointer ${
                   isSelected
                     ? 'bg-slate-700 text-white'
                     : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300'
@@ -205,7 +201,7 @@ export function QueueWindow() {
                 }}
               >
                 {/* Track Number / Play Icon */}
-                <div className="flex-shrink-0 w-6 text-center">
+                <div className="shrink-0 w-6 text-center">
                   <span className="text-slate-500 text-sm">{originalIndex + 1}</span>
                 </div>
 
@@ -220,14 +216,14 @@ export function QueueWindow() {
                 </div>
 
                 {/* Controls */}
-                <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                <div className="shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <button
                     onClick={e => {
                       e.stopPropagation();
                       handleMoveUp(originalIndex);
                     }}
                     disabled={originalIndex === 0}
-                    className="p-1 hover:bg-slate-700 rounded disabled:opacity-30"
+                    className="p-1 hover:bg-slate-700 rounded-sm disabled:opacity-30"
                     title="Move Up"
                     aria-label={`Move ${track.title || track.name} up`}
                   >
@@ -239,7 +235,7 @@ export function QueueWindow() {
                       handleMoveDown(originalIndex);
                     }}
                     disabled={originalIndex === queue.length - 1}
-                    className="p-1 hover:bg-slate-700 rounded disabled:opacity-30"
+                    className="p-1 hover:bg-slate-700 rounded-sm disabled:opacity-30"
                     title="Move Down"
                     aria-label={`Move ${track.title || track.name} down`}
                   >
@@ -250,7 +246,7 @@ export function QueueWindow() {
                       e.stopPropagation();
                       removeFromQueue(originalIndex);
                     }}
-                    className="p-1 hover:bg-red-500/20 text-red-400 rounded"
+                    className="p-1 hover:bg-red-500/20 text-red-400 rounded-sm"
                     title="Remove from Queue"
                     aria-label={`Remove ${track.title || track.name} from queue`}
                   >
@@ -273,9 +269,9 @@ export function QueueWindow() {
             {queueHistory.slice(-5).reverse().map((track, index) => (
               <div
                 key={`history-${track.id}-${index}`}
-                className="flex items-center gap-2 p-2 bg-slate-900/50 rounded text-xs text-slate-400"
+                className="flex items-center gap-2 p-2 bg-slate-900/50 rounded-sm text-xs text-slate-400"
               >
-                <span className="flex-shrink-0">•</span>
+                <span className="shrink-0">•</span>
                 <span className="flex-1 truncate" title={track.title || track.name}>
                   {track.title || track.name}
                 </span>

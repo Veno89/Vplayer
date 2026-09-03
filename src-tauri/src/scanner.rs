@@ -1,11 +1,11 @@
 use crate::database::Database;
 use crate::time_utils::now_millis;
-use lofty::TaggedFileExt;
+use lofty::prelude::TaggedFileExt;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Window};
 use walkdir::WalkDir;
 
@@ -138,30 +138,30 @@ impl Scanner {
 
         for (i, path_buf) in files.iter().enumerate() {
             // Check for cancellation
-            if let Some(flag) = cancel_flag {
-                if flag.load(Ordering::Relaxed) {
-                    warn!("Scan cancelled after {} files", i);
-                    if let Some(win) = window {
-                        let _ = win.emit("scan-cancelled", i);
-                    }
-                    return Ok(tracks);
+            if let Some(flag) = cancel_flag
+                && flag.load(Ordering::Relaxed)
+            {
+                warn!("Scan cancelled after {} files", i);
+                if let Some(win) = window {
+                    let _ = win.emit("scan-cancelled", i);
                 }
+                return Ok(tracks);
             }
 
             let processed = i + 1;
             let path_str = path_buf.to_string_lossy().to_string();
 
             // Skip if this path previously failed
-            if let Some(database) = db {
-                if database.is_failed_track(&path_str) {
-                    if let Some(win) = window {
-                        let _ = win.emit(
-                            "scan-skip",
-                            format!("Skipping previously failed: {:?}", path_buf.file_name()),
-                        );
-                    }
-                    continue;
+            if let Some(database) = db
+                && database.is_failed_track(&path_str)
+            {
+                if let Some(win) = window {
+                    let _ = win.emit(
+                        "scan-skip",
+                        format!("Skipping previously failed: {:?}", path_buf.file_name()),
+                    );
                 }
+                continue;
             }
 
             // Emit progress update
@@ -183,14 +183,14 @@ impl Scanner {
                     // Track IDs are durable foreign keys. Preserve the ID already
                     // assigned to a path so rescans update the row in place instead
                     // of deleting/recreating it and cascading playlist/art data.
-                    if let Some(database) = db {
-                        if let Ok(Some(existing)) = database.get_track_by_path(&track.path) {
-                            track.id = existing.id;
-                            track.date_added = existing.date_added;
-                            track.rating = existing.rating;
-                            track.play_count = existing.play_count;
-                            track.last_played = existing.last_played;
-                        }
+                    if let Some(database) = db
+                        && let Ok(Some(existing)) = database.get_track_by_path(&track.path)
+                    {
+                        track.id = existing.id;
+                        track.date_added = existing.date_added;
+                        track.rating = existing.rating;
+                        track.play_count = existing.play_count;
+                        track.last_played = existing.last_played;
                     }
                     tracks.push(track)
                 }
@@ -230,11 +230,11 @@ impl Scanner {
         info!("Starting incremental directory scan: {}", path);
 
         // Check for cancellation before starting
-        if let Some(flag) = &cancel_flag {
-            if flag.load(Ordering::Relaxed) {
-                warn!("Incremental scan cancelled before starting");
-                return Ok(Vec::new());
-            }
+        if let Some(flag) = &cancel_flag
+            && flag.load(Ordering::Relaxed)
+        {
+            warn!("Incremental scan cancelled before starting");
+            return Ok(Vec::new());
         }
 
         // Get existing tracks with their modification times
@@ -289,11 +289,11 @@ impl Scanner {
         info!("Starting directory scan: {}", path);
 
         // Check for cancellation before starting
-        if let Some(flag) = &cancel_flag {
-            if flag.load(Ordering::Relaxed) {
-                warn!("Scan cancelled before starting");
-                return Ok(Vec::new());
-            }
+        if let Some(flag) = &cancel_flag
+            && flag.load(Ordering::Relaxed)
+        {
+            warn!("Scan cancelled before starting");
+            return Ok(Vec::new());
         }
 
         let files = Self::collect_audio_files(path);
@@ -303,7 +303,8 @@ impl Scanner {
     }
 
     pub fn extract_track_info(path: &Path) -> Result<Track, String> {
-        use lofty::{Accessor, AudioFile, Probe};
+        use lofty::prelude::{Accessor, AudioFile};
+        use lofty::probe::Probe;
 
         let tagged_file = Probe::open(path)
             .map_err(|e| e.to_string())?
@@ -318,7 +319,7 @@ impl Scanner {
         let artist = tags.and_then(|t| t.artist().map(|s| s.to_string()));
         let album = tags.and_then(|t| t.album().map(|s| s.to_string()));
         let genre = tags.and_then(|t| t.genre().map(|s| s.to_string()));
-        let year = tags.and_then(|t| t.year()).map(|y| y as i32);
+        let year = tags.and_then(|t| t.date()).map(|date| i32::from(date.year));
         let track_number = tags.and_then(|t| t.track()).map(|n| n as i32);
         let disc_number = tags.and_then(|t| t.disk()).map(|n| n as i32);
 
@@ -378,7 +379,7 @@ impl Scanner {
 
     /// Extract album art from audio file
     pub fn extract_album_art(path: &str) -> Result<Option<Vec<u8>>, String> {
-        use lofty::Probe;
+        use lofty::probe::Probe;
 
         let tagged_file = Probe::open(path)
             .map_err(|e| format!("Failed to open file: {}", e))?
@@ -389,10 +390,10 @@ impl Scanner {
             .primary_tag()
             .or_else(|| tagged_file.first_tag());
 
-        if let Some(tag) = tags {
-            if let Some(pictures) = tag.pictures().first() {
-                return Ok(Some(pictures.data().to_vec()));
-            }
+        if let Some(tag) = tags
+            && let Some(picture) = tag.pictures().first()
+        {
+            return Ok(Some(picture.data().to_vec()));
         }
 
         Ok(None)

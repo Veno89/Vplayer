@@ -87,4 +87,25 @@ describe('useLibraryData', () => {
     // Still exactly 1 folder load
     expect(devCounters.counters.library.loadAllFoldersCount).toBe(afterMount);
   });
+
+  it('bypasses cached pages when library records were mutated', async () => {
+    vi.mocked(TauriAPI.getTracksPage)
+      .mockResolvedValueOnce({
+        tracks: [{ id: 'old', name: 'Old', path: '/old.mp3', duration: 100 }],
+        total: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        tracks: [{ id: 'fresh', name: 'Fresh', path: '/fresh.mp3', duration: 100 }],
+        total: 1,
+      } as any);
+
+    const { result } = renderHook(() => useLibraryData(null));
+    await act(async () => { await sleep(10); });
+    expect(result.current.tracks[0]?.id).toBe('old');
+
+    await act(async () => { await result.current.refreshTracks(); });
+
+    expect(TauriAPI.getTracksPage).toHaveBeenCalledTimes(2);
+    expect(result.current.tracks[0]?.id).toBe('fresh');
+  });
 });

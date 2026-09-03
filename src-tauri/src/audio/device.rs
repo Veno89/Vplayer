@@ -7,9 +7,9 @@ use crate::error::{AppError, AppResult};
 use log::{info, warn};
 use rodio::cpal::traits::{DeviceTrait as CpalDeviceTrait, HostTrait};
 use rodio::mixer::{Mixer, MixerSource};
-use rodio::{OutputStream, OutputStreamBuilder};
+use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 use serde::Serialize;
-use std::sync::{mpsc, Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -23,6 +23,13 @@ fn lock_audio_device_api() -> MutexGuard<'static, ()> {
     AUDIO_DEVICE_API_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn audio_device_name(device: &rodio::cpal::Device) -> Option<String> {
+    device
+        .description()
+        .ok()
+        .map(|description| description.name().to_owned())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,18 +62,19 @@ fn device_available_from_enumeration<E>(enumeration: Result<bool, E>) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// SendOutputStream — targeted Send wrapper for OutputStream
+// DeviceSinkOwner — targeted Send wrapper for MixerDeviceSink
 // ---------------------------------------------------------------------------
 
 /// A Send-safe control handle for an output stream owned by a dedicated
-/// thread. CPAL marks `OutputStream` as non-Send on supported platforms, so
-/// the stream is created, retained, and dropped on the same worker thread.
-pub(crate) struct OutputStreamOwner {
+/// thread. CPAL marks the stream inside `MixerDeviceSink` as non-Send on
+/// supported platforms, so it is created, retained, and dropped on the same
+/// worker thread.
+pub(crate) struct DeviceSinkOwner {
     shutdown: Option<mpsc::Sender<()>>,
     worker: Option<JoinHandle<()>>,
 }
 
-impl Drop for OutputStreamOwner {
+impl Drop for DeviceSinkOwner {
     fn drop(&mut self) {
         if let Some(shutdown) = self.shutdown.take() {
             let _ = shutdown.send(());
@@ -83,8 +91,8 @@ impl Drop for OutputStreamOwner {
 
 /// Holds the audio output resources (stream, mixer, device info).
 pub struct DeviceState {
-    pub stream: Option<OutputStreamOwner>,
-    // We hold the mixer to connect new Sinks to the output.
+    pub stream: Option<DeviceSinkOwner>,
+    // We hold the mixer to connect new Players to the output.
     // Mixer is a handle (Arc<Inner>) so it is cheap to clone and Send.
     pub mixer: Option<Mixer>,
     pub connected_device_name: Option<String>,
@@ -101,7 +109,7 @@ pub struct DeviceState {
 }
 
 impl DeviceState {
-    pub fn new(stream: OutputStreamOwner, mixer: Mixer, device_name: Option<String>) -> Self {
+    pub fn new(stream: DeviceSinkOwner, mixer: Mixer, device_name: Option<String>) -> Self {
         Self {
             stream: Some(stream),
             mixer: Some(mixer),
@@ -131,7 +139,7 @@ impl DeviceState {
 
     pub fn replace(
         &mut self,
-        stream: OutputStreamOwner,
+        stream: DeviceSinkOwner,
         mixer: Mixer,
         device_name: Option<String>,
         preferred_device_name: Option<String>,
@@ -175,14 +183,14 @@ pub struct AudioDevice {
 }
 
 /// Creates a high-quality (F32) output stream and returns it along with the mixer handle.
-pub(crate) fn create_high_quality_output_with_device_name(
-) -> AppResult<(OutputStreamOwner, Mixer, Option<String>)> {
+pub(crate) fn create_high_quality_output_with_device_name()
+-> AppResult<(DeviceSinkOwner, Mixer, Option<String>)> {
     create_high_quality_output(None)
 }
 
 pub(crate) fn create_high_quality_output(
     requested_device_name: Option<&str>,
-) -> AppResult<(OutputStreamOwner, Mixer, Option<String>)> {
+) -> AppResult<(DeviceSinkOwner, Mixer, Option<String>)> {
     let requested = requested_device_name.map(str::to_owned);
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
@@ -205,7 +213,7 @@ pub(crate) fn create_high_quality_output(
 
     match ready_rx.recv() {
         Ok(Ok((mixer, device_name))) => Ok((
-            OutputStreamOwner {
+            DeviceSinkOwner {
                 shutdown: Some(shutdown_tx),
                 worker: Some(worker),
             },
@@ -227,49 +235,62 @@ pub(crate) fn create_high_quality_output(
 
 fn open_output_stream(
     requested_device_name: Option<&str>,
-) -> AppResult<(OutputStream, Mixer, Option<String>)> {
+) -> AppResult<(MixerDeviceSink, Mixer, Option<String>)> {
     let _device_api_guard = lock_audio_device_api();
     let host = rodio::cpal::default_host();
     let device = if let Some(requested) = requested_device_name {
         host.output_devices()
             .map_err(|e| AppError::Audio(format!("Failed to enumerate devices: {e}")))?
-            .find(|device| device.name().ok().as_deref() == Some(requested))
+            .find(|device| audio_device_name(device).as_deref() == Some(requested))
             .ok_or_else(|| AppError::NotFound(format!("Device '{requested}' not found")))?
     } else {
         host.default_output_device()
             .ok_or_else(|| AppError::Audio("No output device available".to_string()))?
     };
 
-    let device_name = device.name().ok();
+    let device_name = audio_device_name(&device);
     info!("Using audio device: {:?}", device_name);
 
     if let Ok(config) = device.default_output_config() {
-        info!("Device default sample rate: {}", config.sample_rate().0);
+        info!("Device default sample rate: {}", config.sample_rate());
     }
 
-    // We use OutputStreamBuilder to customize the stream
-    let result = OutputStreamBuilder::from_device(device.clone())
+    // Request an F32 device sink first, then fall back to the default format.
+    let result = DeviceSinkBuilder::from_device(device.clone())
         .map_err(|e| AppError::Audio(format!("Failed to create stream builder: {}", e)))?
         .with_sample_format(rodio::cpal::SampleFormat::F32)
         .open_stream();
 
     match result {
-        Ok(stream) => {
+        Ok(mut stream) => {
+            // Rodio writes directly to stderr whenever a device sink drops by
+            // default. Reinitialization and normal app shutdown are expected,
+            // so keep those transitions in VPlayer's structured logs instead.
+            stream.log_on_drop(false);
             // Extract mixer from stream
             let mixer = stream.mixer().clone();
             Ok((stream, mixer, device_name))
         }
         Err(e) => {
-            // Fallback to default if F32 fails (unlikely given rodio converts, but possible)
-            warn!("Failed to open F32 stream, trying default config: {}", e);
-            let stream = OutputStreamBuilder::from_device(device)
+            // Rodio 0.22's from_device() requests a fixed ~50 ms buffer. Some
+            // valid endpoints only accept the OS-managed default buffer, so
+            // restore that policy and let Rodio try every supported config.
+            warn!(
+                "Failed to open F32 stream, trying default buffer and supported configs: {}",
+                e
+            );
+            let mut stream = DeviceSinkBuilder::from_device(device)
                 .map_err(|e| {
                     AppError::Audio(format!("Failed to create fallback stream builder: {e}"))
                 })?
-                .open_stream()
+                .with_buffer_size(rodio::cpal::BufferSize::Default)
+                .open_sink_or_fallback()
                 .map_err(|e| {
-                    AppError::Audio(format!("Failed to open selected output stream: {e}"))
+                    AppError::Audio(format!(
+                        "Failed to open selected output stream with supported configs: {e}"
+                    ))
                 })?;
+            stream.log_on_drop(false);
             let mixer = stream.mixer().clone();
             Ok((stream, mixer, device_name))
         }
@@ -307,7 +328,7 @@ pub fn has_device_changed(connected_device_name: &Option<String>, follow_default
         .output_devices()
         .map(|devices| {
             devices
-                .filter_map(|device| device.name().ok())
+                .filter_map(|device| audio_device_name(&device))
                 .any(|device_name| device_name == *name)
         })
         .unwrap_or(false);
@@ -319,7 +340,7 @@ pub fn has_device_changed(connected_device_name: &Option<String>, follow_default
     let default_name = (still_present && follow_default)
         .then(|| {
             host.default_output_device()
-                .and_then(|device| device.name().ok())
+                .and_then(|device| audio_device_name(&device))
         })
         .flatten();
 
@@ -368,7 +389,7 @@ pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
     let default_device = host.default_output_device();
     let default_name = default_device
         .as_ref()
-        .and_then(|device| device.name().ok())
+        .and_then(audio_device_name)
         .unwrap_or_else(|| "Default".to_string());
 
     let output_devices = host
@@ -376,7 +397,7 @@ pub fn get_audio_devices() -> AppResult<Vec<AudioDevice>> {
         .map_err(|error| AppError::Audio(format!("Failed to enumerate devices: {error}")))?;
 
     for device in output_devices {
-        if let Ok(name) = device.name() {
+        if let Some(name) = audio_device_name(&device) {
             let is_default = name == default_name;
             devices.push(AudioDevice { name, is_default });
         }

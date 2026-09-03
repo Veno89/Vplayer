@@ -211,7 +211,7 @@ const AlbumCard = ({ album, currentColors, onMarkOwned, onMarkMissing, getCoverA
   return (
     <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors group">
       {/* Album Art */}
-      <div className="w-14 h-14 rounded overflow-hidden bg-slate-700 flex-shrink-0">
+      <div className="w-14 h-14 rounded-sm overflow-hidden bg-slate-700 shrink-0">
         {!imageError && coverUrl ? (
           <img
             src={coverUrl}
@@ -254,13 +254,13 @@ const AlbumCard = ({ album, currentColors, onMarkOwned, onMarkMissing, getCoverA
       </div>
 
       {/* Status & Actions */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         <StatusBadge status={album.status} />
         
         {album.status !== 'present' && (
           <button
             onClick={() => onMarkOwned(album.mbReleaseGroupId)}
-            className="p-1.5 bg-green-700/30 hover:bg-green-700/50 text-green-400 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-1.5 bg-green-700/30 hover:bg-green-700/50 text-green-400 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity"
             title="Mark as owned"
           >
             <Check className="w-3.5 h-3.5" />
@@ -270,7 +270,7 @@ const AlbumCard = ({ album, currentColors, onMarkOwned, onMarkMissing, getCoverA
         {album.status === 'present' && (
           <button
             onClick={() => onMarkMissing(album.mbReleaseGroupId)}
-            className="p-1.5 bg-red-700/30 hover:bg-red-700/50 text-red-400 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-1.5 bg-red-700/30 hover:bg-red-700/50 text-red-400 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity"
             title="Mark as not owned"
           >
             <X className="w-3.5 h-3.5" />
@@ -292,15 +292,20 @@ interface ArtistRowProps {
 const ArtistRow = ({ artist, currentColors, onSelect, isSelected }: ArtistRowProps) => {
   const discography = artist.discography;
   const missingCount = (discography?.missing as number) || 0;
+  const selectedColor = currentColors.accentHex || '#06b6d4';
 
   return (
     <div
       onClick={onSelect}
       className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-        isSelected ? `${currentColors.primary}/30 border border-${currentColors.primary}` : 'hover:bg-slate-800/50'
+        isSelected ? 'border' : 'hover:bg-slate-800/50'
       }`}
+      style={isSelected ? {
+        backgroundColor: `color-mix(in srgb, ${selectedColor} 30%, transparent)`,
+        borderColor: selectedColor,
+      } : undefined}
     >
-      <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
+      <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center shrink-0">
         <Users className={`w-5 h-5 ${currentColors.accent}`} />
       </div>
       
@@ -323,7 +328,7 @@ const ArtistRow = ({ artist, currentColors, onSelect, isSelected }: ArtistRowPro
         </span>
       )}
 
-      <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
+      <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
     </div>
   );
 };
@@ -349,7 +354,7 @@ const SettingsPanel = ({ config, setConfig, currentColors }: SettingsPanelProps)
             type="checkbox"
             checked={config.includeEPs}
             onChange={(e) => setConfig({ includeEPs: e.target.checked })}
-            className="rounded bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
+            className="rounded-sm bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
           />
           <span className="text-slate-300">Include EPs</span>
         </label>
@@ -359,7 +364,7 @@ const SettingsPanel = ({ config, setConfig, currentColors }: SettingsPanelProps)
             type="checkbox"
             checked={config.includeLive}
             onChange={(e) => setConfig({ includeLive: e.target.checked })}
-            className="rounded bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
+            className="rounded-sm bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
           />
           <span className="text-slate-300">Include Live Albums</span>
         </label>
@@ -369,7 +374,7 @@ const SettingsPanel = ({ config, setConfig, currentColors }: SettingsPanelProps)
             type="checkbox"
             checked={config.includeCompilations}
             onChange={(e) => setConfig({ includeCompilations: e.target.checked })}
-            className="rounded bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
+            className="rounded-sm bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
           />
           <span className="text-slate-300">Include Compilations</span>
         </label>
@@ -379,7 +384,7 @@ const SettingsPanel = ({ config, setConfig, currentColors }: SettingsPanelProps)
             type="checkbox"
             checked={config.includeBootlegs}
             onChange={(e) => setConfig({ includeBootlegs: e.target.checked })}
-            className="rounded bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
+            className="rounded-sm bg-slate-700 border-slate-600 text-cyan-500 focus:ring-cyan-500"
           />
           <span className="text-slate-300">Include Bootlegs</span>
         </label>
@@ -517,7 +522,7 @@ export function DiscographyWindow() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className={`p-1.5 rounded transition-colors ${
+            className={`p-1.5 rounded-sm transition-colors ${
               showSettings ? currentColors.primary + ' text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
             title="Settings"
@@ -528,7 +533,7 @@ export function DiscographyWindow() {
           <button
             onClick={handleExportAllMissing}
             disabled={loading || stats.totalMissing === 0}
-            className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 rounded transition-colors disabled:opacity-50"
+            className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 rounded-sm transition-colors disabled:opacity-50"
             title="Export all missing albums to file"
           >
             <FileText className="w-4 h-4" />
@@ -537,7 +542,7 @@ export function DiscographyWindow() {
           <button
             onClick={autoResolveAllArtists}
             disabled={loading}
-            className="px-3 py-1.5 bg-blue-700 text-white text-xs rounded hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+            className="px-3 py-1.5 bg-blue-700 text-white text-xs rounded-sm hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center gap-1"
             title="Auto-match all unresolved artists"
           >
             <Download className="w-3.5 h-3.5" />
@@ -547,7 +552,7 @@ export function DiscographyWindow() {
           <button
             onClick={reResolveAllArtists}
             disabled={loading || stats.resolvedCount === 0}
-            className="px-3 py-1.5 bg-orange-700 text-white text-xs rounded hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+            className="px-3 py-1.5 bg-orange-700 text-white text-xs rounded-sm hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-1"
             title="Re-match all resolved artists using album verification (fixes wrong matches)"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -557,7 +562,7 @@ export function DiscographyWindow() {
           <button
             onClick={fetchAllDiscographies}
             disabled={loading}
-            className={`px-3 py-1.5 ${currentColors.primary} text-white text-xs rounded hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1`}
+            className={`px-3 py-1.5 ${currentColors.primary} text-white text-xs rounded-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1`}
             title="Fetch all discographies"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -573,19 +578,19 @@ export function DiscographyWindow() {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-2 mb-4">
-        <div className="bg-slate-800/50 rounded p-2 text-center">
+        <div className="bg-slate-800/50 rounded-sm p-2 text-center">
           <div className="text-lg font-bold text-white">{stats.totalArtists}</div>
           <div className="text-xs text-slate-400">Artists</div>
         </div>
-        <div className="bg-slate-800/50 rounded p-2 text-center">
+        <div className="bg-slate-800/50 rounded-sm p-2 text-center">
           <div className="text-lg font-bold text-green-400">{stats.resolvedCount}</div>
           <div className="text-xs text-slate-400">Matched</div>
         </div>
-        <div className="bg-slate-800/50 rounded p-2 text-center">
+        <div className="bg-slate-800/50 rounded-sm p-2 text-center">
           <div className="text-lg font-bold text-red-400">{stats.totalMissing}</div>
           <div className="text-xs text-slate-400">Missing</div>
         </div>
-        <div className="bg-slate-800/50 rounded p-2 text-center">
+        <div className="bg-slate-800/50 rounded-sm p-2 text-center">
           <div className="text-lg font-bold text-yellow-400">{stats.totalUncertain}</div>
           <div className="text-xs text-slate-400">Uncertain</div>
         </div>
@@ -597,7 +602,7 @@ export function DiscographyWindow() {
           <button
             key={filter}
             onClick={() => setArtistFilter(filter)}
-            className={`px-3 py-1 text-xs rounded transition-colors ${
+            className={`px-3 py-1 text-xs rounded-sm transition-colors ${
               artistFilter === filter
                 ? `${currentColors.primary} text-white`
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
@@ -614,15 +619,15 @@ export function DiscographyWindow() {
 
       {/* Error Display */}
       {error && (
-        <div className="mb-4 p-3 bg-red-900/20 border border-red-700/50 rounded flex items-center gap-2 text-red-300 text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+        <div className="mb-4 p-3 bg-red-900/20 border border-red-700/50 rounded-sm flex items-center gap-2 text-red-300 text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0" />
           {String(error)}
         </div>
       )}
 
       {/* Loading Progress */}
       {loading && progress.total > 0 && (
-        <div className="mb-4 p-3 bg-blue-900/20 border border-blue-700/50 rounded">
+        <div className="mb-4 p-3 bg-blue-900/20 border border-blue-700/50 rounded-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-blue-300 text-sm">
               Processing: {progress.artist}
@@ -691,7 +696,7 @@ export function DiscographyWindow() {
         <div className="flex items-center gap-3 mb-4">
           <button
             onClick={handleBack}
-            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors"
           >
             <ChevronLeft className="w-4 h-4 text-white" />
           </button>
@@ -711,7 +716,7 @@ export function DiscographyWindow() {
           <button
             onClick={() => reResolveArtist(String(selectedDiscography.artistName ?? ''))}
             disabled={loading}
-            className="p-1.5 bg-orange-700/50 hover:bg-orange-700 rounded transition-colors"
+            className="p-1.5 bg-orange-700/50 hover:bg-orange-700 rounded-sm transition-colors"
             title="Re-match with album verification (fixes wrong artist matches)"
           >
             <RefreshCw className={`w-4 h-4 text-orange-300 ${loading ? 'animate-spin' : ''}`} />
@@ -720,7 +725,7 @@ export function DiscographyWindow() {
           <button
             onClick={() => exportMissingAlbums(String(selectedDiscography.artistName ?? ''), albums)}
             disabled={missingAlbums.length === 0}
-            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors disabled:opacity-50"
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors disabled:opacity-50"
             title="Export missing albums to file"
           >
             <FileText className="w-4 h-4 text-white" />
@@ -730,7 +735,7 @@ export function DiscographyWindow() {
             href={`https://musicbrainz.org/artist/${selectedArtistMbid}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors"
             title="View on MusicBrainz"
           >
             <ExternalLink className="w-4 h-4 text-white" />
@@ -739,8 +744,8 @@ export function DiscographyWindow() {
 
         {/* Missing Albums Badge */}
         {missingAlbums.length > 0 && (
-          <div className="mb-4 p-3 bg-red-900/20 border border-red-700/50 rounded flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+          <div className="mb-4 p-3 bg-red-900/20 border border-red-700/50 rounded-sm flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
             <span className="text-red-300 text-sm">
               You're missing <strong>{missingAlbums.length}</strong> album{missingAlbums.length !== 1 ? 's' : ''} from this artist
             </span>
@@ -771,7 +776,7 @@ export function DiscographyWindow() {
       <div className="flex items-center gap-3 mb-4">
         <button
           onClick={handleBack}
-          className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+          className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors"
         >
           <ChevronLeft className="w-4 h-4 text-white" />
         </button>
@@ -794,7 +799,7 @@ export function DiscographyWindow() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search MusicBrainz..."
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+          className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500"
         />
         {isSearching && (
           <Loader className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
@@ -824,7 +829,7 @@ export function DiscographyWindow() {
               onClick={() => handleSelectSearchResult(result)}
               className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
             >
-              <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center shrink-0">
                 <Users className="w-5 h-5 text-slate-400" />
               </div>
               

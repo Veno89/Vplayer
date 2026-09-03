@@ -181,7 +181,7 @@ export function OptionsWindowEnhanced() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-700/50">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-lg bg-linear-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
           <Settings className="w-4 h-4 text-white" />
         </div>
         <h3 className="text-white font-semibold flex-1">Settings</h3>
@@ -195,7 +195,7 @@ export function OptionsWindowEnhanced() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search settings..."
             onMouseDown={e => e.stopPropagation()}
-            className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
+            className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500/50 transition-colors"
           />
         </div>
       </div>
@@ -234,7 +234,7 @@ export function OptionsWindowEnhanced() {
 // About Tab (kept inline since it's simple and design-focused)
 function AboutTab({ currentColors }: { currentColors: ColorScheme }) {
   const { checkForUpdates, updateAvailable, updateInfo, downloading, downloadProgress, downloadAndInstall, error } = useUpdater();
-  const [currentVersion, setCurrentVersion] = React.useState('0.9.48');
+  const [currentVersion, setCurrentVersion] = React.useState('0.9.49');
   const [checking, setChecking] = React.useState(false);
   const [message, setMessage] = React.useState('');
 
@@ -279,7 +279,7 @@ function AboutTab({ currentColors }: { currentColors: ColorScheme }) {
       {/* Hero Section */}
       <div className="text-center py-8">
         <div
-          className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-5 shadow-2xl"
+          className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-linear-to-br from-cyan-500 to-blue-600 mb-5 shadow-2xl"
           style={{ boxShadow: '0 12px 40px rgba(6, 182, 212, 0.4)' }}
         >
           <svg className="w-12 h-12 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -346,7 +346,7 @@ function AboutTab({ currentColors }: { currentColors: ColorScheme }) {
           { emoji: '🎵', title: 'Rodio + Symphonia', desc: 'Audio decoding' },
           { emoji: '🗃️', title: 'SQLite + Lofty', desc: 'Library & metadata' },
         ].map((tech, i) => (
-          <div key={i} className="p-4 rounded-xl border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
+          <div key={i} className="p-4 rounded-xl border border-slate-700/50 bg-linear-to-br from-slate-800/50 to-slate-900/50">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xl">{tech.emoji}</span>
               <span className="text-white text-sm font-semibold">{tech.title}</span>
@@ -357,7 +357,7 @@ function AboutTab({ currentColors }: { currentColors: ColorScheme }) {
       </div>
 
       {/* Features */}
-      <div className="p-5 rounded-xl border border-slate-700/50 bg-gradient-to-br from-slate-800/30 to-slate-900/30">
+      <div className="p-5 rounded-xl border border-slate-700/50 bg-linear-to-br from-slate-800/30 to-slate-900/30">
         <h4 className="text-white text-sm font-bold mb-4 flex items-center gap-2">
           <span>✨</span> Features
         </h4>

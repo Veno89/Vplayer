@@ -1,9 +1,9 @@
 {
     "compilerOptions": {
-        "target": "ES2020",
+        "target": "ES2022",
         "useDefineForClassFields": true,
         "lib": [
-            "ES2020",
+            "ES2022",
             "DOM",
             "DOM.Iterable"
         ],
@@ -14,8 +14,16 @@
         "allowImportingTsExtensions": true,
         "resolveJsonModule": true,
         "isolatedModules": true,
+        "noUncheckedSideEffectImports": true,
         "noEmit": true,
         "jsx": "react-jsx",
+        "rootDir": "./src",
+        "types": [
+            "vite/client",
+            "node",
+            "vitest/globals",
+            "@testing-library/jest-dom"
+        ],
         /* Gradual migration - allow JS files */
         "allowJs": true,
         "checkJs": false,
@@ -33,10 +41,5 @@
     },
     "include": [
         "src"
-    ],
-    "references": [
-        {
-            "path": "./tsconfig.node.json"
-        }
     ]
 }

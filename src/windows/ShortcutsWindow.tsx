@@ -141,7 +141,7 @@ export default function ShortcutsWindow() {
           </div>
           <button
             onClick={resetToDefaults}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-sm text-sm"
           >
             Reset All
           </button>
@@ -149,7 +149,7 @@ export default function ShortcutsWindow() {
 
         {/* Listening indicator */}
         {listening && (
-          <div className="mb-4 p-4 bg-blue-900/30 border border-blue-700 rounded">
+          <div className="mb-4 p-4 bg-blue-900/30 border border-blue-700 rounded-sm">
             <p className="text-blue-300 text-sm">
               Press any key combination... (ESC to cancel)
             </p>
@@ -169,14 +169,14 @@ export default function ShortcutsWindow() {
                   .map((shortcut: KeyboardShortcut) => (
                     <div
                       key={shortcut.id}
-                      className="flex items-center justify-between p-3 bg-gray-800/50 rounded hover:bg-gray-800 transition-colors"
+                      className="flex items-center justify-between p-3 bg-gray-800/50 rounded-sm hover:bg-gray-800 transition-colors"
                     >
                       <span className="text-white">{shortcut.name}</span>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => startEditing(shortcut)}
                           disabled={listening && editing !== shortcut.id}
-                          className={`px-3 py-1 rounded text-sm font-mono transition-colors ${
+                          className={`px-3 py-1 rounded-sm text-sm font-mono transition-colors ${
                             editing === shortcut.id
                               ? 'bg-blue-600 text-white'
                               : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
@@ -187,14 +187,14 @@ export default function ShortcutsWindow() {
                         {editing === shortcut.id ? (
                           <button
                             onClick={cancelEditing}
-                            className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-sm"
+                            className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded-sm text-sm"
                           >
                             Cancel
                           </button>
                         ) : (
                           <button
                             onClick={() => resetSingle(shortcut.id)}
-                            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
+                            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-sm text-sm"
                             title="Reset to default"
                           >
                             Reset

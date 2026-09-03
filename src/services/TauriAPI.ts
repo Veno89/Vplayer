@@ -82,6 +82,26 @@ export interface VisualizerData {
 /** Returned by check_missing_files — (trackId, path) tuples */
 export type MissingFile = [string, string];
 
+export interface LibraryIntegrityReport {
+    totalTracks: number;
+    registeredTracks: number;
+    orphanTracks: number;
+    folderCount: number;
+}
+
+export interface LibraryRepairResult {
+    before: LibraryIntegrityReport;
+    after: LibraryIntegrityReport;
+    removedTracks: number;
+    backupPath: string;
+}
+
+export interface DuplicateCleanupResult {
+    removedTracks: number;
+    removedFolders: number;
+    backupPath: string;
+}
+
 /** Options accepted by the file-open dialog */
 export interface SelectFolderOptions {
     title?: string;
@@ -396,6 +416,18 @@ class TauriAPIService {
         return this._invoke('remove_duplicate_folders');
     }
 
+    async getLibraryIntegrity(): Promise<LibraryIntegrityReport> {
+        return this._invoke('get_library_integrity');
+    }
+
+    async repairLibraryIntegrity(): Promise<LibraryRepairResult> {
+        return this._invoke('repair_library_integrity', {}, 120000);
+    }
+
+    async removeLibraryDuplicates(sensitivity: 'low' | 'medium' | 'high'): Promise<DuplicateCleanupResult> {
+        return this._invoke('remove_library_duplicates', { sensitivity }, 120000);
+    }
+
     /**
      * Show a file in the system file explorer
      * @param {string} path - Full path to the file
@@ -490,7 +522,10 @@ class TauriAPIService {
     }
 
     async getTrackWaveform(trackId: string, path: string, numBars?: number): Promise<number[]> {
-        return this._invoke('get_track_waveform', { trackId, path, numBars: numBars ?? 200 });
+        // Cold-cache generation decodes the whole track on a worker. Give it
+        // enough time to populate the cache in debug builds without coupling
+        // its completion to playback responsiveness.
+        return this._invoke('get_track_waveform', { trackId, path, numBars: numBars ?? 200 }, 60000);
     }
 
     // ========== Tag Editor Commands ==========
@@ -651,7 +686,7 @@ class TauriAPIService {
     }
 
     async checkMissingFiles(): Promise<MissingFile[]> {
-        return this._invoke('check_missing_files');
+        return this._invoke('check_missing_files', {}, 120000);
     }
 
     // ========== Database & Performance Commands ==========

@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom/vitest'
 import { vi } from 'vitest'
 
 // Mock Tauri API modules
@@ -8,6 +8,12 @@ const defaults = {
 'get_all_tracks': [],
 'get_all_playlists': [],
 'get_all_folders': [],
+'get_library_integrity': {
+totalTracks: 0,
+registeredTracks: 0,
+orphanTracks: 0,
+folderCount: 0,
+},
 'is_playing': false,
 'get_position': 0,
 'get_duration': 0,

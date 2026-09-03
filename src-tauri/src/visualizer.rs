@@ -1,6 +1,10 @@
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{FftPlanner, num_complex::Complex};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+
+const MIN_SPECTRUM_FREQUENCY_HZ: f32 = 20.0;
+const MAX_SPECTRUM_FREQUENCY_HZ: f32 = 20_000.0;
+const SPECTRUM_FLOOR_DB: f32 = -72.0;
 
 /**
  * Advanced audio visualizer with FFT analysis
@@ -55,16 +59,27 @@ impl FftAnalyzer {
         }
     }
 
+    fn set_sample_rate(&mut self, sample_rate: u32) {
+        let sample_rate = sample_rate.max(1);
+        if self.sample_rate != sample_rate {
+            self.sample_rate = sample_rate;
+            self.buffer.clear();
+        }
+    }
+
     /// Compute FFT and return frequency magnitudes
     pub fn get_spectrum(&mut self, num_bins: usize) -> Vec<f32> {
-        if self.buffer.len() < self.fft_size {
+        if num_bins == 0 || self.buffer.len() < self.fft_size {
             return vec![0.0; num_bins];
         }
 
-        // Apply window function
+        // Analyze the newest complete window. The buffer keeps two FFT windows,
+        // so taking from the front makes the display lag behind current playback.
+        let recent_start = self.buffer.len() - self.fft_size;
         let mut windowed: Vec<Complex<f32>> = self
             .buffer
             .iter()
+            .skip(recent_start)
             .take(self.fft_size)
             .zip(self.window.iter())
             .map(|(sample, window)| Complex::new(sample * window, 0.0))
@@ -76,10 +91,14 @@ impl FftAnalyzer {
 
         // Calculate magnitudes (only first half due to symmetry)
         let half_size = self.fft_size / 2;
+        // Compensate for the Hann window's coherent gain so the spectrum keeps
+        // meaningful amplitude instead of being normalized to a full-height bar
+        // on every frame.
+        let magnitude_scale = 2.0 / self.window.iter().sum::<f32>();
         let magnitudes: Vec<f32> = windowed
             .iter()
             .take(half_size)
-            .map(|c| (c.re * c.re + c.im * c.im).sqrt())
+            .map(|c| (c.re * c.re + c.im * c.im).sqrt() * magnitude_scale)
             .collect();
 
         // Group into bins using logarithmic scale
@@ -89,30 +108,46 @@ impl FftAnalyzer {
     /// Group frequency bins logarithmically for better visualization
     fn bin_spectrum(&self, magnitudes: &[f32], num_bins: usize) -> Vec<f32> {
         let mut bins = vec![0.0; num_bins];
-        let half_size = self.fft_size / 2;
-
-        for (i, bin) in bins.iter_mut().enumerate() {
-            // Logarithmic mapping
-            let freq_start = 20.0 * (20000.0_f32 / 20.0).powf(i as f32 / num_bins as f32);
-            let freq_end = 20.0 * (20000.0_f32 / 20.0).powf((i + 1) as f32 / num_bins as f32);
-
-            let bin_start =
-                (freq_start * half_size as f32 / (self.sample_rate as f32 / 2.0)) as usize;
-            let bin_end = (freq_end * half_size as f32 / (self.sample_rate as f32 / 2.0)) as usize;
-
-            if bin_start < magnitudes.len() && bin_end <= magnitudes.len() {
-                let sum: f32 = magnitudes[bin_start..bin_end].iter().sum();
-                let count = (bin_end - bin_start) as f32;
-                *bin = if count > 0.0 { sum / count } else { 0.0 };
-            }
+        if num_bins == 0 || magnitudes.len() < 2 {
+            return bins;
         }
 
-        // Normalize
-        let max = bins.iter().fold(0.0f32, |a, &b| a.max(b));
-        if max > 0.0 {
-            for bin in bins.iter_mut() {
-                *bin /= max;
-            }
+        let nyquist = self.sample_rate as f32 / 2.0;
+        let max_frequency = MAX_SPECTRUM_FREQUENCY_HZ.min(nyquist);
+        if max_frequency <= MIN_SPECTRUM_FREQUENCY_HZ {
+            return bins;
+        }
+
+        let fft_bin_width = self.sample_rate as f32 / self.fft_size as f32;
+        let frequency_ratio = max_frequency / MIN_SPECTRUM_FREQUENCY_HZ;
+
+        for (i, bin) in bins.iter_mut().enumerate() {
+            let freq_start =
+                MIN_SPECTRUM_FREQUENCY_HZ * frequency_ratio.powf(i as f32 / num_bins as f32);
+            let freq_end =
+                MIN_SPECTRUM_FREQUENCY_HZ * frequency_ratio.powf((i + 1) as f32 / num_bins as f32);
+
+            // A 2048-point FFT at 44.1 kHz resolves about 21.5 Hz at a time.
+            // Several low logarithmic display bands are narrower than that.
+            // Interpolate those bands at their geometric center rather than
+            // producing empty or long runs of identical bars. Wider bands retain
+            // their strongest resolved coefficient so narrow musical peaks remain
+            // visible instead of being averaged away.
+            let start_position = freq_start / fft_bin_width;
+            let end_position = freq_end / fft_bin_width;
+            let peak = if end_position - start_position < 1.0 {
+                let center_position = (freq_start * freq_end).sqrt() / fft_bin_width;
+                interpolated_non_dc_magnitude(magnitudes, center_position)
+            } else {
+                let bin_start = (start_position.floor() as usize).clamp(1, magnitudes.len() - 1);
+                let bin_end = (end_position.ceil() as usize).clamp(bin_start + 1, magnitudes.len());
+                magnitudes[bin_start..bin_end]
+                    .iter()
+                    .copied()
+                    .fold(0.0_f32, f32::max)
+            };
+
+            *bin = amplitude_to_spectrum_level(peak);
         }
 
         bins
@@ -133,6 +168,23 @@ impl FftAnalyzer {
             .copied()
             .collect()
     }
+}
+
+fn interpolated_non_dc_magnitude(magnitudes: &[f32], position: f32) -> f32 {
+    let position = position.clamp(1.0, (magnitudes.len() - 1) as f32);
+    let lower = position.floor() as usize;
+    let upper = (lower + 1).min(magnitudes.len() - 1);
+    let fraction = position - lower as f32;
+    magnitudes[lower] + (magnitudes[upper] - magnitudes[lower]) * fraction
+}
+
+fn amplitude_to_spectrum_level(amplitude: f32) -> f32 {
+    if !amplitude.is_finite() || amplitude <= 0.0 {
+        return 0.0;
+    }
+
+    let decibels = 20.0 * amplitude.log10();
+    ((decibels - SPECTRUM_FLOOR_DB) / -SPECTRUM_FLOOR_DB).clamp(0.0, 1.0)
 }
 
 /// Beat detector using energy envelope
@@ -224,6 +276,10 @@ impl Visualizer {
         self.mode = mode;
     }
 
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        self.fft_analyzer.set_sample_rate(sample_rate);
+    }
+
     pub fn set_beat_sensitivity(&mut self, sensitivity: f32) {
         self.beat_detector.set_sensitivity(sensitivity);
     }
@@ -306,6 +362,121 @@ mod tests {
         // All values should be normalized 0.0-1.0
         for &val in spectrum.iter() {
             assert!((0.0..=1.0).contains(&val));
+        }
+    }
+
+    #[test]
+    fn logarithmic_bands_never_become_empty_between_fft_frequencies() {
+        let analyzer = FftAnalyzer::new(2048, 44100);
+        let magnitudes = vec![0.25; 1024];
+
+        let spectrum = analyzer.bin_spectrum(&magnitudes, 64);
+
+        assert_eq!(spectrum.len(), 64);
+        assert!(
+            spectrum.iter().all(|value| *value > 0.0),
+            "every display band should sample at least one FFT coefficient: {spectrum:?}"
+        );
+    }
+
+    #[test]
+    fn sub_resolution_bands_interpolate_instead_of_repeating_one_coefficient() {
+        let analyzer = FftAnalyzer::new(2048, 44100);
+        let magnitudes: Vec<f32> = (0..1024).map(|index| index as f32 / 1024.0).collect();
+
+        let spectrum = analyzer.bin_spectrum(&magnitudes, 64);
+        let distinct_low_bands = spectrum
+            .iter()
+            .take(8)
+            .map(|value| value.to_bits())
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+
+        assert!(
+            distinct_low_bands >= 6,
+            "sub-resolution bands should form a smooth low-frequency ramp: {spectrum:?}"
+        );
+    }
+
+    #[test]
+    fn spectrum_uses_the_newest_complete_fft_window() {
+        let fft_size = 128;
+        let mut analyzer = FftAnalyzer::new(fft_size, 4096);
+        let older_tone: Vec<f32> = (0..fft_size)
+            .map(|index| (2.0 * std::f32::consts::PI * 8.0 * index as f32 / fft_size as f32).sin())
+            .collect();
+        analyzer.add_samples(&older_tone);
+        analyzer.add_samples(&vec![0.0; fft_size]);
+
+        let spectrum = analyzer.get_spectrum(16);
+
+        assert!(
+            spectrum.iter().all(|value| *value == 0.0),
+            "old audio must not leak into the newest FFT window: {spectrum:?}"
+        );
+    }
+
+    #[test]
+    fn spectrum_preserves_input_level_changes() {
+        fn peak_for_amplitude(amplitude: f32) -> f32 {
+            let fft_size = 2048;
+            let mut analyzer = FftAnalyzer::new(fft_size, 44100);
+            let tone: Vec<f32> = (0..fft_size)
+                .map(|index| {
+                    amplitude
+                        * (2.0 * std::f32::consts::PI * 32.0 * index as f32 / fft_size as f32).sin()
+                })
+                .collect();
+            analyzer.add_samples(&tone);
+            analyzer
+                .get_spectrum(64)
+                .into_iter()
+                .fold(0.0_f32, f32::max)
+        }
+
+        let quiet = peak_for_amplitude(0.1);
+        let loud = peak_for_amplitude(1.0);
+
+        assert!(
+            loud > quiet + 0.2,
+            "a louder frame should remain visibly louder: quiet={quiet}, loud={loud}"
+        );
+    }
+
+    #[test]
+    fn spectrum_tracks_the_frequency_axis_at_different_sample_rates() {
+        fn peak_band(sample_rate: u32, frequency: f32) -> usize {
+            let fft_size = 2048;
+            let mut analyzer = FftAnalyzer::new(fft_size, 44_100);
+            analyzer.set_sample_rate(sample_rate);
+            let tone: Vec<f32> = (0..fft_size)
+                .map(|index| {
+                    (2.0 * std::f32::consts::PI * frequency * index as f32 / sample_rate as f32)
+                        .sin()
+                })
+                .collect();
+            analyzer.add_samples(&tone);
+            analyzer
+                .get_spectrum(64)
+                .iter()
+                .enumerate()
+                .max_by(|(_, left), (_, right)| left.total_cmp(right))
+                .map(|(index, _)| index)
+                .expect("spectrum has bins")
+        }
+
+        let frequency = 750.0;
+        let expected = ((frequency / MIN_SPECTRUM_FREQUENCY_HZ).ln()
+            / (MAX_SPECTRUM_FREQUENCY_HZ / MIN_SPECTRUM_FREQUENCY_HZ).ln()
+            * 64.0)
+            .floor() as isize;
+
+        for sample_rate in [44_100, 48_000] {
+            let actual = peak_band(sample_rate, frequency) as isize;
+            assert!(
+                (actual - expected).abs() <= 2,
+                "{frequency} Hz at {sample_rate} Hz mapped to band {actual}, expected near {expected}"
+            );
         }
     }
 

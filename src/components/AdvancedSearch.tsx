@@ -103,7 +103,7 @@ export function AdvancedSearch({
           onChange={(e) => handleChange('query', e.target.value)}
           onMouseDown={(e) => e.stopPropagation()}
           placeholder="Search by title, artist, or album..."
-          className="w-full pl-10 pr-10 py-2 bg-slate-800 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+          className="w-full pl-10 pr-10 py-2 bg-slate-800 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
         />
         {localFilters.query && (
           <button
@@ -138,7 +138,7 @@ export function AdvancedSearch({
 
       {/* Advanced Filters */}
       {showAdvanced && (
-        <div className="grid grid-cols-2 gap-3 p-3 bg-slate-800/50 rounded border border-slate-700">
+        <div className="grid grid-cols-2 gap-3 p-3 bg-slate-800/50 rounded-sm border border-slate-700">
           {/* Genre */}
           <div className="col-span-2">
             <label className="text-xs text-slate-400 mb-1 block">Genre</label>
@@ -148,7 +148,7 @@ export function AdvancedSearch({
               onChange={(e) => handleChange('genre', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="e.g., Rock, Jazz, Classical..."
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -161,7 +161,7 @@ export function AdvancedSearch({
               onChange={(e) => handleChange('artist', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="Artist name..."
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -174,7 +174,7 @@ export function AdvancedSearch({
               onChange={(e) => handleChange('album', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="Album name..."
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -189,7 +189,7 @@ export function AdvancedSearch({
               placeholder="1970"
               min="1900"
               max="2100"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
           <div>
@@ -202,7 +202,7 @@ export function AdvancedSearch({
               placeholder="2025"
               min="1900"
               max="2100"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -237,7 +237,7 @@ export function AdvancedSearch({
               placeholder="0"
               min="0"
               step="0.5"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
           <div>
@@ -250,7 +250,7 @@ export function AdvancedSearch({
               placeholder="10"
               min="0"
               step="0.5"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -264,7 +264,7 @@ export function AdvancedSearch({
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="0"
               min="0"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
           <div>
@@ -276,7 +276,7 @@ export function AdvancedSearch({
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="∞"
               min="0"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -287,7 +287,7 @@ export function AdvancedSearch({
               value={localFilters.format}
               onChange={(e) => handleChange('format', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             >
               <option value="">Any</option>
               <option value="mp3">MP3</option>
@@ -310,7 +310,7 @@ export function AdvancedSearch({
               placeholder="128"
               min="0"
               step="32"
-              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 py-1.5 bg-slate-900 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
             />
           </div>
         </div>

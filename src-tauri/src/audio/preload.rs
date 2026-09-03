@@ -6,12 +6,12 @@
 //! automatically rejected on swap.
 
 use log::warn;
-use rodio::Sink;
+use rodio::Player;
 use std::time::Duration;
 
 /// Manages preloaded tracks for gapless playback.
 pub struct PreloadManager {
-    sink: Option<Sink>,
+    sink: Option<Player>,
     path: Option<String>,
     total_duration: Duration,
     /// Device generation at the time the preload was created.
@@ -29,7 +29,7 @@ impl PreloadManager {
     }
 
     /// Store a preloaded sink, path, duration, and the current device generation.
-    pub fn set(&mut self, sink: Sink, path: String, duration: Duration, device_generation: u64) {
+    pub fn set(&mut self, sink: Player, path: String, duration: Duration, device_generation: u64) {
         self.sink = Some(sink);
         self.path = Some(path);
         self.total_duration = duration;
@@ -41,7 +41,10 @@ impl PreloadManager {
     /// If the device has been reinitialized since the preload was created,
     /// the sink is connected to the old (dead) mixer — discard it and
     /// return None so the caller falls back to a full load.
-    pub fn take_if_current(&mut self, current_generation: u64) -> Option<(Sink, String, Duration)> {
+    pub fn take_if_current(
+        &mut self,
+        current_generation: u64,
+    ) -> Option<(Player, String, Duration)> {
         self.sink.as_ref()?;
 
         if self.device_generation != current_generation {

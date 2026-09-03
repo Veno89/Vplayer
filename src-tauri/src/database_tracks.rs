@@ -3,7 +3,7 @@ use crate::query_builder::QueryBuilder;
 use crate::scanner::Track;
 use crate::time_utils::now_millis;
 use log::info;
-use rusqlite::{params, OptionalExtension, Result};
+use rusqlite::{OptionalExtension, Result, params};
 
 pub(crate) const TRACK_UPSERT_SQL: &str =
     "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
@@ -40,10 +40,11 @@ impl Database {
         offset: usize,
         limit: usize,
     ) -> Result<(Vec<Track>, usize)> {
-        let mut qb = QueryBuilder::new();
-        qb.apply_track_filter(&filter);
-
         let conn = self.conn();
+        let (scope, scope_values) = Self::registered_track_scope(&conn, "path")?;
+        let mut qb = QueryBuilder::new();
+        qb.and_where_multi(&scope, scope_values);
+        qb.apply_track_filter(&filter);
 
         let count_sql = format!("SELECT COUNT(*) FROM tracks{}", qb.where_sql());
         let total: i64 = conn.query_row(
@@ -102,20 +103,25 @@ impl Database {
     pub fn get_all_tracks(&self) -> Result<Vec<Track>> {
         info!("Fetching all tracks from database");
         let conn = self.conn();
+        let (scope, values) = Self::registered_track_scope(&conn, "path")?;
         let mut stmt = conn.prepare(&format!(
-            "SELECT {} FROM tracks",
-            crate::scanner::TRACK_SELECT_COLUMNS
+            "SELECT {} FROM tracks WHERE {}",
+            crate::scanner::TRACK_SELECT_COLUMNS,
+            scope,
         ))?;
 
         let tracks = stmt
-            .query_map([], Track::from_row)?
+            .query_map(rusqlite::params_from_iter(values.iter()), Track::from_row)?
             .collect::<Result<Vec<_>>>()?;
 
         Ok(tracks)
     }
 
     pub fn get_filtered_tracks(&self, filter: TrackFilter) -> Result<Vec<Track>> {
+        let conn = self.conn();
+        let (scope, scope_values) = Self::registered_track_scope(&conn, "path")?;
         let mut qb = QueryBuilder::new();
+        qb.and_where_multi(&scope, scope_values);
         qb.apply_track_filter(&filter);
 
         let sql = format!(
@@ -125,7 +131,6 @@ impl Database {
             qb.order_sql(),
         );
 
-        let conn = self.conn();
         let mut stmt = conn.prepare(&sql)?;
 
         let tracks = stmt
@@ -161,13 +166,21 @@ impl Database {
 
     pub fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn();
+        let (scope, values) = Self::registered_track_scope(&conn, "path")?;
         let mut stmt = conn.prepare(&format!(
-            "SELECT {} FROM tracks WHERE last_played > 0 ORDER BY last_played DESC LIMIT ?1",
-            crate::scanner::TRACK_SELECT_COLUMNS
+            "SELECT {} FROM tracks WHERE ({}) AND last_played > 0 ORDER BY last_played DESC LIMIT ?",
+            crate::scanner::TRACK_SELECT_COLUMNS,
+            scope,
         ))?;
 
+        let mut query_values = values;
+        query_values.push(rusqlite::types::Value::from(limit as i64));
+
         let tracks = stmt
-            .query_map(params![limit], Track::from_row)?
+            .query_map(
+                rusqlite::params_from_iter(query_values.iter()),
+                Track::from_row,
+            )?
             .collect::<Result<Vec<_>>>()?;
 
         Ok(tracks)
@@ -175,13 +188,21 @@ impl Database {
 
     pub fn get_most_played(&self, limit: usize) -> Result<Vec<Track>> {
         let conn = self.conn();
+        let (scope, values) = Self::registered_track_scope(&conn, "path")?;
         let mut stmt = conn.prepare(&format!(
-            "SELECT {} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
-            crate::scanner::TRACK_SELECT_COLUMNS
+            "SELECT {} FROM tracks WHERE ({}) AND play_count > 0 ORDER BY play_count DESC LIMIT ?",
+            crate::scanner::TRACK_SELECT_COLUMNS,
+            scope,
         ))?;
 
+        let mut query_values = values;
+        query_values.push(rusqlite::types::Value::from(limit as i64));
+
         let tracks = stmt
-            .query_map(params![limit], Track::from_row)?
+            .query_map(
+                rusqlite::params_from_iter(query_values.iter()),
+                Track::from_row,
+            )?
             .collect::<Result<Vec<_>>>()?;
 
         Ok(tracks)
@@ -201,10 +222,13 @@ impl Database {
     // Get all track paths for validation
     pub fn get_all_track_paths(&self) -> Result<Vec<(String, String)>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT id, path FROM tracks")?;
+        let (scope, values) = Self::registered_track_scope(&conn, "path")?;
+        let mut stmt = conn.prepare(&format!("SELECT id, path FROM tracks WHERE {scope}"))?;
 
         let paths = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .query_map(rusqlite::params_from_iter(values.iter()), |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
             .collect::<Result<Vec<_>>>()?;
 
         Ok(paths)
@@ -269,99 +293,8 @@ impl Database {
     pub fn find_duplicates(&self) -> Result<Vec<Vec<Track>>> {
         info!("Searching for duplicate tracks");
         let conn = self.conn();
-
-        // Step 1: SQL finds (title, artist, album) combos that appear more than once.
-        // This avoids loading the entire tracks table into memory.
-        let mut dup_keys_stmt = conn.prepare(
-            "SELECT title, artist, album
-             FROM tracks
-             WHERE title IS NOT NULL AND artist IS NOT NULL
-             GROUP BY title, artist, album
-             HAVING COUNT(*) > 1",
-        )?;
-
-        let dup_keys: Vec<(String, String, String)> = dup_keys_stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>>>()?;
-
-        if dup_keys.is_empty() {
-            info!("Found 0 groups of duplicates");
-            return Ok(Vec::new());
-        }
-
-        // Step 2: Fetch all tracks that belong to any duplicate group in a single
-        // query, ordered so same-key tracks are adjacent and duration-sorted within
-        // each key. This eliminates the previous N-query-per-group pattern.
-        let all_dup_tracks: Vec<Track> = {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT {cols} FROM tracks
-                 WHERE title IS NOT NULL AND artist IS NOT NULL
-                   AND (title, artist, album) IN (
-                       SELECT title, artist, album
-                       FROM tracks
-                       WHERE title IS NOT NULL AND artist IS NOT NULL
-                       GROUP BY title, artist, album
-                       HAVING COUNT(*) > 1
-                   )
-                 ORDER BY title, artist, album, duration",
-                cols = crate::scanner::TRACK_SELECT_COLUMNS
-            ))?;
-            let rows: Vec<Track> = stmt
-                .query_map([], Track::from_row)?
-                .collect::<Result<Vec<_>>>()?;
-            rows
-        };
-
-        // Group by (title, artist, album) and apply the same 2-second duration
-        // window logic as before.
-        let mut duplicate_groups: Vec<Vec<Track>> = Vec::new();
-        let mut current_key: Option<(String, String, String)> = None;
-        let mut key_tracks: Vec<Track> = Vec::new();
-
-        let process_key_group = |key_tracks: &mut Vec<Track>, out: &mut Vec<Vec<Track>>| {
-            let mut current_group: Vec<Track> = Vec::new();
-            for track in key_tracks.iter() {
-                if current_group.is_empty() {
-                    current_group.push(track.clone());
-                } else {
-                    let last_dur = current_group.last().unwrap().duration;
-                    if (track.duration - last_dur).abs() < 2.0 {
-                        current_group.push(track.clone());
-                    } else {
-                        if current_group.len() > 1 {
-                            out.push(std::mem::take(&mut current_group));
-                        } else {
-                            current_group.clear();
-                        }
-                        current_group.push(track.clone());
-                    }
-                }
-            }
-            if current_group.len() > 1 {
-                out.push(current_group);
-            }
-            key_tracks.clear();
-        };
-
-        for track in all_dup_tracks {
-            let key = (
-                track.title.clone().unwrap_or_default(),
-                track.artist.clone().unwrap_or_default(),
-                track.album.clone().unwrap_or_default(),
-            );
-            if current_key.as_ref() != Some(&key) {
-                process_key_group(&mut key_tracks, &mut duplicate_groups);
-                current_key = Some(key);
-            }
-            key_tracks.push(track);
-        }
-        process_key_group(&mut key_tracks, &mut duplicate_groups);
+        let (scope, values) = Self::registered_track_scope(&conn, "path")?;
+        let duplicate_groups = Self::find_duplicate_groups_in_connection(&conn, &scope, &values)?;
 
         info!("Found {} groups of duplicates", duplicate_groups.len());
         Ok(duplicate_groups)

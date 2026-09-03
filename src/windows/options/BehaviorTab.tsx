@@ -217,7 +217,7 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout, toggleWindow 
                   {layout.preview?.map((win, idx) => (
                     <div
                       key={idx}
-                      className={`absolute ${windowColors[win.id]?.bg || 'bg-slate-500'} rounded-sm transition-all`}
+                      className={`absolute ${windowColors[win.id]?.bg || 'bg-slate-500'} rounded-xs transition-all`}
                       style={{
                         left: `${(win.x / 13) * 100}%`,
                         top: `${(win.y / 8) * 100}%`,
@@ -243,7 +243,7 @@ export function BehaviorTab({ layouts, currentLayout, applyLayout, toggleWindow 
             <div className="flex flex-wrap gap-3">
               {Object.entries(windowColors).map(([id, { bg, label }]) => (
                 <div key={id} className="flex items-center gap-1.5">
-                  <div className={`w-3 h-3 rounded ${bg}`} />
+                  <div className={`w-3 h-3 rounded-sm ${bg}`} />
                   <span className="text-xs text-slate-400">{label}</span>
                 </div>
               ))}

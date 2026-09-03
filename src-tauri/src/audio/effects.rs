@@ -7,7 +7,7 @@ use super::visualizer::VisualizerBuffer;
 use crate::effects::EffectsProcessor;
 use rodio::cpal::FromSample;
 use rodio::source::SeekError;
-use rodio::Source;
+use rodio::{ChannelCount, SampleRate, Source};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,6 +36,8 @@ where
     sample_rate_initialized: bool,
     /// Tracks interleaved channel position (0 = left, 1 = right, etc.)
     channel_index: u16,
+    /// Accumulates one interleaved audio frame for mono visualizer capture.
+    visualizer_frame_sum: f32,
     /// Internal buffer for batched processing
     batch_buf: Vec<f32>,
     /// Read position within batch_buf
@@ -64,6 +66,7 @@ where
             balance,
             sample_rate_initialized: false,
             channel_index: 0,
+            visualizer_frame_sum: 0.0,
             batch_buf: Vec::with_capacity(BATCH_SIZE),
             batch_pos: 0,
         }
@@ -80,10 +83,11 @@ where
     fn next(&mut self) -> Option<f32> {
         // Initialize effects processor with actual source sample rate on first sample
         if !self.sample_rate_initialized {
-            let source_sample_rate = self.input.sample_rate();
+            let source_sample_rate = self.input.sample_rate().get();
             if let Ok(mut processor) = self.processor.lock() {
                 processor.set_sample_rate(source_sample_rate);
             }
+            self.visualizer_buffer.set_sample_rate(source_sample_rate);
             self.sample_rate_initialized = true;
         }
 
@@ -126,21 +130,13 @@ where
         self.batch_pos += 1;
 
         // Apply stereo balance (lock-free atomic read)
-        let channels = self.input.channels();
+        let channels = self.input.channels().get();
         let balanced = if channels >= 2 {
             let balance = f32::from_bits(self.balance.load(Ordering::Relaxed));
             let gain = if self.channel_index == 0 {
-                if balance > 0.0 {
-                    1.0 - balance
-                } else {
-                    1.0
-                }
+                if balance > 0.0 { 1.0 - balance } else { 1.0 }
             } else if self.channel_index == 1 {
-                if balance < 0.0 {
-                    1.0 + balance
-                } else {
-                    1.0
-                }
+                if balance < 0.0 { 1.0 + balance } else { 1.0 }
             } else {
                 1.0
             };
@@ -150,8 +146,15 @@ where
             processed
         };
 
-        // Send sample to visualizer buffer (lock-free)
-        self.visualizer_buffer.push(balanced);
+        // The source is interleaved, while the FFT consumes one sample per audio
+        // frame. Downmix each complete frame so stereo does not halve displayed
+        // frequencies or create channel-interleaving artifacts.
+        self.visualizer_frame_sum += balanced;
+        if channels <= 1 || self.channel_index == 0 {
+            self.visualizer_buffer
+                .push(self.visualizer_frame_sum / f32::from(channels.max(1)));
+            self.visualizer_frame_sum = 0.0;
+        }
 
         Some(balanced)
     }
@@ -166,11 +169,11 @@ where
         self.input.current_span_len()
     }
 
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> ChannelCount {
         self.input.channels()
     }
 
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> SampleRate {
         self.input.sample_rate()
     }
 
@@ -185,6 +188,8 @@ where
             // fresh audio from the seeked position rather than leftover batch data.
             self.batch_buf.clear();
             self.batch_pos = 0;
+            self.channel_index = 0;
+            self.visualizer_frame_sum = 0.0;
         }
         result
     }
@@ -208,7 +213,11 @@ mod tests {
 
     fn source(enabled: bool, configured: bool) -> EffectsSource<SamplesBuffer> {
         EffectsSource::new(
-            SamplesBuffer::new(1, 44_100, vec![0.95]),
+            SamplesBuffer::new(
+                ChannelCount::new(1).expect("test channel count is non-zero"),
+                SampleRate::new(44_100).expect("test sample rate is non-zero"),
+                vec![0.95],
+            ),
             Arc::new(Mutex::new(EffectsProcessor::new(
                 44_100,
                 EffectsConfig::default(),
@@ -233,5 +242,33 @@ mod tests {
     fn flat_effects_config_bypasses_dsp() {
         let mut flat = source(true, false);
         assert_eq!(flat.next(), Some(0.95));
+    }
+
+    #[test]
+    fn visualizer_capture_downmixes_complete_frames_and_tracks_sample_rate() {
+        let visualizer = Arc::new(VisualizerBuffer::new(8));
+        visualizer.set_active(true);
+        let source = EffectsSource::new(
+            SamplesBuffer::new(
+                ChannelCount::new(2).expect("test channel count is non-zero"),
+                SampleRate::new(48_000).expect("test sample rate is non-zero"),
+                vec![1.0, -1.0, 0.5, 0.5],
+            ),
+            Arc::new(Mutex::new(EffectsProcessor::new(
+                48_000,
+                EffectsConfig::default(),
+            ))),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            visualizer.clone(),
+            Arc::new(AtomicU32::new(0.0_f32.to_bits())),
+        );
+
+        let output: Vec<f32> = source.collect();
+        let (samples, sample_rate) = visualizer.get_snapshot();
+
+        assert_eq!(output, vec![1.0, -1.0, 0.5, 0.5]);
+        assert_eq!(samples, vec![0.0, 0.5]);
+        assert_eq!(sample_rate, 48_000);
     }
 }
