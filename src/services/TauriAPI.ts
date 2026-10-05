@@ -249,8 +249,13 @@ class TauriAPIService {
         return this._invoke('load_track', { trackId, path, requestId });
     }
 
-    async play(): Promise<void> {
-        return this._invoke('play_audio');
+    /**
+     * Start playback. Waking an output device can take several seconds, so
+     * this allows longer than other playback commands; callers that want to
+     * react sooner should race it with their own soft timeout.
+     */
+    async play(timeoutMs = 60000): Promise<void> {
+        return this._invoke('play_audio', {}, timeoutMs);
     }
 
     async pause(): Promise<void> {
@@ -620,7 +625,8 @@ class TauriAPIService {
     // ========== Audio Recovery & Device Commands ==========
 
     async recoverAudio(): Promise<boolean> {
-        return this._invoke('recover_audio');
+        // Reopens the output device; allow for slow devices.
+        return this._invoke('recover_audio', {}, 30000);
     }
 
     /** Fetch all audio health info in a single IPC round-trip. */

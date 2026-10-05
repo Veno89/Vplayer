@@ -16,8 +16,23 @@ const LONG_IDLE_THRESHOLD_SECONDS = 5 * 60; // 5 minutes
 
 // Timeout for backend operations to prevent UI freezing
 const BACKEND_TIMEOUT_MS = 5000;
+// Starting playback can reopen a device that is still waking up (USB DAC,
+// Bluetooth, HDMI receiver). The backend serializes that work, so give it
+// time instead of starting a competing recovery.
+const PLAY_TIMEOUT_MS = 15000;
 let lastLoadGeneration = 0;
 let lastLoadRequestId = 0;
+
+/**
+ * Load failures that a retry cannot fix (missing, unreadable, or corrupt
+ * files). Retrying them only delays skipping to the next track.
+ */
+const PERMANENT_LOAD_ERROR = /not found|no such file|cannot find|failed to open|validation error|decode error|corrupted or in an unsupported format|security error|permission denied|\bio error\b/i;
+
+export function isPermanentLoadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return PERMANENT_LOAD_ERROR.test(message);
+}
 
 const nextLoadRequestId = (): number => {
   const requestId = Math.max(lastLoadRequestId + 1, Date.now() * 1000);
@@ -52,6 +67,14 @@ interface PlaybackTickPayload {
   isFinished: boolean;
 }
 
+/** `track-ended` payload: emitted once per track by the Rust monitor. */
+interface TrackEndedPayload {
+  /** Load request that installed the track that ended (0 = not renderer-initiated). */
+  loadRequestId?: number;
+  /** Set when the track could not be read to its end. */
+  error?: string | null;
+}
+
 /**
  * Audio playback hook – event-driven.
  *
@@ -70,10 +93,9 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
   const [isLoading, setIsLoading] = useState(false);
   const [audioBackendError, setAudioBackendError] = useState<string | null>(null);
 
-  // Track if we're currently seeking / recovering / toggling play state to suppress events briefly
+  // Track if we're currently seeking / recovering to suppress tick events briefly
   const isSeekingRef = useRef(false);
   const isRecoveringRef = useRef(false);
-  const isTogglingRef = useRef(false);
 
   // Refs for callbacks – avoids stale closures in event listeners
   const onEndedRef = useRef(onEnded);
@@ -111,6 +133,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     let unlistenEnded: UnlistenFn | undefined;
     let unlistenDeviceLost: UnlistenFn | undefined;
     let unlistenDeviceRecovered: UnlistenFn | undefined;
+    let unlistenPlaybackError: UnlistenFn | undefined;
 
     const setup = async () => {
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
@@ -144,25 +167,24 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
       });
       if (disposed) { unlistenTick(); unlistenTick = undefined; return; }
 
-      unlistenEnded = await TauriAPI.onEvent<null>('track-ended', () => {
-        const state = useStore.getState();
-        // Ignore stale track-ended events emitted during pause transitions.
-        const looksLikePauseTransition =
-          !state.playing
-          && state.duration > 0
-          && state.progress < state.duration
-          && !isTogglingRef.current;
-
-        if (looksLikePauseTransition || isTogglingRef.current) {
-          log.warn('[Audio] Ignoring track-ended while not actively playing');
+      unlistenEnded = await TauriAPI.onEvent<TrackEndedPayload | null>('track-ended', (event) => {
+        const payload = event.payload ?? {};
+        // The backend reports each track's end exactly once. Only ignore it
+        // when it belongs to a track the user has already moved away from.
+        if (payload.loadRequestId && payload.loadRequestId !== lastLoadRequestId) {
+          log.warn('[Audio] Ignoring track-ended for a superseded track');
           return;
+        }
+
+        if (payload.error) {
+          toast.showWarning(`${payload.error} Skipping to the next track.`, 5000);
         }
 
         // Don't set playing=false here — let the onEnded callback decide.
         // If there's a next track, playing should stay true so useTrackLoading
         // auto-plays it. The onEnded handler in PlayerProvider sets playing=false
         // only when the playlist is truly exhausted (no repeat, last track).
-        state.setProgress(0);
+        useStore.getState().setProgress(0);
         if (onEndedRef.current) onEndedRef.current();
       });
       if (disposed) { unlistenEnded(); unlistenEnded = undefined; return; }
@@ -187,7 +209,16 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         useStore.getState().setPlaying(true);
         toast.showSuccess('Audio device reconnected');
       });
-      if (disposed) { unlistenDeviceRecovered(); unlistenDeviceRecovered = undefined; }
+      if (disposed) { unlistenDeviceRecovered(); unlistenDeviceRecovered = undefined; return; }
+
+      // Playback-error: the backend stopped playback it could not keep going
+      // (e.g. the device keeps refusing audio). Never leave the UI on "play".
+      unlistenPlaybackError = await TauriAPI.onEvent<string>('playback-error', (event) => {
+        console.warn('[Audio] Playback stopped by backend:', event.payload);
+        useStore.getState().setPlaying(false);
+        toast.showError(event.payload || 'Playback stopped unexpectedly');
+      });
+      if (disposed) { unlistenPlaybackError(); unlistenPlaybackError = undefined; }
     };
 
     setup();
@@ -198,6 +229,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
       unlistenEnded?.();
       unlistenDeviceLost?.();
       unlistenDeviceRecovered?.();
+      unlistenPlaybackError?.();
     };
   }, []);
 
@@ -272,10 +304,11 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
           throw new Error('Stale load request ignored');
         }
         const errorMessage = (err as Error).message || String(err);
-        if (errorMessage.toLowerCase().includes('timed out')) {
+        if (errorMessage.toLowerCase().includes('timed out') || isPermanentLoadError(err)) {
           // Tauri invoke timeouts do not cancel native work. Retrying here
           // would queue another live load and could play/decode the same track
-          // multiple times once the backend responds.
+          // multiple times once the backend responds. Missing or unreadable
+          // files fail the same way on every attempt.
           setIsLoading(false);
           retryCountRef.current = 0;
           throw new Error(`Failed to load track: ${errorMessage}`);
@@ -304,12 +337,18 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
   const play = useCallback(async () => {
     if (isRecoveringRef.current) return;
 
-    isTogglingRef.current = true;
+    const failPlayback = (message: string) => {
+      setAudioBackendError(message);
+      toast.showError(message);
+      useStore.getState().setPlaying(false);
+    };
+
     try {
       const health = await TauriAPI.getAudioHealth();
       if (!health.device_available) {
         toast.showError('No audio device found. Please connect headphones or speakers.');
         setAudioBackendError('No audio device available');
+        useStore.getState().setPlaying(false);
         return;
       }
 
@@ -327,7 +366,20 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         toast.showInfo('Resuming playback...', 2000);
       }
 
-      await withTimeout(TauriAPI.play(), BACKEND_TIMEOUT_MS);
+      const playRequest = TauriAPI.play();
+      try {
+        await withTimeout(playRequest, PLAY_TIMEOUT_MS);
+      } catch (err) {
+        if (!String((err as Error)?.message ?? err).includes('timed out')) throw err;
+        // The backend is still opening the device. Starting a recovery now
+        // would only queue behind it; report the real outcome when it lands.
+        toast.showWarning('Audio device is slow to respond...', 4000);
+        playRequest.catch((lateErr) => {
+          console.error('Play failed after a slow device start:', lateErr);
+          failPlayback('Could not start playback on the audio device.');
+        });
+        return;
+      }
       setAudioBackendError(null);
     } catch (err) {
       console.error('Failed to play:', err);
@@ -336,7 +388,7 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         toast.showWarning('Reinitializing audio system...');
         const recovered = await TauriAPI.recoverAudio();
         if (recovered) {
-          await withTimeout(TauriAPI.play(), BACKEND_TIMEOUT_MS);
+          await withTimeout(TauriAPI.play(), PLAY_TIMEOUT_MS);
           setAudioBackendError(null);
           toast.showSuccess('Audio resumed');
         } else {
@@ -344,15 +396,10 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
         }
       } catch (recoveryErr) {
         console.error('Recovery failed:', recoveryErr);
-        setAudioBackendError('Audio system unresponsive. Please restart the application.');
-        toast.showError('Audio system error. Please restart the app.');
-        useStore.getState().setPlaying(false);
+        failPlayback('Audio system unresponsive. Check your audio device and press play again.');
       } finally {
         isRecoveringRef.current = false;
       }
-    } finally {
-      // Allow a small window for state to settle before syncing with backend again
-      setTimeout(() => { isTogglingRef.current = false; }, 500);
     }
   }, [audioBackendError, toast]);
 
@@ -360,14 +407,11 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
   const pause = useCallback(async () => {
     if (audioBackendError) return;
 
-    isTogglingRef.current = true;
     try {
       await withTimeout(TauriAPI.pause(), BACKEND_TIMEOUT_MS);
     } catch (err) {
       console.error('Failed to pause:', err);
       throw err;
-    } finally {
-      setTimeout(() => { isTogglingRef.current = false; }, 500);
     }
   }, [audioBackendError]);
 

@@ -5,15 +5,23 @@
 //! (connected to a now-dead mixer after a device change) are
 //! automatically rejected on swap.
 
+use super::playback_state::SourceClock;
 use log::warn;
 use rodio::Player;
+use std::sync::Arc;
 use std::time::Duration;
+
+/// A preloaded track ready to replace the current player.
+pub struct PreloadedTrack {
+    pub sink: Player,
+    pub path: String,
+    pub duration: Duration,
+    pub clock: Arc<SourceClock>,
+}
 
 /// Manages preloaded tracks for gapless playback.
 pub struct PreloadManager {
-    sink: Option<Player>,
-    path: Option<String>,
-    total_duration: Duration,
+    track: Option<PreloadedTrack>,
     /// Device generation at the time the preload was created.
     device_generation: u64,
 }
@@ -21,18 +29,14 @@ pub struct PreloadManager {
 impl PreloadManager {
     pub fn new() -> Self {
         Self {
-            sink: None,
-            path: None,
-            total_duration: Duration::ZERO,
+            track: None,
             device_generation: 0,
         }
     }
 
-    /// Store a preloaded sink, path, duration, and the current device generation.
-    pub fn set(&mut self, sink: Player, path: String, duration: Duration, device_generation: u64) {
-        self.sink = Some(sink);
-        self.path = Some(path);
-        self.total_duration = duration;
+    /// Store a preloaded track and the current device generation.
+    pub fn set(&mut self, track: PreloadedTrack, device_generation: u64) {
+        self.track = Some(track);
         self.device_generation = device_generation;
     }
 
@@ -41,11 +45,8 @@ impl PreloadManager {
     /// If the device has been reinitialized since the preload was created,
     /// the sink is connected to the old (dead) mixer — discard it and
     /// return None so the caller falls back to a full load.
-    pub fn take_if_current(
-        &mut self,
-        current_generation: u64,
-    ) -> Option<(Player, String, Duration)> {
-        self.sink.as_ref()?;
+    pub fn take_if_current(&mut self, current_generation: u64) -> Option<PreloadedTrack> {
+        self.track.as_ref()?;
 
         if self.device_generation != current_generation {
             warn!(
@@ -56,26 +57,19 @@ impl PreloadManager {
             return None;
         }
 
-        match (self.sink.take(), self.path.take()) {
-            (Some(sink), Some(path)) => {
-                let dur = self.total_duration;
-                Some((sink, path, dur))
-            }
-            _ => None,
-        }
+        self.track.take()
     }
 
     pub fn has_preloaded(&self) -> bool {
-        self.sink.is_some()
+        self.track.is_some()
     }
 
     /// Return the file path of the currently preloaded track, if any.
     pub fn get_path(&self) -> Option<&str> {
-        self.path.as_deref()
+        self.track.as_ref().map(|track| track.path.as_str())
     }
 
     pub fn clear(&mut self) {
-        self.sink = None;
-        self.path = None;
+        self.track = None;
     }
 }

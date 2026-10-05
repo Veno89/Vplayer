@@ -6,6 +6,9 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
+/// Ring size: exactly one analysis window of the spectrum analyzer.
+pub const VISUALIZER_CAPACITY: usize = crate::visualizer::FFT_SIZE;
+
 /// Lock-free ring buffer for visualizer samples.
 ///
 /// The audio thread writes via `push()` (no locks, no allocation).
@@ -50,17 +53,22 @@ impl VisualizerBuffer {
     }
 
     /// Get a copy of current samples for visualization.
+    #[cfg(test)]
     pub fn get_samples(&self) -> Vec<f32> {
-        let total = self.write_pos.load(Ordering::Acquire);
-        let len = (total.min(self.capacity as u64)) as usize;
-        let mut result = Vec::with_capacity(len);
-
-        let start = total.saturating_sub(self.capacity as u64);
-        for i in start..total {
-            let idx = (i % self.capacity as u64) as usize;
-            result.push(f32::from_bits(self.samples[idx].load(Ordering::Relaxed)));
-        }
+        let mut result = Vec::new();
+        self.copy_samples_into(&mut result);
         result
+    }
+
+    /// Replace `out` with the current samples, oldest first, reusing its allocation.
+    fn copy_samples_into(&self, out: &mut Vec<f32>) {
+        let total = self.write_pos.load(Ordering::Acquire);
+        let start = total.saturating_sub(self.capacity as u64);
+        out.clear();
+        out.extend((start..total).map(|i| {
+            let idx = (i % self.capacity as u64) as usize;
+            f32::from_bits(self.samples[idx].load(Ordering::Relaxed))
+        }));
     }
 
     /// Clear the buffer.
@@ -78,12 +86,20 @@ impl VisualizerBuffer {
     }
 
     /// Return a consistent sample/rate snapshot for one FFT analysis.
+    #[cfg(test)]
     pub fn get_snapshot(&self) -> (Vec<f32>, u32) {
+        let mut samples = Vec::new();
+        let sample_rate = self.snapshot_into(&mut samples);
+        (samples, sample_rate)
+    }
+
+    /// Like [`Self::get_snapshot`], writing into a reusable buffer.
+    pub fn snapshot_into(&self, out: &mut Vec<f32>) -> u32 {
         loop {
             let sample_rate = self.sample_rate.load(Ordering::Acquire);
-            let samples = self.get_samples();
+            self.copy_samples_into(out);
             if self.sample_rate.load(Ordering::Acquire) == sample_rate {
-                return (samples, sample_rate);
+                return sample_rate;
             }
         }
     }

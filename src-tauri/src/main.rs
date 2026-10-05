@@ -31,11 +31,11 @@ mod visualizer;
 mod watcher;
 
 use audio::AudioPlayer;
+use audio::monitor::{MonitorEvent, PlaybackMonitor};
 use database::Database;
-use log::{info, warn};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
@@ -51,6 +51,43 @@ struct PlaybackTick {
     is_playing: bool,
     is_finished: bool,
     is_paused: bool,
+}
+
+/// Payload of `track-ended`. `error` is set when the track could not be read
+/// to its end; the frontend reports it and moves on.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TrackEndedPayload {
+    load_request_id: u64,
+    error: Option<String>,
+}
+
+fn emit_monitor_event(app: &tauri::AppHandle, event: MonitorEvent) {
+    let _ = match event {
+        MonitorEvent::Tick(snapshot) => app.emit(
+            "playback-tick",
+            PlaybackTick {
+                position: snapshot.position,
+                duration: snapshot.duration,
+                is_playing: snapshot.is_playing,
+                is_finished: snapshot.is_finished,
+                is_paused: snapshot.is_paused,
+            },
+        ),
+        MonitorEvent::TrackEnded {
+            load_request_id,
+            error,
+        } => app.emit(
+            "track-ended",
+            TrackEndedPayload {
+                load_request_id,
+                error,
+            },
+        ),
+        MonitorEvent::DeviceLost => app.emit("device-lost", ()),
+        MonitorEvent::DeviceRecovered => app.emit("device-recovered", ()),
+        MonitorEvent::PlaybackError(message) => app.emit("playback-error", message),
+    };
 }
 
 fn emit_window_visibility(app: &tauri::AppHandle, visible: bool) {
@@ -249,120 +286,27 @@ fn main() {
                 app_start_time: crate::time_utils::now_millis(),
             });
 
-            // ── Position-broadcast thread (#4) ──────────────────────────
-            // Emits `playback-tick` every ~100 ms while playing, and
-            // `track-ended` when the sink empties after playback.
-            //
-            // Uses `broadcast_snapshot()` to capture is_playing, is_finished,
-            // position, and duration under a single lock — preventing the race
-            // where state changes between separate queries.
-            //
-            // Adaptive sleep: 100ms while playing for smooth UI updates,
-            // 1000ms while idle to save CPU during long pauses/overnight.
-            //
-            // Device-loss guard: when we detect a transition from playing to
-            // finished, we check if the audio device is still available before
-            // emitting `track-ended`. If the device disappeared, we emit
-            // `device-lost` instead so the frontend can show a reconnect
-            // prompt rather than advancing to the next track.
+            // ── Playback monitor thread ────────────────────────────────
+            // Emits `playback-tick` every ~100 ms while playing, reports the
+            // end of each track exactly once (`track-ended`), and supervises
+            // the output device (`device-lost` / `device-recovered` /
+            // `playback-error`). While idle it blocks on the broadcast condvar,
+            // which play/load signal.
             let broadcast_handle = app.handle().clone();
             let broadcast_wake = player_for_broadcast.broadcast_wake();
-            std::thread::spawn(move || {
-                let mut was_playing = false;
-                // ── Device-loss auto-recovery state ──────────────────
-                let mut device_lost = false;
-                let mut device_check_counter: u32 = 0;
-
-                loop {
-                    // ── Device-lost recovery mode ────────────────────
-                    // While the device is gone we poll every 1 s for it
-                    // to reappear.  When it does, play() handles the
-                    // full reinit → reload → seek → resume cycle.
-                    if device_lost {
-                        if player_for_broadcast.is_device_available() {
-                            info!("Audio device reappeared — attempting auto-recovery");
-                            match player_for_broadcast.play() {
-                                Ok(()) => {
-                                    info!("Auto-recovery successful — playback resumed");
-                                    let _ = broadcast_handle.emit("device-recovered", ());
-                                    device_lost = false;
-                                    was_playing = true;
-                                }
-                                Err(e) => {
-                                    warn!("Auto-recovery play() failed: {} — will retry", e);
-                                }
-                            }
+            std::thread::Builder::new()
+                .name("vplayer-playback-monitor".to_string())
+                .spawn(move || {
+                    let mut monitor = PlaybackMonitor::new();
+                    loop {
+                        let (events, wait) = monitor.step(&player_for_broadcast);
+                        for event in events {
+                            emit_monitor_event(&broadcast_handle, event);
                         }
-                        std::thread::sleep(Duration::from_millis(1000));
-                        continue;
+                        broadcast_wake.wait_idle(wait);
                     }
-
-                    let snap = player_for_broadcast.broadcast_snapshot();
-
-                    // ── Proactive device-loss detection while playing ─
-                    // Every ~1 s (10 ticks × 100 ms) check whether the
-                    // audio device disappeared or changed underneath us.
-                    if snap.is_playing {
-                        device_check_counter += 1;
-                        if device_check_counter >= 10 {
-                            device_check_counter = 0;
-                            if !player_for_broadcast.is_device_available()
-                                || player_for_broadcast.has_device_changed()
-                            {
-                                info!("Device lost/changed during playback — pausing for recovery");
-                                // Pause so the position clock stops (prevents drift)
-                                let _ = player_for_broadcast.pause();
-                                player_for_broadcast.clear_preload();
-                                let _ = broadcast_handle.emit("device-lost", ());
-                                device_lost = true;
-                                was_playing = false;
-                                std::thread::sleep(Duration::from_millis(1000));
-                                continue;
-                            }
-                        }
-
-                        // Emit tick
-                        let tick = PlaybackTick {
-                            position: snap.position,
-                            duration: snap.duration,
-                            is_playing: true,
-                            is_finished: false,
-                            is_paused: false,
-                        };
-                        let _ = broadcast_handle.emit("playback-tick", tick);
-                    } else {
-                        device_check_counter = 0;
-                    }
-
-                    // Detect track-end transition: was playing → now finished
-                    if was_playing && !snap.is_playing && snap.is_finished && !snap.is_paused {
-                        // Guard: if the device disappeared, the sink empties but
-                        // the track didn't truly finish — it was interrupted.
-                        if player_for_broadcast.is_device_available() {
-                            let _ = broadcast_handle.emit("track-ended", ());
-                        } else {
-                            info!("Device lost during playback — suppressing track-ended");
-                            let _ = broadcast_handle.emit("device-lost", ());
-                            device_lost = true;
-                            was_playing = false;
-                            std::thread::sleep(Duration::from_millis(1000));
-                            continue;
-                        }
-                    }
-
-                    was_playing = snap.is_playing;
-
-                    // Adaptive sleep: fast ticks while playing, condvar-wait while idle
-                    if snap.is_playing {
-                        std::thread::sleep(Duration::from_millis(100));
-                    } else {
-                        // Block until play/load wakes us or a 30 s timeout fires
-                        // (timeout is a safety net for edge cases like external
-                        // device reconnection that bypasses our signal path).
-                        broadcast_wake.wait_idle(Duration::from_secs(30));
-                    }
-                }
-            });
+                })
+                .map_err(|e| format!("Failed to start playback monitor: {e}"))?;
 
             // Register global shortcuts
             use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};

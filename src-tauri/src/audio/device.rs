@@ -7,11 +7,13 @@ use crate::error::{AppError, AppResult};
 use log::{info, warn};
 use rodio::cpal::traits::{DeviceTrait as CpalDeviceTrait, HostTrait};
 use rodio::mixer::{Mixer, MixerSource};
-use rodio::{DeviceSinkBuilder, MixerDeviceSink};
+use rodio::source::SeekError;
+use rodio::{ChannelCount, DeviceSinkBuilder, MixerDeviceSink, Sample, SampleRate, Source};
 use serde::Serialize;
-use std::sync::{Mutex, MutexGuard, mpsc};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // CPAL's Windows device API crosses the native COM/WASAPI boundary. Serialize
 // access so recovery monitoring, settings enumeration, and stream creation do
@@ -36,6 +38,133 @@ fn audio_device_name(device: &rodio::cpal::Device) -> Option<String> {
 enum DeviceChange {
     Disappeared,
     DefaultChanged,
+}
+
+/// Result of one device enumeration, relative to the device we play on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceStatus {
+    /// The connected device is present (and still the default when following it).
+    Unchanged,
+    /// The connected device is no longer present.
+    Disappeared,
+    /// We follow the OS default and the default moved to another present device.
+    DefaultChanged,
+    /// The OS reports no output device at all.
+    NoDevices,
+}
+
+// ---------------------------------------------------------------------------
+// OutputHealth — is the device stream really consuming audio?
+// ---------------------------------------------------------------------------
+
+/// Liveness signal for one output stream.
+///
+/// Every player attached to the stream's mixer reports when the device pulls
+/// samples from it (the mixer pulls even while paused, producing silence), and
+/// the stream's error callback marks it failed. A stream whose device was
+/// switched off or invalidated stops pulling without any other notice, so this
+/// is the only reliable way to notice it.
+pub struct OutputHealth {
+    epoch: Instant,
+    last_pull_ms: AtomicU64,
+    failed: AtomicBool,
+}
+
+impl OutputHealth {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            epoch: Instant::now(),
+            last_pull_ms: AtomicU64::new(0),
+            failed: AtomicBool::new(false),
+        })
+    }
+
+    fn now_ms(&self) -> u64 {
+        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    fn record_pull(&self) {
+        self.last_pull_ms.store(self.now_ms(), Ordering::Relaxed);
+    }
+
+    fn mark_failed(&self) {
+        self.failed.store(true, Ordering::Release);
+    }
+
+    pub fn has_failed(&self) -> bool {
+        self.failed.load(Ordering::Acquire)
+    }
+
+    /// Time since the device last pulled samples (or since the stream opened).
+    pub fn since_last_pull(&self) -> Duration {
+        let last = self.last_pull_ms.load(Ordering::Relaxed);
+        Duration::from_millis(self.now_ms().saturating_sub(last))
+    }
+
+    /// The stream errored, or the device has not pulled audio for `timeout`.
+    pub fn is_stalled(&self, timeout: Duration) -> bool {
+        self.has_failed() || self.since_last_pull() > timeout
+    }
+}
+
+/// Samples between heartbeat timestamps (~10 ms of stereo 48 kHz audio).
+const HEARTBEAT_INTERVAL_SAMPLES: u32 = 1024;
+
+/// Wraps a player's queue output and reports device pulls to [`OutputHealth`].
+pub struct Heartbeat<S> {
+    inner: S,
+    health: Arc<OutputHealth>,
+    countdown: u32,
+}
+
+impl<S> Heartbeat<S> {
+    pub fn new(inner: S, health: Arc<OutputHealth>) -> Self {
+        Self {
+            inner,
+            health,
+            countdown: 0,
+        }
+    }
+}
+
+impl<S: Source> Iterator for Heartbeat<S> {
+    type Item = Sample;
+
+    #[inline]
+    fn next(&mut self) -> Option<Sample> {
+        if self.countdown == 0 {
+            self.countdown = HEARTBEAT_INTERVAL_SAMPLES;
+            self.health.record_pull();
+        }
+        self.countdown -= 1;
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<S: Source> Source for Heartbeat<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
+    }
+
+    fn channels(&self) -> ChannelCount {
+        self.inner.channels()
+    }
+
+    fn sample_rate(&self) -> SampleRate {
+        self.inner.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
+
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+        self.inner.try_seek(pos)
+    }
 }
 
 fn classify_device_change(
@@ -106,18 +235,21 @@ pub struct DeviceState {
     /// Used by PreloadManager to detect stale preloaded sinks that were
     /// connected to a now-dead mixer.
     pub generation: u64,
+    /// Liveness of the current output stream.
+    pub health: Arc<OutputHealth>,
 }
 
 impl DeviceState {
-    pub fn new(stream: DeviceSinkOwner, mixer: Mixer, device_name: Option<String>) -> Self {
+    pub fn new(output: OpenedOutput) -> Self {
         Self {
-            stream: Some(stream),
-            mixer: Some(mixer),
-            connected_device_name: device_name,
+            stream: Some(output.stream),
+            mixer: Some(output.mixer),
+            connected_device_name: output.device_name,
             preferred_device_name: None,
             dormant_source: None,
             last_active: Instant::now(),
             generation: 0,
+            health: output.health,
         }
     }
 
@@ -130,6 +262,7 @@ impl DeviceState {
             dormant_source: Some(source),
             last_active: Instant::now(),
             generation: 0,
+            health: OutputHealth::new(),
         }
     }
 
@@ -137,18 +270,13 @@ impl DeviceState {
         self.last_active = Instant::now();
     }
 
-    pub fn replace(
-        &mut self,
-        stream: DeviceSinkOwner,
-        mixer: Mixer,
-        device_name: Option<String>,
-        preferred_device_name: Option<String>,
-    ) {
-        self.stream = Some(stream);
-        self.mixer = Some(mixer);
-        self.connected_device_name = device_name;
+    pub fn replace(&mut self, output: OpenedOutput, preferred_device_name: Option<String>) {
+        self.stream = Some(output.stream);
+        self.mixer = Some(output.mixer);
+        self.connected_device_name = output.device_name;
         self.preferred_device_name = preferred_device_name;
         self.dormant_source = None;
+        self.health = output.health;
         self.last_active = Instant::now();
         self.generation += 1;
     }
@@ -182,44 +310,53 @@ pub struct AudioDevice {
     pub is_default: bool,
 }
 
-/// Creates a high-quality (F32) output stream and returns it along with the mixer handle.
-pub(crate) fn create_high_quality_output_with_device_name()
--> AppResult<(DeviceSinkOwner, Mixer, Option<String>)> {
-    create_high_quality_output(None)
+/// A freshly opened output stream with its mixer and liveness signal.
+pub struct OpenedOutput {
+    pub stream: DeviceSinkOwner,
+    pub mixer: Mixer,
+    pub device_name: Option<String>,
+    pub health: Arc<OutputHealth>,
 }
 
+/// Creates a high-quality (F32) output stream on the requested device, or on
+/// the OS default when `requested_device_name` is `None`.
 pub(crate) fn create_high_quality_output(
     requested_device_name: Option<&str>,
-) -> AppResult<(DeviceSinkOwner, Mixer, Option<String>)> {
+) -> AppResult<OpenedOutput> {
     let requested = requested_device_name.map(str::to_owned);
+    let health = OutputHealth::new();
+    let stream_health = health.clone();
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let worker = thread::Builder::new()
         .name("vplayer-audio-output".to_string())
-        .spawn(move || match open_output_stream(requested.as_deref()) {
-            Ok((stream, mixer, device_name)) => {
-                if ready_tx.send(Ok((mixer, device_name))).is_ok() {
-                    let _stream = stream;
-                    let _ = shutdown_rx.recv();
+        .spawn(
+            move || match open_output_stream(requested.as_deref(), stream_health) {
+                Ok((stream, mixer, device_name)) => {
+                    if ready_tx.send(Ok((mixer, device_name))).is_ok() {
+                        let _stream = stream;
+                        let _ = shutdown_rx.recv();
+                    }
                 }
-            }
-            Err(error) => {
-                let _ = ready_tx.send(Err(error.to_string()));
-            }
-        })
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error.to_string()));
+                }
+            },
+        )
         .map_err(|error| {
             AppError::Audio(format!("Failed to start audio output thread: {error}"))
         })?;
 
     match ready_rx.recv() {
-        Ok(Ok((mixer, device_name))) => Ok((
-            DeviceSinkOwner {
+        Ok(Ok((mixer, device_name))) => Ok(OpenedOutput {
+            stream: DeviceSinkOwner {
                 shutdown: Some(shutdown_tx),
                 worker: Some(worker),
             },
             mixer,
             device_name,
-        )),
+            health,
+        }),
         Ok(Err(error)) => {
             let _ = worker.join();
             Err(AppError::Audio(error))
@@ -235,7 +372,17 @@ pub(crate) fn create_high_quality_output(
 
 fn open_output_stream(
     requested_device_name: Option<&str>,
+    health: Arc<OutputHealth>,
 ) -> AppResult<(MixerDeviceSink, Mixer, Option<String>)> {
+    // CPAL reports invalidated endpoints (device switched off, unplugged, or
+    // reconfigured) through this callback; the stream never recovers itself.
+    let on_stream_error = move |error: rodio::cpal::StreamError| {
+        if !health.has_failed() {
+            warn!("Audio output stream error: {error}");
+        }
+        health.mark_failed();
+    };
+
     let _device_api_guard = lock_audio_device_api();
     let host = rodio::cpal::default_host();
     let device = if let Some(requested) = requested_device_name {
@@ -259,6 +406,7 @@ fn open_output_stream(
     let result = DeviceSinkBuilder::from_device(device.clone())
         .map_err(|e| AppError::Audio(format!("Failed to create stream builder: {}", e)))?
         .with_sample_format(rodio::cpal::SampleFormat::F32)
+        .with_error_callback(on_stream_error.clone())
         .open_stream();
 
     match result {
@@ -284,6 +432,7 @@ fn open_output_stream(
                     AppError::Audio(format!("Failed to create fallback stream builder: {e}"))
                 })?
                 .with_buffer_size(rodio::cpal::BufferSize::Default)
+                .with_error_callback(on_stream_error)
                 .open_sink_or_fallback()
                 .map_err(|e| {
                     AppError::Audio(format!(
@@ -364,6 +513,68 @@ pub fn has_device_changed(connected_device_name: &Option<String>, follow_default
         }
         None => false,
     }
+}
+
+/// Enumerate output devices once and classify the connected device.
+pub fn device_status(connected_device_name: Option<&str>, follow_default: bool) -> DeviceStatus {
+    let _device_api_guard = lock_audio_device_api();
+    let host = rodio::cpal::default_host();
+    let names: Vec<String> = match host.output_devices() {
+        Ok(devices) => devices.filter_map(|d| audio_device_name(&d)).collect(),
+        Err(error) => {
+            warn!("Failed to enumerate output devices: {error}");
+            Vec::new()
+        }
+    };
+    let default_name = if follow_default {
+        host.default_output_device()
+            .and_then(|device| audio_device_name(&device))
+    } else {
+        None
+    };
+    classify_device_status(
+        connected_device_name,
+        follow_default,
+        &names,
+        default_name.as_deref(),
+    )
+}
+
+fn classify_device_status(
+    connected_device_name: Option<&str>,
+    follow_default: bool,
+    present_names: &[String],
+    default_name: Option<&str>,
+) -> DeviceStatus {
+    if present_names.is_empty() {
+        return DeviceStatus::NoDevices;
+    }
+    let Some(connected) = connected_device_name else {
+        return DeviceStatus::Unchanged;
+    };
+    let present = present_names.iter().any(|name| name == connected);
+    match classify_device_change(Some(connected), follow_default, present, default_name) {
+        Some(DeviceChange::Disappeared) => DeviceStatus::Disappeared,
+        Some(DeviceChange::DefaultChanged) => DeviceStatus::DefaultChanged,
+        None => DeviceStatus::Unchanged,
+    }
+}
+
+/// True when opening an output now would land on `device_name`: the device is
+/// the OS default (when following the default) or merely present (when the
+/// user pinned it).
+pub fn is_device_ready(device_name: &str, follow_default: bool) -> bool {
+    let _device_api_guard = lock_audio_device_api();
+    let host = rodio::cpal::default_host();
+    if follow_default {
+        return host
+            .default_output_device()
+            .and_then(|device| audio_device_name(&device))
+            .is_some_and(|name| name == device_name);
+    }
+    host.output_devices()
+        .map(|mut devices| devices.any(|d| audio_device_name(&d).as_deref() == Some(device_name)))
+        .unwrap_or(false)
 }
 
 /// Check if there's any audio device available
@@ -474,6 +685,54 @@ mod tests {
     fn is_device_available_does_not_panic() {
         let _available = is_device_available();
         // No assertion on the value — CI may have no audio hardware.
+    }
+
+    #[test]
+    fn device_status_classifies_one_enumeration() {
+        let names = vec!["Speakers".to_string(), "Headphones".to_string()];
+        assert_eq!(
+            classify_device_status(Some("Speakers"), true, &[], None),
+            DeviceStatus::NoDevices
+        );
+        assert_eq!(
+            classify_device_status(Some("Speakers"), true, &names, Some("Speakers")),
+            DeviceStatus::Unchanged
+        );
+        assert_eq!(
+            classify_device_status(Some("DAC"), true, &names, Some("Speakers")),
+            DeviceStatus::Disappeared
+        );
+        assert_eq!(
+            classify_device_status(Some("Headphones"), true, &names, Some("Speakers")),
+            DeviceStatus::DefaultChanged
+        );
+        assert_eq!(
+            classify_device_status(Some("Headphones"), false, &names, None),
+            DeviceStatus::Unchanged
+        );
+        assert_eq!(
+            classify_device_status(None, true, &names, Some("Speakers")),
+            DeviceStatus::Unchanged
+        );
+    }
+
+    #[test]
+    fn heartbeat_reports_pulls_and_failures() {
+        let health = OutputHealth::new();
+        assert!(!health.is_stalled(Duration::from_secs(5)));
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(health.is_stalled(Duration::from_millis(10)));
+
+        let silence = rodio::source::Zero::new(
+            ChannelCount::new(2).expect("non-zero"),
+            SampleRate::new(44_100).expect("non-zero"),
+        );
+        let mut heartbeat = Heartbeat::new(silence, health.clone());
+        heartbeat.next();
+        assert!(!health.is_stalled(Duration::from_millis(10)));
+
+        health.mark_failed();
+        assert!(health.is_stalled(Duration::from_secs(5)));
     }
 
     #[test]

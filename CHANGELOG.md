@@ -5,6 +5,32 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Resume correctly after long idle periods: the playback position now comes from the
+  audio actually played instead of a wall clock, so resuming a track whose audio was
+  interrupted continues where it stopped instead of jumping to the end and stalling.
+- Report every track's end exactly once, even when it ends right after play/pause,
+  so playback always moves on to the next track.
+- Detect an output device that stopped consuming audio (switched off and on, system
+  sleep, invalidated endpoint) and reopen it automatically; reopen a track that stops
+  early because its file could not be read.
+- Pause when the playing device disappears and resume only when that device returns,
+  instead of silently moving playback to another output; follow a new Windows default
+  device without interrupting playback.
+- Skip tracks that cannot be found or read instead of stopping, and stop with a clear
+  message after several consecutive failures.
+- Never block device, seek, or recovery work on a dead output stream, and run it off
+  the UI thread; a slow device start no longer triggers a competing recovery.
+- Redesign the spectrum visualizer: an adaptive level scale replaces the fixed 72 dB
+  range that kept every bar high, and each bass bar now has its own frequency data
+  (4096-point FFT, at least one bin per bar) instead of moving as a smooth wave.
+
+### Changed
+
+- Check the output device once every 2 s while playing (previously two enumerations
+  per second) and back off to every 10 s while waiting for a lost device.
+
 ## [0.9.51] - 2026-09-03
 
 ### Fixed

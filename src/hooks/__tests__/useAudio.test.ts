@@ -299,7 +299,7 @@ describe('useAudio', () => {
         if (cmd === 'load_track') {
           callCount++;
           requestIds.push((args as Record<string, unknown>)?.requestId as number);
-          if (callCount <= 2) return Promise.reject(new Error('Decode error'));
+          if (callCount <= 2) return Promise.reject(new Error('Audio error: Audio mixer unavailable'));
           return Promise.resolve(undefined);
         }
         if (cmd === 'get_duration') return Promise.resolve(200);
@@ -411,9 +411,31 @@ describe('useAudio', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
+    it('fails fast without retrying a missing or unreadable file', async () => {
+      let loadCalls = 0;
+      vi.mocked(invoke).mockImplementation((cmd: string) => {
+        if (cmd === 'load_track') {
+          loadCalls++;
+          return Promise.reject(new Error('Audio error: Not found: Failed to open file /music/gone.flac'));
+        }
+        return Promise.resolve(null);
+      });
+
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+
+      let thrownError: Error | undefined;
+      await act(async () => {
+        await result.current.loadTrack(mockTrack()).catch((e: Error) => { thrownError = e; });
+      });
+
+      expect(loadCalls).toBe(1);
+      expect(thrownError?.message).toContain('Not found');
+      expect(result.current.isLoading).toBe(false);
+    });
+
     it('should throw after max retries exhausted', async () => {
       vi.mocked(invoke).mockImplementation((cmd: string) => {
-        if (cmd === 'load_track') return Promise.reject(new Error('Decode error'));
+        if (cmd === 'load_track') return Promise.reject(new Error('Audio error: Audio mixer unavailable'));
         if (cmd === 'is_playing') return Promise.resolve(false);
         return Promise.resolve(null);
       });
@@ -471,6 +493,42 @@ describe('useAudio', () => {
       });
 
       expect(invoke).not.toHaveBeenCalledWith('play_audio', {});
+      expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
+    });
+
+    it('waits for a slow device instead of starting a competing recovery', async () => {
+      vi.useFakeTimers();
+      let rejectPlay: ((error: Error) => void) | undefined;
+      vi.mocked(invoke).mockImplementation((cmd: string) => {
+        if (cmd === 'play_audio') {
+          return new Promise((_, reject) => { rejectPlay = reject; });
+        }
+        if (cmd === 'get_audio_health') {
+          return Promise.resolve({ healthy: true, needs_reinit: true, inactive_duration: 900, device_changed: false, device_available: true });
+        }
+        return Promise.resolve(null);
+      });
+
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      let playPromise!: Promise<void>;
+      act(() => {
+        playPromise = result.current.play();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+        await playPromise;
+      });
+
+      expect(invoke).not.toHaveBeenCalledWith('recover_audio', {});
+      expect(storeMock.setPlaying).not.toHaveBeenCalled();
+
+      // If the device never comes up, the UI must not stay on "playing".
+      await act(async () => {
+        rejectPlay?.(new Error('Audio error: Failed to open output'));
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
+      vi.useRealTimers();
     });
 
     it('should attempt recovery when play fails', async () => {
@@ -693,6 +751,68 @@ describe('useAudio', () => {
       // track-ended no longer sets playing=false — the onEnded callback decides
       // whether to advance to the next track (playing stays true) or stop.
       expect(storeMock.setProgress).toHaveBeenCalledWith(0);
+    });
+
+    it('advances even right after a play/pause click', async () => {
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      // The old hook dropped track-ended for 500 ms after any play/pause,
+      // leaving a track that ended instantly stuck on "playing".
+      await act(async () => {
+        await result.current.pause();
+        fireEvent('track-ended', { loadRequestId: 0, error: null });
+      });
+
+      expect(onEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores track-ended for a track the user already left', async () => {
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      const requestIds: number[] = [];
+      vi.mocked(invoke).mockImplementation((cmd, args) => {
+        if (cmd === 'load_track') requestIds.push((args as Record<string, unknown>).requestId as number);
+        if (cmd === 'get_duration') return Promise.resolve(200);
+        return Promise.resolve(null);
+      });
+      await act(async () => {
+        await result.current.loadTrack(mockTrack());
+        await result.current.loadTrack(mockTrack({ id: 'track-2', path: '/music/next.mp3' }));
+      });
+
+      act(() => {
+        fireEvent('track-ended', { loadRequestId: requestIds[0], error: null });
+      });
+      expect(onEnded).not.toHaveBeenCalled();
+
+      act(() => {
+        fireEvent('track-ended', { loadRequestId: requestIds[1], error: null });
+      });
+      expect(onEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a track that could not be read to its end and moves on', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      act(() => {
+        fireEvent('track-ended', { loadRequestId: 0, error: 'Could not keep reading "song.mp3": file missing.' });
+      });
+
+      expect(onEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops the UI when the backend reports a playback error', async () => {
+      renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); });
+
+      act(() => {
+        fireEvent('playback-error', 'The audio device stopped responding. Press play to try again.');
+      });
+
+      expect(storeMock.setPlaying).toHaveBeenCalledWith(false);
     });
   });
 });

@@ -7,6 +7,20 @@ import { devCounters } from '../utils/devCounters';
 import { confirm as nativeConfirm } from '@tauri-apps/plugin-dialog';
 import type { Track, AudioService, ToastService } from '../types';
 
+/**
+ * Stop skipping after this many tracks in a row fail to load (e.g. the music
+ * drive is unplugged), instead of cycling through the whole playlist.
+ */
+export const MAX_CONSECUTIVE_LOAD_FAILURES = 5;
+
+function describeLoadFailure(err: unknown): string {
+  const message = String((err as Error)?.message ?? err);
+  if (/not found|no such file|cannot find|failed to open/i.test(message)) return 'file not found or not readable';
+  if (/decode error|corrupted|unsupported format/i.test(message)) return 'unsupported or damaged file';
+  if (/permission denied/i.test(message)) return 'no permission to read the file';
+  return 'it could not be loaded';
+}
+
 export interface TrackLoadingParams {
   audio: AudioService;
   tracks: Track[];
@@ -42,6 +56,7 @@ export function useTrackLoading({
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
   const lastToastTrackId = useRef<string | null>(null);
   const shouldRestorePosition = useRef(true);
+  const consecutiveFailuresRef = useRef(0);
 
   // ReplayGain hook for volume normalization
   const replayGain = useReplayGain();
@@ -148,11 +163,15 @@ export function useTrackLoading({
         }
 
         // 6. Success - Update State
+        consecutiveFailuresRef.current = 0;
         setLoadedTrackId(track.id);
         setLoadingTrackIndex(null);
 
-        // Apply ReplayGain if enabled
-        await replayGain.applyReplayGain(track);
+        // Apply ReplayGain if enabled. The track itself loaded fine, so a
+        // gain lookup failure must not count as an unplayable track.
+        await replayGain.applyReplayGain(track).catch(gainErr => {
+          console.warn('[useTrackLoading] ReplayGain could not be applied:', gainErr);
+        });
 
         // Restore last position if we should
         const shouldRestore = shouldRestorePosition.current && track.id === freshState.lastTrackId;
@@ -205,6 +224,8 @@ export function useTrackLoading({
           confirmCorruptedFileRemoval: DEFAULT_PREFERENCES.confirmCorruptedFileRemoval,
         };
 
+        consecutiveFailuresRef.current += 1;
+
         if (isDecodeError && preferences.autoRemoveCorruptedFiles) {
           // ... existing corruption handling logic ...
           // Simplified for brevity in this replace block, retaining core logic
@@ -220,8 +241,32 @@ export function useTrackLoading({
           } catch (e) {
             toast.showError('Could not remove corrupted track');
           }
-        } else {
-          toast.showError(err.message || `Failed to load track: ${track.name}`);
+          return;
+        }
+
+        const title = track.title || track.name;
+        const reason = describeLoadFailure(err);
+        if (!useStore.getState().playing) {
+          // Nothing is playing (e.g. restoring the last session): report only.
+          toast.showError(`Couldn't load "${title}": ${reason}`);
+          return;
+        }
+
+        const failureLimit = Math.min(MAX_CONSECUTIVE_LOAD_FAILURES, Math.max(1, currentTracks.length));
+        if (consecutiveFailuresRef.current >= failureLimit) {
+          consecutiveFailuresRef.current = 0;
+          useStore.getState().setPlaying(false);
+          toast.showError(`Couldn't play "${title}" (${reason}). Several tracks in a row failed, so playback stopped.`);
+          return;
+        }
+
+        // Skip the unplayable track instead of stopping on it.
+        toast.showWarning(`Couldn't play "${title}" (${reason}). Skipping to the next track.`, 4000);
+        handleNextTrack();
+        if (useStore.getState().currentTrack === targetTrackIndex) {
+          // No other track to move to (end of playlist, or a single track).
+          consecutiveFailuresRef.current = 0;
+          useStore.getState().setPlaying(false);
         }
       }
     };

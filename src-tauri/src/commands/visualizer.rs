@@ -66,20 +66,18 @@ fn write_cached_waveform(path: &str, bars: usize, data: &[f32], request_id: u64)
 /// This reads samples from the audio player's internal buffer and processes them with FFT
 #[tauri::command]
 pub fn get_visualizer_data(state: tauri::State<'_, AppState>) -> AppResult<VisualizerData> {
-    // Get samples from the audio player's visualizer buffer
-    let (samples, sample_rate) = state.player.get_visualizer_samples();
-
-    // Process samples with the visualizer (FFT analysis)
     let mut vis = state
         .visualizer
         .lock()
         .map_err(|e| AppError::InvalidState(format!("Failed to lock visualizer: {}", e)))?;
-    vis.set_sample_rate(sample_rate);
 
     // Match the frontend's 20 Hz single-flight polling cadence.
     let delta_time = 0.05;
 
-    Ok(vis.process(&samples, delta_time))
+    Ok(vis.analyze_with(
+        |samples| state.player.copy_visualizer_samples(samples),
+        delta_time,
+    ))
 }
 
 /// Enable sample capture only while the frontend is actively rendering it.

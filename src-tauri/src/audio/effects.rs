@@ -3,6 +3,7 @@
 //! This module wraps audio sources with effects processing (EQ, etc.)
 //! and feeds samples to the visualizer buffer.
 
+use super::playback_state::SourceClock;
 use super::visualizer::VisualizerBuffer;
 use crate::effects::EffectsProcessor;
 use rodio::cpal::FromSample;
@@ -42,6 +43,12 @@ where
     batch_buf: Vec<f32>,
     /// Read position within batch_buf
     batch_pos: usize,
+    /// Media position published for the player (see `SourceClock`).
+    clock: Arc<SourceClock>,
+    /// Position of the most recent seek (or the start of the track).
+    clock_anchor: Duration,
+    /// Interleaved samples read from the input since `clock_anchor`.
+    samples_since_anchor: u64,
 }
 
 impl<I> EffectsSource<I>
@@ -69,7 +76,25 @@ where
             visualizer_frame_sum: 0.0,
             batch_buf: Vec::with_capacity(BATCH_SIZE),
             batch_pos: 0,
+            clock: Arc::new(SourceClock::new()),
+            clock_anchor: Duration::ZERO,
+            samples_since_anchor: 0,
         }
+    }
+
+    /// Publish this source's media position to `clock`.
+    pub fn with_clock(mut self, clock: Arc<SourceClock>) -> Self {
+        clock.mark_seeked(self.clock_anchor);
+        self.clock = clock;
+        self
+    }
+
+    fn publish_position(&self) {
+        let channels = u64::from(self.input.channels().get());
+        let sample_rate = f64::from(self.input.sample_rate().get());
+        let frames = self.samples_since_anchor / channels;
+        let elapsed = Duration::from_secs_f64(frames as f64 / sample_rate);
+        self.clock.set_position(self.clock_anchor + elapsed);
     }
 }
 
@@ -106,8 +131,13 @@ where
 
             if self.batch_buf.is_empty() {
                 log::debug!("EffectsSource input returned None - track finished or decode error");
+                self.clock.mark_finished();
                 return None;
             }
+
+            // One atomic store per batch keeps the position cheap to publish.
+            self.samples_since_anchor += self.batch_buf.len() as u64;
+            self.publish_position();
 
             // Acquire effects lock once for the whole batch
             if self.effects_enabled.load(Ordering::Relaxed)
@@ -190,6 +220,9 @@ where
             self.batch_pos = 0;
             self.channel_index = 0;
             self.visualizer_frame_sum = 0.0;
+            self.clock_anchor = pos;
+            self.samples_since_anchor = 0;
+            self.clock.mark_seeked(pos);
         }
         result
     }
@@ -201,7 +234,7 @@ where
     f32: FromSample<I::Item>,
 {
     fn drop(&mut self) {
-        log::info!("EffectsSource dropped - track finished or removed from sink");
+        log::debug!("EffectsSource dropped - track finished or removed from sink");
     }
 }
 
@@ -270,5 +303,40 @@ mod tests {
         assert_eq!(output, vec![1.0, -1.0, 0.5, 0.5]);
         assert_eq!(samples, vec![0.0, 0.5]);
         assert_eq!(sample_rate, 48_000);
+    }
+
+    #[test]
+    fn clock_tracks_consumed_media_time_and_end_of_stream() {
+        let clock = Arc::new(SourceClock::new());
+        // 1 s of stereo audio at 1 kHz.
+        let mut source = EffectsSource::new(
+            SamplesBuffer::new(
+                ChannelCount::new(2).expect("test channel count is non-zero"),
+                SampleRate::new(1_000).expect("test sample rate is non-zero"),
+                vec![0.1; 2_000],
+            ),
+            Arc::new(Mutex::new(EffectsProcessor::new(
+                1_000,
+                EffectsConfig::default(),
+            ))),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(VisualizerBuffer::new(8)),
+            Arc::new(AtomicU32::new(0.0_f32.to_bits())),
+        )
+        .with_clock(clock.clone());
+
+        assert_eq!(clock.position(), Duration::ZERO);
+        source.next();
+        // One 512-sample batch = 256 stereo frames = 0.256 s.
+        assert_eq!(clock.position(), Duration::from_millis(256));
+        assert!(!clock.is_finished());
+
+        source.try_seek(Duration::from_millis(500)).expect("seek");
+        assert_eq!(clock.position(), Duration::from_millis(500));
+
+        for _ in source.by_ref() {}
+        assert!(clock.is_finished());
+        assert_eq!(clock.position(), Duration::from_secs(1));
     }
 }
