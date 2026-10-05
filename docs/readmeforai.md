@@ -107,7 +107,7 @@ All Rust ↔ JS communication goes through `src/services/TauriAPI.ts`, which wra
 ```
 VPlayer/
 ├── index.html                          # Vite entry point
-├── package.json                        # v0.9.51
+├── package.json                        # v0.9.52
 ├── .node-version                       # Pinned Node.js runtime
 ├── rust-toolchain.toml                 # Pinned Rust, Clippy, and rustfmt
 ├── vite.config.js                      # Vite 8 + Tailwind 4 config
@@ -382,7 +382,7 @@ Before declaring any feature "done":
 ## 10. Known Bugs
 
 The following items came from the historical v0.9.32 notes. They have not been
-revalidated against v0.9.51 and must not be treated as current confirmed defects:
+revalidated against v0.9.52 and must not be treated as current confirmed defects:
 
 | # | Bug | Area |
 |---|-----|------|

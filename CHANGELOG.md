@@ -5,6 +5,8 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.52] - 2026-10-05
+
 ### Fixed
 
 - Resume correctly after long idle periods: the playback position now comes from the
@@ -30,6 +32,12 @@ All notable changes to VPlayer will be documented in this file.
 
 - Check the output device once every 2 s while playing (previously two enumerations
   per second) and back off to every 10 s while waiting for a lost device.
+
+### Security
+
+- Update the test-only `undici` dependency to 8.11.2 to clear high-severity advisories
+  that blocked the release dependency gate.
+- Update `rustls` to 0.23.45 for RUSTSEC-2026-0285 (TLS 1.3 handshake message handling).
 
 ## [0.9.51] - 2026-09-03
 
