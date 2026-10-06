@@ -5,6 +5,16 @@ All notable changes to VPlayer will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.53] - 2026-10-06
+
+Version 0.9.52 was tagged but not published because its release dependency gate failed;
+0.9.53 ships all of its changes.
+
+### Security
+
+- Update the build-only `source-map-js` dependency to 1.2.2 to clear a high-severity
+  advisory (GHSA-68fv-2mgg-jv7q) that blocked the release dependency gate.
+
 ## [0.9.52] - 2026-10-05
 
 ### Fixed

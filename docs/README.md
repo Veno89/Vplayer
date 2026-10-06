@@ -405,4 +405,4 @@ See LICENSE file for details.
 
 ---
 
-**Version**: 0.9.52 | **Updated**: October 2026
+**Version**: 0.9.53 | **Updated**: October 2026
