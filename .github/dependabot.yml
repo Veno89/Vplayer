@@ -5,12 +5,30 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # react and react-dom must stay on the same version.
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+      # Must match the minor version of the Cargo tauri group below.
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
 
   - package-ecosystem: cargo
     directory: /src-tauri
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # Must match the minor version of the npm tauri group above.
+      tauri:
+        patterns:
+          - tauri
+          - tauri-*
 
   - package-ecosystem: github-actions
     directory: /
