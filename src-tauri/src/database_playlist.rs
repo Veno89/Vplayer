@@ -245,6 +245,7 @@ impl Database {
                     track.last_played,
                     track.rating,
                     crate::database_tracks::file_modified_seconds(&track.path),
+                    track.bitrate,
                 ],
             )?;
         }
@@ -283,7 +284,7 @@ impl Database {
         let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
             match (offset, limit) {
                 (Some(off), Some(lim)) => (
-                    "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played \
+                    "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played, t.bitrate \
                      FROM tracks t \
                      INNER JOIN playlist_tracks pt ON t.id = pt.track_id \
                      WHERE pt.playlist_id = ?1 \
@@ -297,7 +298,7 @@ impl Database {
                     ],
                 ),
                 _ => (
-                    "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played \
+                    "SELECT t.id, t.path, t.name, t.title, t.artist, t.album, t.genre, t.year, t.track_number, t.disc_number, t.duration, t.date_added, t.rating, t.play_count, t.last_played, t.bitrate \
                      FROM tracks t \
                      INNER JOIN playlist_tracks pt ON t.id = pt.track_id \
                      WHERE pt.playlist_id = ?1 \

@@ -223,6 +223,7 @@ describe('usePlaybackEffects', () => {
   // A-B Repeat (reads from store progress, not audio.progress)
   // -------------------------------------------------------------------------
   it('should seek to point A when progress passes point B', () => {
+    storeMock.playing = true;
     storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
     storeMock.progress = 0;
 
@@ -257,6 +258,28 @@ describe('usePlaybackEffects', () => {
     });
 
     expect(audioMock.seek).not.toHaveBeenCalled();
+  });
+
+  it('keeps loop seeks single-flight and ignores paused progress updates', async () => {
+    storeMock.playing = true;
+    storeMock.progress = 0;
+    storeMock.abRepeat = { enabled: true, pointA: 10, pointB: 30 };
+    let finish!: () => void;
+    audioMock.seek.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    renderHook(() => usePlaybackEffects({ audio: audioMock, toast: toastMock, tracks }));
+    act(() => {
+      storeMock.progress = 31;
+      subscribeListeners.forEach(listener => listener(storeMock));
+      storeMock.progress = 32;
+      subscribeListeners.forEach(listener => listener(storeMock));
+    });
+    expect(audioMock.seek).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
+    act(() => {
+      storeMock.playing = false; storeMock.progress = 33;
+      subscribeListeners.forEach(listener => listener(storeMock));
+    });
+    expect(audioMock.seek).toHaveBeenCalledTimes(1);
   });
 
   it('should not seek when within A-B range', () => {

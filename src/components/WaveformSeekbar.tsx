@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, useMemo, useId, memo } from 'react';
 import { TauriAPI } from '../services/TauriAPI';
 
 interface WaveformSeekbarProps {
@@ -8,82 +8,30 @@ interface WaveformSeekbarProps {
   accentHex: string;
 }
 
-const NUM_BARS = 200;
-
-export const WaveformSeekbar = memo(function WaveformSeekbar({
-  trackPath,
-  trackId,
-  progressPercent,
-  accentHex,
-}: WaveformSeekbarProps) {
-  const [bars, setBars] = useState<number[] | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const lastPathRef = useRef<string | undefined>(undefined);
-
-  // Fetch waveform data when track changes
+export const WaveformSeekbar = memo(function WaveformSeekbar({ trackPath, trackId, progressPercent, accentHex }: WaveformSeekbarProps) {
+  const [waveform, setWaveform] = useState<{ path: string; bars: number[] } | null>(null);
+  const gradientId = useId();
   useEffect(() => {
-    if (!trackId || !trackPath || trackPath === lastPathRef.current) return;
-    lastPathRef.current = trackPath;
+    if (!trackId || !trackPath) return;
     let cancelled = false;
-
-    TauriAPI.getTrackWaveform(trackId, trackPath, NUM_BARS).then((data) => {
-      if (!cancelled) setBars(data);
-    }).catch(() => {
-      if (!cancelled) setBars(null);
-    });
-
-    return () => { cancelled = true; };
+    // Avoid starting a full-file decode while the user is quickly skipping.
+    const timer = setTimeout(() => {
+      TauriAPI.getTrackWaveform(trackId, trackPath, 200).then(bars => {
+        if (!cancelled) setWaveform({ path: trackPath, bars });
+      }).catch(() => { if (!cancelled) setWaveform(null); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [trackId, trackPath]);
-
-  // Clear waveform when no track
-  useEffect(() => {
-    if (!trackPath) {
-      setBars(null);
-      lastPathRef.current = undefined;
-    }
-  }, [trackPath]);
-
-  // Draw canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !bars) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const { width, height } = canvas;
-    ctx.clearRect(0, 0, width, height);
-
-    const barWidth = width / bars.length;
-    const splitX = (progressPercent / 100) * width;
-
-    for (let i = 0; i < bars.length; i++) {
-      const x = i * barWidth;
-      const barH = Math.max(1, bars[i] * height);
-      const y = (height - barH) / 2;
-
-      if (x + barWidth <= splitX) {
-        ctx.fillStyle = accentHex;
-        ctx.globalAlpha = 0.9;
-      } else {
-        ctx.fillStyle = '#94a3b8'; // slate-400
-        ctx.globalAlpha = 0.35;
-      }
-
-      ctx.fillRect(x, y, Math.max(1, barWidth - 0.5), barH);
-    }
-
-    ctx.globalAlpha = 1;
-  }, [bars, progressPercent, accentHex]);
-
+  const bars = waveform && waveform.path === trackPath ? waveform.bars : null;
+  const path = useMemo(() => bars?.map((peak, index) => {
+    const height = Math.max(1, Math.min(1, Math.max(0, peak)) * 24);
+    return `M${index * 3},${(24 - height) / 2}h2v${height}h-2z`;
+  }).join('') ?? '', [bars]);
   if (!bars) return null;
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={NUM_BARS * 3}
-      height={24}
-      className="absolute inset-0 w-full h-full rounded-full pointer-events-none"
-    />
-  );
+  const split = `${Math.max(0, Math.min(100, progressPercent))}%`;
+  // The path stays static; only two gradient stops move on playback ticks.
+  return <svg aria-hidden="true" viewBox={`0 0 ${bars.length * 3} 24`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full pointer-events-none">
+    <defs><linearGradient id={gradientId}><stop offset={split} stopColor={accentHex} /><stop offset={split} stopColor="#94a3b8" stopOpacity="0.45" /></linearGradient></defs>
+    <path d={path} fill={`url(#${gradientId})`} />
+  </svg>;
 });

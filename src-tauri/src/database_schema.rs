@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current database schema version. Increment when adding migrations.
-const SCHEMA_VERSION: i32 = 11;
+const SCHEMA_VERSION: i32 = 12;
 
 impl Database {
     pub fn new(db_path: &Path) -> Result<Self> {
@@ -40,7 +40,8 @@ impl Database {
                 genre TEXT,
                 year INTEGER,
                 track_number INTEGER,
-                disc_number INTEGER
+                disc_number INTEGER,
+                bitrate INTEGER
             )",
             [],
         )?;
@@ -99,7 +100,7 @@ impl Database {
             [],
         )?;
 
-        // Table for failed track paths (to skip on future scans)
+        // Diagnostic history only: failed files must remain eligible for rescanning.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS failed_tracks (
                 path TEXT PRIMARY KEY,
@@ -338,6 +339,25 @@ impl Database {
                 params![crate::time_utils::now_millis()],
             )?;
             info!("Migration v11 complete: album-art cache timestamps added");
+        }
+
+        if current_version < 12 {
+            Self::migrate_add_column(conn, "tracks", "bitrate", "INTEGER", 12)?;
+            conn.execute(
+                "UPDATE tracks SET file_modified = 0 WHERE bitrate IS NULL",
+                [],
+            )?;
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS library_scan_status (
+                path TEXT PRIMARY KEY COLLATE NOCASE,
+                last_attempt INTEGER NOT NULL DEFAULT 0,
+                last_success INTEGER,
+                total INTEGER NOT NULL DEFAULT 0,
+                imported INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                first_error TEXT
+            );",
+            )?;
         }
 
         // Update stored schema version

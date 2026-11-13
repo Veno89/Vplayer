@@ -357,6 +357,19 @@ export const PlaylistWindow = React.memo(function PlaylistWindow() {
     }
   }, [displayCurrentTrack]);
 
+  const reveal = useStore(state => state.trackRevealRequest);
+  useEffect(() => {
+    if (reveal?.target !== 'playlist') return;
+    setSearchQuery('');
+    setSortConfig({ key: null, direction: 'asc' });
+  }, [reveal]);
+  useEffect(() => {
+    if (reveal?.target !== 'playlist' || displayCurrentTrack === null || debouncedSearch || searchQuery || sortConfig.key !== null || !trackListRef.current) return;
+    trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
+    setSelectedIndices(new Set([displayCurrentTrack]));
+    useStore.setState({ trackRevealRequest: null });
+  }, [reveal, displayCurrentTrack, debouncedSearch, searchQuery, sortConfig.key]);
+
   // Handle batch actions from multi-select
   const handleBatchAction = useCallback(async (action: string, selectedTracks: Track[]) => {
     if (!selectedTracks || selectedTracks.length === 0) return;

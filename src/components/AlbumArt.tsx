@@ -7,7 +7,7 @@ import { useStore } from '../store/useStore';
 interface AlbumArtProps {
   trackId?: string;
   trackPath?: string;
-  size?: 'small' | 'medium' | 'large' | 'xlarge';
+  size?: 'small' | 'medium' | 'large' | 'xlarge' | 'player';
   className?: string;
   prefetchedDataUri?: string | null;
   deferAutoFetch?: boolean;
@@ -106,6 +106,7 @@ export function AlbumArt({
     medium: 'w-16 h-16',
     large: 'w-32 h-32',
     xlarge: 'w-48 h-48',
+    player: 'player-album-art',
   };
 
   const sizeClass = sizeClasses[size] || sizeClasses.medium;

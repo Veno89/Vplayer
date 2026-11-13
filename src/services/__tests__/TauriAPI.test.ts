@@ -265,7 +265,7 @@ describe('TauriAPI', () => {
     it('should convert Decode errors to user-friendly messages', async () => {
       vi.mocked(invoke).mockRejectedValueOnce('Decode error: bad codec');
       await expect(TauriAPI.loadTrack('bad', '/bad.mp3', 1)).rejects.toThrow(
-        'Audio file is corrupted or in an unsupported format',
+        'Audio file is corrupted or in an unsupported format. Decode error: bad codec',
       );
     });
 

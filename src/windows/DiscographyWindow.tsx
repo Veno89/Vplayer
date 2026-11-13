@@ -1,3 +1,4 @@
+import { useCatalogTracks } from '../hooks/useCatalogTracks';
 /**
  * DiscographyWindow Component
  * 
@@ -396,7 +397,7 @@ const SettingsPanel = ({ config, setConfig, currentColors }: SettingsPanelProps)
 // Main discography window component
 export function DiscographyWindow() {
   const { library } = usePlayerContext();
-  const tracks = library.tracks;
+  const tracks = useCatalogTracks(library.queryRevision);
   const currentColors = useCurrentColors();
 
   const {

@@ -63,6 +63,16 @@ export const createUISlice = (set: SetFn, get: GetFn): UISlice => ({
   tagEditorTrack: null,
   themeEditorOpen: false,
   isDraggingTracks: false,
+  trackRevealRequest: null,
+
+  revealTrack: (trackId, target) => set(state => ({
+    trackRevealRequest: { trackId, target, revision: (state.trackRevealRequest?.revision ?? 0) + 1 },
+    maxZIndex: state.maxZIndex + 1,
+    windows: {
+      ...state.windows,
+      [target]: { ...state.windows[target], visible: true, minimized: false, zIndex: state.maxZIndex + 1 },
+    },
+  })),
 
   // === Window Actions ===
   setWindows: (windowsOrUpdater: WindowsState | ((prev: WindowsState) => WindowsState)) =>

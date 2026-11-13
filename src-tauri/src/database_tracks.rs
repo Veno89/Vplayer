@@ -6,8 +6,8 @@ use log::info;
 use rusqlite::{OptionalExtension, Result, params};
 
 pub(crate) const TRACK_UPSERT_SQL: &str =
-    "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+    "INSERT INTO tracks (id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, play_count, last_played, rating, file_modified, bitrate)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
      ON CONFLICT(id) DO UPDATE SET
        path = excluded.path,
        name = excluded.name,
@@ -19,7 +19,8 @@ pub(crate) const TRACK_UPSERT_SQL: &str =
        track_number = excluded.track_number,
        disc_number = excluded.disc_number,
        duration = excluded.duration,
-       file_modified = excluded.file_modified";
+       file_modified = excluded.file_modified,
+       bitrate = excluded.bitrate";
 
 pub(crate) fn file_modified_seconds(path: &str) -> i64 {
     std::fs::metadata(path)
@@ -94,6 +95,7 @@ impl Database {
                 track.last_played,
                 track.rating,
                 file_modified_seconds(&track.path),
+                track.bitrate,
             ],
         )?;
         conn.execute("DELETE FROM album_replaygain", [])?;
@@ -330,6 +332,7 @@ impl Database {
                 track.last_played,
                 track.rating,
                 file_modified,
+                track.bitrate,
             ],
         )?;
         conn.execute("DELETE FROM album_replaygain", [])?;
@@ -372,6 +375,7 @@ impl Database {
                         track.last_played,
                         track.rating,
                         file_modified,
+                        track.bitrate,
                     ],
                 )?;
                 count += 1;

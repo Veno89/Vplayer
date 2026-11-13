@@ -37,7 +37,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, error_chain};
 
 /// Acquire a Mutex lock, recovering from poison if a previous holder panicked.
 ///
@@ -354,8 +354,9 @@ impl AudioPlayer {
             .map_err(|e| AppError::NotFound(format!("Failed to open file {}: {}", path, e)))?;
         // `TryFrom<File>` passes the byte length to the demuxer, which enables
         // random-access seeking and more accurate durations.
-        let decoder = Decoder::try_from(file)
-            .map_err(|e| AppError::Decode(format!("Failed to decode audio: {}", e)))?;
+        let decoder = Decoder::try_from(file).map_err(|e| {
+            AppError::Decode(format!("Failed to decode audio: {}", error_chain(&e)))
+        })?;
         let duration = decoder.total_duration().unwrap_or(Duration::ZERO);
         let clock = Arc::new(SourceClock::new());
         let source = EffectsSource::new(

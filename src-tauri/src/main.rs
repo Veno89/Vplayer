@@ -11,6 +11,7 @@ mod database;
 mod database_album_art;
 mod database_failed_tracks;
 mod database_folders;
+mod database_library_browser;
 mod database_library_integrity;
 mod database_playlist;
 mod database_schema;
@@ -46,6 +47,7 @@ use watcher::FolderWatcher;
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PlaybackTick {
+    load_request_id: u64,
     position: f64,
     duration: f64,
     is_playing: bool,
@@ -67,6 +69,7 @@ fn emit_monitor_event(app: &tauri::AppHandle, event: MonitorEvent) {
         MonitorEvent::Tick(snapshot) => app.emit(
             "playback-tick",
             PlaybackTick {
+                load_request_id: snapshot.load_request_id,
                 position: snapshot.position,
                 duration: snapshot.duration,
                 is_playing: snapshot.is_playing,
@@ -134,7 +137,9 @@ use commands::{
     get_database_size,
     get_duration,
     get_filtered_tracks,
+    get_library_facets,
     get_library_integrity,
+    get_library_overview,
     get_most_played,
     get_performance_stats,
     get_playlist_tracks,
@@ -142,6 +147,7 @@ use commands::{
     get_preloaded_path,
     get_recently_played,
     get_runtime_diagnostics,
+    get_selected_library_tracks,
     get_smart_playlist,
     get_track_ids_for_folder,
     get_track_replaygain,
@@ -462,6 +468,9 @@ fn main() {
             get_filtered_tracks,
             get_library_integrity,
             get_tracks_page,
+            get_library_overview,
+            get_library_facets,
+            get_selected_library_tracks,
             get_all_folders,
             remove_folder,
             create_playlist,

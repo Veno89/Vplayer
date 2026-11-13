@@ -13,6 +13,7 @@ type SetFn = (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStor
 
 // ─── Single source of truth for default values ──────────────────────────────
 export const SETTINGS_DEFAULTS: SettingsSliceState = {
+  librarySavedViews: [],
   // Playback Settings
   gaplessPlayback: true,
   autoPlayOnStartup: false,

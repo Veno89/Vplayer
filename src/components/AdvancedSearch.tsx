@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Search, Filter, X, ChevronDown, Star } from 'lucide-react';
 
 export interface AdvancedSearchFilters {
@@ -31,7 +31,7 @@ export function AdvancedSearch({
   showAdvanced = false, 
   onToggleAdvanced 
 }: AdvancedSearchProps) {
-  const [localFilters, setLocalFilters] = useState<AdvancedSearchFilters>({
+  const localFilters: AdvancedSearchFilters = {
     query: filters.query || '',
     genre: filters.genre || '',
     artist: filters.artist || '',
@@ -46,11 +46,10 @@ export function AdvancedSearch({
     format: filters.format || '',
     bitrateMin: filters.bitrateMin || '',
     ...filters
-  });
+  };
 
   const handleChange = (field: keyof AdvancedSearchFilters, value: string | number) => {
     const newFilters = { ...localFilters, [field]: value } as AdvancedSearchFilters;
-    setLocalFilters(newFilters);
     if (onFiltersChange) {
       onFiltersChange(newFilters);
     }
@@ -72,7 +71,6 @@ export function AdvancedSearch({
       format: '',
       bitrateMin: ''
     };
-    setLocalFilters(emptyFilters);
     if (onFiltersChange) {
       onFiltersChange(emptyFilters);
     }
@@ -93,7 +91,7 @@ export function AdvancedSearch({
     localFilters.bitrateMin;
 
   return (
-    <div className="space-y-3">
+    <div className="relative space-y-3 shrink-0">
       {/* Basic Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -102,11 +100,13 @@ export function AdvancedSearch({
           value={localFilters.query}
           onChange={(e) => handleChange('query', e.target.value)}
           onMouseDown={(e) => e.stopPropagation()}
+          aria-label="Search library"
           placeholder="Search by title, artist, or album..."
           className="w-full pl-10 pr-10 py-2 bg-slate-800 text-white text-sm rounded-sm border border-slate-700 focus:border-blue-500 focus:outline-hidden"
         />
         {localFilters.query && (
           <button
+            aria-label="Clear library search"
             onClick={() => handleChange('query', '')}
             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white"
           >
@@ -138,12 +138,13 @@ export function AdvancedSearch({
 
       {/* Advanced Filters */}
       {showAdvanced && (
-        <div className="grid grid-cols-2 gap-3 p-3 bg-slate-800/50 rounded-sm border border-slate-700">
+        <div role="region" aria-label="Advanced library filters" className="absolute top-full left-0 right-0 z-30 mt-2 max-h-[55vh] overflow-y-auto grid grid-cols-2 gap-3 p-3 bg-slate-900 rounded-sm border border-slate-600 shadow-xl">
           {/* Genre */}
           <div className="col-span-2">
-            <label className="text-xs text-slate-400 mb-1 block">Genre</label>
+            <label className="text-xs text-slate-300 mb-1 block">Genre</label>
             <input
               type="text"
+              aria-label="Genre"
               value={localFilters.genre}
               onChange={(e) => handleChange('genre', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -154,9 +155,10 @@ export function AdvancedSearch({
 
           {/* Artist */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Artist</label>
+            <label className="text-xs text-slate-300 mb-1 block">Artist</label>
             <input
               type="text"
+              aria-label="Artist"
               value={localFilters.artist}
               onChange={(e) => handleChange('artist', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -167,9 +169,10 @@ export function AdvancedSearch({
 
           {/* Album */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Album</label>
+            <label className="text-xs text-slate-300 mb-1 block">Album</label>
             <input
               type="text"
+              aria-label="Album"
               value={localFilters.album}
               onChange={(e) => handleChange('album', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -180,9 +183,10 @@ export function AdvancedSearch({
 
           {/* Year Range */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Year From</label>
+            <label className="text-xs text-slate-300 mb-1 block">Year From</label>
             <input
               type="number"
+              aria-label="Year from"
               value={localFilters.yearFrom}
               onChange={(e) => handleChange('yearFrom', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -193,9 +197,10 @@ export function AdvancedSearch({
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Year To</label>
+            <label className="text-xs text-slate-300 mb-1 block">Year To</label>
             <input
               type="number"
+              aria-label="Year to"
               value={localFilters.yearTo}
               onChange={(e) => handleChange('yearTo', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -208,13 +213,14 @@ export function AdvancedSearch({
 
           {/* Minimum Rating */}
           <div className="col-span-2">
-            <label className="text-xs text-slate-400 mb-1 block">Minimum Rating</label>
+            <label className="text-xs text-slate-300 mb-1 block">Minimum Rating</label>
             <div className="flex items-center gap-2">
               <input
                 type="range"
                 min="0"
                 max="5"
-                value={localFilters.minRating}
+                aria-label="Minimum rating"
+              value={localFilters.minRating}
                 onChange={(e) => handleChange('minRating', parseInt(e.target.value))}
                 onMouseDown={(e) => e.stopPropagation()}
                 className="flex-1 h-1 accent-yellow-500"
@@ -228,9 +234,10 @@ export function AdvancedSearch({
 
           {/* Duration Range (in minutes) */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Min Duration (min)</label>
+            <label className="text-xs text-slate-300 mb-1 block">Min Duration (min)</label>
             <input
               type="number"
+              aria-label="Minimum duration"
               value={localFilters.durationFrom}
               onChange={(e) => handleChange('durationFrom', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -241,9 +248,10 @@ export function AdvancedSearch({
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Max Duration (min)</label>
+            <label className="text-xs text-slate-300 mb-1 block">Max Duration (min)</label>
             <input
               type="number"
+              aria-label="Maximum duration"
               value={localFilters.durationTo}
               onChange={(e) => handleChange('durationTo', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -256,9 +264,10 @@ export function AdvancedSearch({
 
           {/* Play Count Range */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Min Play Count</label>
+            <label className="text-xs text-slate-300 mb-1 block">Min Play Count</label>
             <input
               type="number"
+              aria-label="Minimum play count"
               value={localFilters.playCountMin}
               onChange={(e) => handleChange('playCountMin', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -268,9 +277,10 @@ export function AdvancedSearch({
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Max Play Count</label>
+            <label className="text-xs text-slate-300 mb-1 block">Max Play Count</label>
             <input
               type="number"
+              aria-label="Maximum play count"
               value={localFilters.playCountMax}
               onChange={(e) => handleChange('playCountMax', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -282,8 +292,9 @@ export function AdvancedSearch({
 
           {/* Audio Format */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Format</label>
+            <label className="text-xs text-slate-300 mb-1 block">Format</label>
             <select
+              aria-label="Format"
               value={localFilters.format}
               onChange={(e) => handleChange('format', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -301,9 +312,11 @@ export function AdvancedSearch({
 
           {/* Minimum Bitrate */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Min Bitrate (kbps)</label>
+            <label className="text-xs text-slate-300 mb-1 block">Min Bitrate (kbps)</label>
             <input
               type="number"
+              title="Bitrate metadata is collected when folders are rescanned"
+              aria-label="Minimum bitrate"
               value={localFilters.bitrateMin}
               onChange={(e) => handleChange('bitrateMin', e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}

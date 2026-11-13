@@ -1,270 +1,144 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { TauriAPI } from '../../services/TauriAPI';
-import { log } from '../../utils/logger';
-import { useErrorHandler } from '../../services/ErrorHandler';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { TauriAPI, type LibraryOverview } from '../../services/TauriAPI';
 import { useToast } from '../useToast';
 import { devCounters } from '../../utils/devCounters';
 import type { Track, TrackFilter } from '../../types';
 
-interface LibraryFolder {
-  id: string;
-  path: string;
-  name: string;
-  dateAdded: number;
-}
-
-interface AddFolderResult {
-  path: string;
-  newFolder: LibraryFolder;
-}
-
+export const LIBRARY_PAGE_SIZE = 200;
+export const LIBRARY_MAX_CACHED_PAGES = 6;
+interface LibraryFolder { id: string; path: string; name: string; dateAdded: number; }
+interface AddFolderResult { path: string; newFolder: LibraryFolder; }
 export interface LibraryDataAPI {
   tracks: Track[];
-  setTracks: React.Dispatch<React.SetStateAction<Track[]>>;
+  rows: Track[];
+  totalMatches: number;
+  overview: LibraryOverview | null;
+  isLoading: boolean;
+  loadError: string | null;
+  queryRevision: number;
   libraryFolders: LibraryFolder[];
-  setLibraryFolders: React.Dispatch<React.SetStateAction<LibraryFolder[]>>;
   loadTracks: () => Promise<void>;
   refreshTracks: () => Promise<void>;
   loadAllTracks: () => Promise<void>;
   loadAllFolders: () => Promise<void>;
+  loadRange: (start: number, stop: number) => void;
   addFolder: (selectedPath?: string) => Promise<AddFolderResult | null>;
   removeFolder: (folderId: string, folderPath: string) => Promise<void>;
   removeTrack: (trackId: string) => Promise<void>;
 }
 
-/**
- * Hook to manage raw library data (tracks and folders)
- * Handles CRUD operations and database interactions
- */
+/** A bounded catalogue window. SQLite supplies totals; unloaded rows are placeholders. */
 export function useLibraryData(filterParams: TrackFilter | null = null): LibraryDataAPI {
-    const toast = useToast();
-    const errorHandler = useErrorHandler(toast);
+  const { showError } = useToast();
+  const [pages, setPages] = useState<Map<number, Track[]>>(new Map());
+  const [totalMatches, setTotalMatches] = useState(0);
+  const [overview, setOverview] = useState<LibraryOverview | null>(null);
+  const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [queryRevision, setQueryRevision] = useState(0);
+  const generation = useRef(0);
+  const pageCache = useRef(new Map<number, Track[]>());
+  const inFlight = useRef(new Map<number, Promise<void>>());
+  const key = JSON.stringify(filterParams || {});
+  const params = useMemo<TrackFilter>(() => JSON.parse(key), [key]);
 
-    const [tracks, setTracks] = useState<Track[]>([]);
-    const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([]);
-    const pageCacheRef = useRef<Map<string, Track[]>>(new Map());
-    const totalCacheRef = useRef<Map<string, number>>(new Map());
-    const loadRequestIdRef = useRef<number>(0);
+  const requestPage = useCallback(async (offset: number, version: number) => {
+    if (version !== generation.current) return;
+    const cached = pageCache.current.get(offset);
+    if (cached) {
+      pageCache.current.delete(offset);
+      pageCache.current.set(offset, cached);
+      return;
+    }
+    const existing = inFlight.current.get(offset);
+    if (existing) return existing;
+    const request = (async () => {
+      const started = performance.now();
+      const page = await TauriAPI.getTracksPage(offset, LIBRARY_PAGE_SIZE, params);
+      if (version !== generation.current) {
+        devCounters.incLibrary('staleSearchResultsIgnored');
+        return;
+      }
+      if (!page || !Array.isArray(page.tracks)) throw new Error('Invalid library page response');
+      const cache = pageCache.current;
+      cache.set(offset, page.tracks);
+      while (cache.size > LIBRARY_MAX_CACHED_PAGES) cache.delete(cache.keys().next().value!);
+      setPages(new Map(cache));
+      setTotalMatches(page.total);
+      devCounters.setLibraryValue('lastTrackQueryDurationMs', performance.now() - started);
+    })();
+    inFlight.current.set(offset, request);
+    try { await request; }
+    finally { if (version === generation.current) inFlight.current.delete(offset); }
+  }, [params]);
 
-    const getFilterKey = useCallback((params: TrackFilter | null): string => {
-        return JSON.stringify(params || {});
-    }, []);
+  const loadTracks = useCallback(async () => {
+    const version = ++generation.current;
+    pageCache.current = new Map();
+    inFlight.current = new Map();
+    setPages(new Map());
+    setTotalMatches(0);
+    setQueryRevision(version);
+    setLoadError(null);
+    setIsLoading(true);
+    devCounters.incLibrary('loadTracksCount');
+    try {
+      await Promise.all([
+        requestPage(0, version),
+        TauriAPI.getLibraryOverview(params).then(value => { if (version === generation.current) setOverview(value); }),
+      ]);
+    } catch (error) {
+      if (version === generation.current) setLoadError(error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally { if (version === generation.current) setIsLoading(false); }
+  }, [params, requestPage]);
 
-    const getPageKey = useCallback((filterKey: string, offset: number, limit: number): string => {
-        return `${filterKey}::${offset}::${limit}`;
-    }, []);
+  const loadRange = useCallback((start: number, stop: number) => {
+    const version = generation.current;
+    const first = Math.floor(start / LIBRARY_PAGE_SIZE) * LIBRARY_PAGE_SIZE;
+    const last = Math.min(totalMatches - 1, stop + 30);
+    for (let offset = first; offset <= last; offset += LIBRARY_PAGE_SIZE) {
+      void requestPage(offset, version).catch(error => {
+        if (version === generation.current) setLoadError(String(error));
+      });
+    }
+  }, [requestPage, totalMatches]);
 
-    const clearPageCache = useCallback(() => {
-        pageCacheRef.current.clear();
-        totalCacheRef.current.clear();
-    }, []);
+  const loadAllFolders = useCallback(async () => {
+    devCounters.incLibrary('loadAllFoldersCount');
+    const folders = await TauriAPI.getAllFolders();
+    setLibraryFolders(folders.map(([id, path, name, dateAdded]) => ({ id, path, name, dateAdded })));
+  }, []);
 
-    const normalizeTracks = useCallback((value: unknown): Track[] => {
-        return Array.isArray(value) ? (value as Track[]) : [];
-    }, []);
+  useEffect(() => { void loadTracks().catch(() => {}); }, [loadTracks]);
+  useEffect(() => { void loadAllFolders().catch(error => showError(String(error))); }, [loadAllFolders, showError]);
+  useEffect(() => () => { generation.current++; }, []);
 
-    const loadTracks = useCallback(async () => {
-        const requestId = ++loadRequestIdRef.current;
-        const startTime = Date.now();
-        devCounters.incLibrary('loadTracksCount');
-        try {
-            // Transitional M3 step: fetch in pages to avoid one monolithic IPC payload
-            // while keeping existing behavior (full filtered result in memory).
-            const params = (filterParams || {}) as TrackFilter;
-            const filterKey = getFilterKey(params);
-            const pageSize = 1000;
-            let offset = 0;
-            let total = totalCacheRef.current.get(filterKey) ?? Number.POSITIVE_INFINITY;
-            const allTracks: Track[] = [];
-            let firstPageRendered = false;
+  const rows = useMemo(() => {
+    const result = new Array<Track>(totalMatches);
+    for (const [offset, page] of pages) page.forEach((track, index) => { if (offset + index < totalMatches) result[offset + index] = track; });
+    return result;
+  }, [pages, totalMatches]);
+  const tracks = useMemo(() => rows.filter(Boolean), [rows]);
 
-            // Intentionally NOT clearing tracks here `setTracks([])` to act as stale-while-revalidate
-            // and prevent UI flicker while typing in the search box.
+  const addFolder = useCallback(async (selectedPath?: string): Promise<AddFolderResult | null> => {
+    const path = selectedPath ?? await TauriAPI.selectFolder();
+    if (!path) return null;
+    const existing = libraryFolders.find(folder => folder.path.toLowerCase() === path.toLowerCase());
+    return { path, newFolder: existing ?? { id: '', path, name: path.split(/[\\/]/).pop() || path, dateAdded: Date.now() } };
+  }, [libraryFolders]);
 
-            while (offset < total) {
-                if (loadRequestIdRef.current !== requestId) {
-                    devCounters.incLibrary('staleSearchResultsIgnored');
-                    return; // Abort if superseded
-                }
-                const pageKey = getPageKey(filterKey, offset, pageSize);
-                let pageTracks = pageCacheRef.current.get(pageKey);
+  const removeFolder = useCallback(async (id: string, path: string) => {
+    await TauriAPI.stopFolderWatch(path);
+    await TauriAPI.removeFolder(id, path);
+    await Promise.all([loadTracks(), loadAllFolders()]);
+  }, [loadTracks, loadAllFolders]);
+  const removeTrack = useCallback(async (id: string) => {
+    await TauriAPI.removeTrack(id);
+    await loadTracks();
+  }, [loadTracks]);
 
-                if (!pageTracks) {
-                    const page = await TauriAPI.getTracksPage(offset, pageSize, params);
-                    if (!page || !Array.isArray(page.tracks)) {
-                        // Compatibility fallback during M3 transition: tests/mocks and
-                        // older backends may not provide paged response shape.
-                        log.warn('Paged track response invalid, falling back to non-paged track query');
-                        const fallbackRaw = Object.keys(params).length > 0
-                            ? await TauriAPI.getFilteredTracks(params)
-                            : await TauriAPI.getAllTracks();
-                        const fallbackTracks = normalizeTracks(fallbackRaw);
-                        setTracks(fallbackTracks);
-                        totalCacheRef.current.set(filterKey, fallbackTracks.length);
-                        return;
-                    }
-
-                    if (loadRequestIdRef.current !== requestId) {
-                        devCounters.incLibrary('staleSearchResultsIgnored');
-                        return;
-                    }
-                    pageTracks = page.tracks;
-                    pageCacheRef.current.set(pageKey, pageTracks);
-                    const pageTotal = typeof page.total === 'number' && page.total >= 0
-                        ? page.total
-                        : offset + pageTracks.length;
-                    totalCacheRef.current.set(filterKey, pageTotal);
-                    total = pageTotal;
-
-                    // Keep cache bounded for long sessions.
-                    if (pageCacheRef.current.size > 200) {
-                        clearPageCache();
-                    }
-                }
-
-                allTracks.push(...pageTracks);
-                if (!firstPageRendered) {
-                    if (loadRequestIdRef.current !== requestId) {
-                        devCounters.incLibrary('staleSearchResultsIgnored');
-                        return;
-                    }
-                    setTracks([...allTracks]);
-                    firstPageRendered = true;
-                }
-                offset += pageTracks.length;
-
-                // Safety break for inconsistent backend responses.
-                if (pageTracks.length === 0) break;
-            }
-
-            if (loadRequestIdRef.current !== requestId) {
-                devCounters.incLibrary('staleSearchResultsIgnored');
-                return;
-            }
-            setTracks(allTracks);
-            const duration = Date.now() - startTime;
-            devCounters.setLibraryValue('lastSearchDurationMs', duration);
-            devCounters.setLibraryValue('lastTrackQueryDurationMs', duration);
-        } catch (err) {
-            errorHandler.handle(err, 'Library - Load Tracks');
-        }
-    }, [clearPageCache, errorHandler, filterParams, getFilterKey, getPageKey, normalizeTracks]);
-
-    const loadAllFolders = useCallback(async () => {
-        devCounters.incLibrary('loadAllFoldersCount');
-        try {
-            const dbFolders = await TauriAPI.getAllFolders();
-            // Transform from database format: (id, path, name, dateAdded)
-            const folders = dbFolders.map(([id, path, name, dateAdded]: [string, string, string, number]) => ({
-                id,
-                path,
-                name,
-                dateAdded
-            }));
-            setLibraryFolders(folders);
-        } catch (err) {
-            errorHandler.handle(err, 'Library - Load Folders');
-        }
-    }, [errorHandler]);
-
-    const refreshTracks = useCallback(async () => {
-        clearPageCache();
-        await loadTracks();
-    }, [clearPageCache, loadTracks]);
-
-    // Load tracks whenever filterParams change
-    useEffect(() => {
-        loadTracks();
-    }, [loadTracks]); // loadTracks depends on filterParams
-
-    // Load folders separately so search keystrokes do not trigger redundant DB queries
-    useEffect(() => {
-        loadAllFolders();
-    }, [loadAllFolders]);
-
-    const addFolder = useCallback(async (selectedPath?: string): Promise<AddFolderResult | null> => {
-        try {
-            const selected = selectedPath ?? await TauriAPI.selectFolder();
-
-            if (!selected) return null;
-
-            // Check if folder already exists
-            const exists = libraryFolders.some(f => f.path === selected);
-            if (exists) {
-                toast.showInfo('Folder already in library');
-                return {
-                    path: selected,
-                    newFolder: libraryFolders.find(folder => folder.path === selected)!,
-                };
-            }
-
-            // We return the selected path so the scanner can start scanning immediately
-            // The actual DB add happens after scan in the original logic, but here we likely want
-            // to add it to state first or return it to the caller (useLibraryScanner)
-
-            const folderName = selected.split(/[\\/]/).pop() ?? '';
-            const newFolder: LibraryFolder = {
-                id: `folder_${crypto.randomUUID()}`,
-                name: folderName,
-                path: selected,
-                dateAdded: Date.now(),
-            };
-
-            // Add to state immediately for responsiveness
-            setLibraryFolders(prev => [...prev, newFolder]);
-            clearPageCache();
-
-            // Return details for the scanner to use
-            return { path: selected, newFolder };
-        } catch (err) {
-            console.error('Failed to add folder:', err);
-            throw err;
-        }
-    }, [clearPageCache, libraryFolders, toast]);
-
-    const removeFolder = useCallback(async (folderId: string, folderPath: string) => {
-        try {
-            // Stop watching this folder
-            try {
-                await TauriAPI.stopFolderWatch(folderPath);
-                log.info(`Stopped watching folder: ${folderPath}`);
-            } catch (err) {
-                console.error('Failed to stop folder watch:', err);
-            }
-
-            await TauriAPI.removeFolder(folderId, folderPath);
-            clearPageCache();
-            setLibraryFolders(prev => prev.filter(f => f.id !== folderId));
-            await loadTracks(); // Reload remaining tracks (filtered)
-            await loadAllFolders(); // Reload folders to stay in sync
-        } catch (err) {
-            console.error('Failed to remove folder:', err);
-            throw err;
-        }
-    }, [clearPageCache, loadTracks, loadAllFolders]);
-
-    const removeTrack = useCallback(async (trackId: string) => {
-        try {
-            await TauriAPI.removeTrack(trackId);
-            clearPageCache();
-            setTracks(prev => prev.filter(t => t.id !== trackId));
-        } catch (err) {
-            console.error('Failed to remove track:', err);
-            throw err;
-        }
-    }, [clearPageCache]);
-
-    return {
-        tracks,
-        setTracks, // Exposed for scanner updates
-        libraryFolders,
-        setLibraryFolders, // Exposed for updates
-        loadTracks,
-        refreshTracks,
-        loadAllTracks: refreshTracks, // Mutations/scans must bypass cached pages.
-        loadAllFolders,
-        addFolder,
-        removeFolder,
-        removeTrack
-    };
+  return { tracks, rows, totalMatches, overview, isLoading, loadError, queryRevision, libraryFolders,
+    loadTracks, refreshTracks: loadTracks, loadAllTracks: loadTracks, loadAllFolders, loadRange, addFolder, removeFolder, removeTrack };
 }

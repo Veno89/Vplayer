@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Music, FolderOpen, Search, Image, RefreshCw, FileAudio, Eye, Plus, Trash2, Loader } from 'lucide-react';
 import { TauriAPI } from '../../services/TauriAPI';
-import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../store/useStore';
 import { nativeConfirm, nativeError } from '../../utils/nativeDialog';
 import { usePlayerContext } from '../../context/PlayerProvider';
@@ -68,18 +67,12 @@ export function LibraryTab() {
 
   const handleAddFolder = async () => {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: 'Select Music Folder'
-      });
-      if (selected) {
-        setScanning(true);
-        await TauriAPI.scanFolder(selected);
-        await loadLibraryInfo();
-      }
+      setScanning(true);
+      await library.addFolder();
+      await loadLibraryInfo();
     } catch (err) {
       console.error('Failed to add folder:', err);
+      toast.showError(`Failed to add folder: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setScanning(false);
     }
@@ -112,16 +105,11 @@ export function LibraryTab() {
   const handleRescan = async () => {
     try {
       setScanning(true);
-      // Rescan each folder
-      for (const folder of libraryFolders) {
-        const path = typeof folder === 'object' ? folder.path : folder;
-        await TauriAPI.scanFolder(path).catch(err => {
-          console.warn(`Failed to scan ${path}:`, err);
-        });
-      }
+      await library.refreshFolders();
       await loadLibraryInfo();
     } catch (err) {
       console.error('Failed to rescan:', err);
+      toast.showError(`Library scan failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setScanning(false);
     }

@@ -3,7 +3,7 @@ import { useDebounce } from '../useDebounce';
 import { SEARCH_DEBOUNCE_MS } from '../../utils/constants';
 import type { TrackFilter } from '../../types';
 
-interface AdvancedFilters {
+export interface AdvancedFilters {
   genre: string;
   artist: string;
   album: string;
@@ -18,6 +18,11 @@ interface AdvancedFilters {
   bitrateMin: string;
   folderId: string;
 }
+
+export const EMPTY_LIBRARY_FILTERS: AdvancedFilters = {
+  genre: '', artist: '', album: '', yearFrom: '', yearTo: '', minRating: 0,
+  durationFrom: '', durationTo: '', playCountMin: '', playCountMax: '', format: '', bitrateMin: '', folderId: '',
+};
 
 export interface LibraryFiltersAPI {
   searchQuery: string;
@@ -41,22 +46,7 @@ export function useLibraryFilters(): LibraryFiltersAPI {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('album'); // Default to album sorting (artist + album)
     const [sortOrder, setSortOrder] = useState('asc');
-    const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
-        genre: '',
-        artist: '',
-        album: '',
-        yearFrom: '',
-        yearTo: '',
-        minRating: 0,
-        durationFrom: '',
-        durationTo: '',
-        playCountMin: '',
-        playCountMax: '',
-        format: '',
-        bitrateMin: '',
-        folderId: '' // Filter by specific folder
-    });
-
+    const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>(EMPTY_LIBRARY_FILTERS);
     // Debounce search query to reduce filtering operations
     const debouncedSearchQuery = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
 
@@ -72,11 +62,16 @@ export function useLibraryFilters(): LibraryFiltersAPI {
 
         if (advancedFilters.minRating > 0) filter.minRating = advancedFilters.minRating;
 
-        if (advancedFilters.playCountMin) filter.playCountMin = parseInt(advancedFilters.playCountMin);
-        if (advancedFilters.playCountMax) filter.playCountMax = parseInt(advancedFilters.playCountMax);
+        if (advancedFilters.playCountMin && Number.isFinite(Number(advancedFilters.playCountMin))) filter.playCountMin = parseInt(advancedFilters.playCountMin);
+        if (advancedFilters.playCountMax && Number.isFinite(Number(advancedFilters.playCountMax))) filter.playCountMax = parseInt(advancedFilters.playCountMax);
 
-        if (advancedFilters.durationFrom) filter.durationFrom = parseFloat(advancedFilters.durationFrom) * 60;
-        if (advancedFilters.durationTo) filter.durationTo = parseFloat(advancedFilters.durationTo) * 60;
+        if (advancedFilters.durationFrom && Number.isFinite(Number(advancedFilters.durationFrom))) filter.durationFrom = parseFloat(advancedFilters.durationFrom) * 60;
+        if (advancedFilters.durationTo && Number.isFinite(Number(advancedFilters.durationTo))) filter.durationTo = parseFloat(advancedFilters.durationTo) * 60;
+
+        if (advancedFilters.yearFrom && Number.isFinite(Number(advancedFilters.yearFrom))) filter.yearFrom = Number(advancedFilters.yearFrom);
+        if (advancedFilters.yearTo && Number.isFinite(Number(advancedFilters.yearTo))) filter.yearTo = Number(advancedFilters.yearTo);
+        if (advancedFilters.format) filter.format = advancedFilters.format;
+        if (advancedFilters.bitrateMin && Number.isFinite(Number(advancedFilters.bitrateMin))) filter.bitrateMin = Number(advancedFilters.bitrateMin);
 
         // Folder logic: Pass ID to backend for subquery resolution
         if (advancedFilters.folderId) {

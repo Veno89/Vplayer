@@ -10,6 +10,7 @@ vi.mock('../../../services/TauriAPI', () => ({
     getFilteredTracks: vi.fn().mockResolvedValue([]),
     getAllTracks: vi.fn().mockResolvedValue([]),
     getAllFolders: vi.fn(),
+    getLibraryOverview: vi.fn().mockResolvedValue({ totalTracks: 5000, matchingTracks: 1, folders: [] }),
     scanFolder: vi.fn(),
   },
 }));
@@ -19,6 +20,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 describe('useLibraryData', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(TauriAPI.getTracksPage).mockReset().mockResolvedValue({ tracks: [], total: 0, offset: 0, limit: 200, hasMore: false });
     vi.mocked(TauriAPI.getAllFolders).mockResolvedValue([]);
   });
 
@@ -107,5 +109,31 @@ describe('useLibraryData', () => {
 
     expect(TauriAPI.getTracksPage).toHaveBeenCalledTimes(2);
     expect(result.current.tracks[0]?.id).toBe('fresh');
+  });
+});
+
+
+describe('bounded library browsing', () => {
+  it('loads only the first page initially and evicts metadata outside the cache budget', async () => {
+    vi.mocked(TauriAPI.getAllFolders).mockResolvedValue([]);
+    vi.mocked(TauriAPI.getTracksPage).mockImplementation(async (offset, limit) => ({
+      tracks: Array.from({ length: limit }, (_, i) => ({ id: String(offset + i), path: '/music/' + (offset + i) + '.mp3', name: 'Song', duration: 60 })),
+      total: 10000, offset, limit, hasMore: true,
+    }));
+    vi.mocked(TauriAPI.getTracksPage).mockClear();
+    const { result } = renderHook(() => useLibraryData({ sortBy: 'title' }));
+    await act(async () => { await sleep(10); });
+    expect(TauriAPI.getTracksPage).toHaveBeenCalledTimes(1);
+    expect(result.current.rows.length).toBe(10000);
+    expect(result.current.tracks.length).toBe(200);
+    expect(result.current.overview?.totalTracks).toBe(5000);
+    for (let page = 1; page <= 8; page++) {
+      await act(async () => { result.current.loadRange(page * 200, page * 200 + 10); await sleep(10); });
+    }
+    expect(result.current.tracks.length).toBeLessThanOrEqual(1200);
+    expect(result.current.rows[0]).toBeUndefined();
+    expect(result.current.rows[1600]?.id).toBe('1600');
+    await act(async () => { result.current.loadRange(0, 10); await sleep(10); });
+    expect(result.current.rows[0]?.id).toBe('0');
   });
 });

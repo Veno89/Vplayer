@@ -63,7 +63,7 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   // ── Set initial volume on mount ───────────────────────────────────
   // Uses the store volume if already set, otherwise falls back to defaultVolume setting
   useEffect(() => {
-    const initialVolume = volume > 0 ? volume : (useStore.getState().defaultVolume / 100);
+    const initialVolume = Number.isFinite(volume) ? volume : (useStore.getState().defaultVolume / 100);
     audio.changeVolume(initialVolume).catch(err =>
       console.error('Failed to set initial volume:', err),
     );
@@ -85,16 +85,18 @@ export function usePlaybackEffects({ audio, toast, tracks }: PlaybackEffectsPara
   // A-B repeat check — runs on every store update to catch progress changes (~10Hz)
   useEffect(() => {
     let prevProgress = useStore.getState().progress;
+    let seeking = false;
     const unsub = useStore.subscribe((state) => {
       if (state.progress === prevProgress) return;
       prevProgress = state.progress;
 
       const ab = abRepeatRef.current;
-      if (ab?.enabled && ab?.pointA !== null && ab?.pointB !== null) {
+      if (!seeking && state.playing && ab?.enabled && ab?.pointA !== null && ab?.pointB !== null && ab.pointB > ab.pointA) {
         if (state.progress >= ab.pointB) {
+          seeking = true;
           audio.seek(ab.pointA).catch(err => {
             console.error('Failed to seek for A-B repeat:', err);
-          });
+          }).finally(() => { seeking = false; });
         }
       }
     });

@@ -218,7 +218,7 @@ fn migration_v0_to_latest_adds_all_columns() {
     }
     assert!(table_exists(&path, "track_album_art"));
     assert!(table_exists(&path, "album_replaygain"));
-    assert_eq!(get_schema_version(&path), 11);
+    assert_eq!(get_schema_version(&path), 12);
     assert!(
         get_table_columns(&path, "track_album_art")
             .iter()
@@ -250,7 +250,7 @@ fn migration_v3_to_latest_adds_remaining_columns() {
     }
     assert!(table_exists(&path, "track_album_art"));
     assert!(table_exists(&path, "album_replaygain"));
-    assert_eq!(get_schema_version(&path), 11);
+    assert_eq!(get_schema_version(&path), 12);
     cleanup_db_files(&path);
 }
 
@@ -270,7 +270,7 @@ fn migration_v6_to_latest_creates_new_tables() {
         table_exists(&path, "album_replaygain"),
         "v8 table should be created"
     );
-    assert_eq!(get_schema_version(&path), 11);
+    assert_eq!(get_schema_version(&path), 12);
     cleanup_db_files(&path);
 }
 
@@ -326,7 +326,7 @@ fn migration_is_idempotent() {
     let db = Database::new(&path).expect("second boot");
     drop(db);
 
-    assert_eq!(get_schema_version(&path), 11);
+    assert_eq!(get_schema_version(&path), 12);
 
     // Verify all tables are intact
     assert!(table_exists(&path, "tracks"));
@@ -344,7 +344,7 @@ fn fresh_database_starts_at_latest_version() {
     let db = Database::new(&path).expect("fresh db");
     drop(db);
 
-    assert_eq!(get_schema_version(&path), 11);
+    assert_eq!(get_schema_version(&path), 12);
 
     let cols = get_track_columns(&path);
     assert!(

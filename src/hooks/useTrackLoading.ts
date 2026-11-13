@@ -1,24 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
-import { ERROR_MESSAGES, DEFAULT_PREFERENCES } from '../utils/constants';
-import { TauriAPI } from '../services/TauriAPI';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useReplayGain } from './useReplayGain';
 import { useStore } from '../store/useStore';
 import { devCounters } from '../utils/devCounters';
-import { confirm as nativeConfirm } from '@tauri-apps/plugin-dialog';
 import type { Track, AudioService, ToastService } from '../types';
 
-/**
- * Stop skipping after this many tracks in a row fail to load (e.g. the music
- * drive is unplugged), instead of cycling through the whole playlist.
- */
 export const MAX_CONSECUTIVE_LOAD_FAILURES = 5;
 
-function describeLoadFailure(err: unknown): string {
+export function describeLoadFailure(err: unknown): string {
   const message = String((err as Error)?.message ?? err);
-  if (/not found|no such file|cannot find|failed to open/i.test(message)) return 'file not found or not readable';
-  if (/decode error|corrupted|unsupported format/i.test(message)) return 'unsupported or damaged file';
-  if (/permission denied/i.test(message)) return 'no permission to read the file';
-  return 'it could not be loaded';
+  if (/audio (system|device)|no audio device/i.test(message)) return 'Audio output unavailable. Reconnect your headphones or speakers, then retry.';
+  if (/not found|no such file|cannot find|failed to open|\bio error\b/i.test(message)) return 'Music file not found or not readable. Reconnect the music drive or check the file location, then retry.';
+  if (/decode error|corrupted|unsupported format/i.test(message)) return 'Unsupported or damaged file.';
+  if (/permission denied/i.test(message)) return 'No permission to read the file.';
+  if (/timed out/i.test(message)) return 'Opening the track timed out. Check the music drive, then retry.';
+  return 'The track could not be loaded. Try again or choose another track.';
 }
 
 export interface TrackLoadingParams {
@@ -36,252 +31,126 @@ export interface TrackLoadingParams {
 
 export interface TrackLoadingReturn {
   loadedTrackId: string | null;
+  trackLoadError: string | null;
+  retryCurrentTrack: () => void;
   hasRestoredTrack: boolean;
   setHasRestoredTrack: (v: boolean) => void;
 }
 
-export function useTrackLoading({
-  audio,
-  tracks,
-  currentTrack,
-  playing,
-  setLoadingTrackIndex,
-  progress,
-  toast,
-  removeTrack,
-  setCurrentTrack,
-  handleNextTrack
-}: TrackLoadingParams): TrackLoadingReturn {
+export function useTrackLoading(params: TrackLoadingParams): TrackLoadingReturn {
+  const { tracks, currentTrack } = params;
+  const selectedId = useStore(s => s.currentTrackId) ?? tracks[currentTrack ?? -1]?.id ?? null;
   const [loadedTrackId, setLoadedTrackId] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ id: string; message: string } | null>(null);
+  const [retryRevision, setRetryRevision] = useState(0);
   const [hasRestoredTrack, setHasRestoredTrack] = useState(false);
-  const lastToastTrackId = useRef<string | null>(null);
+  const loadedRef = useRef<string | null>(null);
   const shouldRestorePosition = useRef(true);
-  const consecutiveFailuresRef = useRef(0);
-
-  // ReplayGain hook for volume normalization
+  const retryIntent = useRef<{ id: string; position: number } | null>(null);
+  const consecutiveFailures = useRef(0);
   const replayGain = useReplayGain();
+  const latest = useRef({ ...params, replayGain });
+  latest.current = { ...params, replayGain };
 
-  // Note: Startup restore logic is handled by useStartupRestore hook.
-  // hasRestoredTrack / setHasRestoredTrack are still exposed here so that
-  // the restore hook can coordinate with track loading state.
+  const retryCurrentTrack = useCallback(() => {
+    const state = useStore.getState();
+    const track = state.activePlaybackTracks[state.currentTrack ?? -1];
+    if (!track) return;
+    retryIntent.current = { id: track.id, position: state.progress };
+    loadedRef.current = null;
+    consecutiveFailures.current = 0;
+    setRetryRevision(value => value + 1);
+  }, []);
 
-  // Load track when currentTrack changes
   useEffect(() => {
-    const loadTrack = async () => {
-      devCounters.setAudioValue('lastTrackClickToUiUpdateMs', 0); // Synchronous UI update
-      devCounters.setAudioValue('pendingPlaybackStartTime', Date.now());
+    let cancelled = false;
+    const { audio, toast, setLoadingTrackIndex, handleNextTrack } = latest.current;
+    const state = useStore.getState();
+    const source = state.activePlaybackTracks?.length ? state.activePlaybackTracks : tracks;
+    const track = source.find(item => item.id === selectedId);
+    if (!track) {
+      loadedRef.current = null;
+      setLoadedTrackId(null);
+      setFailure(null);
+      setLoadingTrackIndex(null);
+      return;
+    }
+    if (loadedRef.current === track.id) return;
+    const isCurrent = () => {
+      const fresh = useStore.getState();
+      const freshTracks = fresh.activePlaybackTracks?.length ? fresh.activePlaybackTracks : latest.current.tracks;
+      return !cancelled && freshTracks[fresh.currentTrack ?? -1]?.id === track.id;
+    };
+    const retry = retryIntent.current?.id === track.id ? retryIntent.current : null;
+    retryIntent.current = null;
+    const savedPosition = retry?.position ?? (shouldRestorePosition.current && state.lastTrackId === track.id ? state.lastPosition : 0);
+    loadedRef.current = null;
+    setLoadedTrackId(null);
+    setFailure(null);
+    setLoadingTrackIndex(state.currentTrack);
+    state.setLastTrackId(track.id);
+    devCounters.setAudioValue('pendingPlaybackStartTime', Date.now());
 
-      // CRITICAL FIX: Get fresh tracks from store to avoid React render race conditions.
-      const state = useStore.getState();
-      const activeTracks = state.activePlaybackTracks;
-      const currentTracks = activeTracks && activeTracks.length > 0 ? activeTracks : tracks;
-
-      // 1. Validate we have a track to load
-      if (currentTrack === null || !currentTracks[currentTrack]) {
-        return;
-      }
-
-      const track = currentTracks[currentTrack];
-
-      // Defensive: validate track has a path before loading
-      if (!track.path || typeof track.path !== 'string') {
-        console.error('[useTrackLoading] Track is missing path:', track);
-        toast.showError('Cannot play track: invalid file path');
-        return;
-      }
-
-      // 2. Cancellation Check (Optimization)
-      // If we are already loaded on this track, do nothing.
-      if (loadedTrackId === track.id) {
-        return;
-      }
-
-      // 3. Race Condition Guard setup
-      // We use a local variable to capture the ID *of this specific run*.
-      // We will perform the async operation, then check if this is still the
-      // current track index in the store.
-      const targetTrackId = track.id;
-      const targetTrackIndex = currentTrack;
-
-      // Update store to say "we are trying to load this"
-      useStore.getState().setLastTrackId(track.id);
-      setLoadingTrackIndex(currentTrack);
-
-      console.log(`[useTrackLoading] loading: ${track.name} (ID: ${track.id})`);
-
+    const load = async () => {
       try {
-        // 4. Try to swap to preloaded track (gapless) before falling back to full load.
-        //    Verify the preloaded path matches the expected track to prevent
-        //    audio-vs-UI mismatch when shuffle order diverges from preloaded content.
-        let usedPreload = false;
-        try {
-          // Native load_track now performs this match together with its
-          // latest-wins generation check; do not race it from the renderer.
-          const hasPreloaded = false;
-          if (hasPreloaded) {
-            const preloadedPath = await TauriAPI.getPreloadedPath();
-            if (preloadedPath === track.path) {
-              await TauriAPI.swapToPreloaded();
-              usedPreload = true;
-              const realDuration = await TauriAPI.getDuration().catch(() => 0);
-              const dur = realDuration > 0 ? realDuration : track.duration || 0;
-              useStore.getState().setDuration(dur);
-              useStore.getState().setProgress(0);
-            } else {
-              // Preloaded track doesn't match — discard and do a full load
-              console.warn('[useTrackLoading] Preloaded path mismatch, clearing preload');
-              await TauriAPI.clearPreload();
-            }
-          }
-        } catch {
-          // Preload swap failed, fall back to normal load
-          usedPreload = false;
-        }
-
-        if (!usedPreload) {
-          await audio.loadTrack(track);
-        }
-
-        // 5. CAUTION: The world may have changed while we were awaiting audio.loadTrack.
-        // Check if the store's currentTrack pointer has moved.
-        const freshState = useStore.getState();
-        const freshCurrentIndex = freshState.currentTrack;
-
-        // If the user skipped to another track while we were loading,
-        // freshCurrentIndex will be different from our targetTrackIndex.
-        // In that case, we MUST ABORT. "Latest wins" logic.
-        const freshTracks = freshState.activePlaybackTracks.length > 0
-          ? freshState.activePlaybackTracks
-          : tracks;
-        if (
-          freshCurrentIndex !== targetTrackIndex
-          || freshTracks[freshCurrentIndex ?? -1]?.id !== targetTrackId
-        ) {
-          console.warn(`[useTrackLoading] Aborted load for "${track.name}" - user switched track to index ${freshCurrentIndex}`);
+        if (!track.path) throw new Error('File not found: invalid file path');
+        // Rust atomically matches the preload and rejects superseded loads.
+        await audio.loadTrack(track);
+        if (!isCurrent()) {
           devCounters.incAudio('stalePlaybackRequestsIgnored');
           return;
         }
-
-        // 6. Success - Update State
-        consecutiveFailuresRef.current = 0;
+        await latest.current.replayGain.applyReplayGain(track).catch(error => console.warn('ReplayGain unavailable:', error));
+        if (!isCurrent()) return;
+        const duration = useStore.getState().duration || track.duration;
+        if (savedPosition > 0 && savedPosition < duration) await audio.seek(savedPosition);
+        if (!isCurrent()) return;
+        shouldRestorePosition.current = false;
+        consecutiveFailures.current = 0;
+        loadedRef.current = track.id;
         setLoadedTrackId(track.id);
         setLoadingTrackIndex(null);
-
-        // Apply ReplayGain if enabled. The track itself loaded fine, so a
-        // gain lookup failure must not count as an unplayable track.
-        await replayGain.applyReplayGain(track).catch(gainErr => {
-          console.warn('[useTrackLoading] ReplayGain could not be applied:', gainErr);
-        });
-
-        // Restore last position if we should
-        const shouldRestore = shouldRestorePosition.current && track.id === freshState.lastTrackId;
-        if (shouldRestore) {
-          const savedPosition = freshState.lastPosition;
-          if (savedPosition > 0 && savedPosition < track.duration) {
-            console.log(`Restoring position: ${savedPosition}s for track ${track.name}`);
-            await audio.seek(savedPosition);
-          }
-          shouldRestorePosition.current = false;
-        } else {
-          // Ensure we start at 0 if not restoring
-          useStore.getState().setLastPosition(0);
-        }
-
-        // Auto-play if playing state is true
-        if (playing) {
+        if (retry && !useStore.getState().playing) {
+          useStore.getState().setPlaying(true);
+        } else if (useStore.getState().playing ?? latest.current.playing) {
           await audio.play();
         }
-
-        // Only show toast if we haven't already shown it for this track
-        if (lastToastTrackId.current !== track.id) {
-          toast.showSuccess(`Now playing: ${track.title || track.name}`, 2000);
-          lastToastTrackId.current = track.id;
-        }
-
-      } catch (err: any) {
-        // Even on error, we must check if we are still the relevant track before acting
-        const freshState = useStore.getState();
-        const freshTracks = freshState.activePlaybackTracks.length > 0
-          ? freshState.activePlaybackTracks
-          : tracks;
-        if (
-          freshState.currentTrack !== targetTrackIndex
-          || freshTracks[freshState.currentTrack ?? -1]?.id !== targetTrackId
-          || String(err).includes('Stale load request')
-        ) {
-          console.warn(`[useTrackLoading] Ignoring error for "${track.name}" - user switched track.`);
-          return;
-        }
-
-        console.error('Failed to load track:', err);
-        setLoadingTrackIndex(null);
+      } catch (error) {
+        if (!isCurrent() || String(error).includes('Stale load request')) return;
+        loadedRef.current = null;
         setLoadedTrackId(null);
-
-        // Handle Error (Corrupted file etc.)
-        const isDecodeError = err.message && err.message.includes('Decode error');
-        const preferences = {
-          autoRemoveCorruptedFiles: DEFAULT_PREFERENCES.autoRemoveCorruptedFiles,
-          confirmCorruptedFileRemoval: DEFAULT_PREFERENCES.confirmCorruptedFileRemoval,
-        };
-
-        consecutiveFailuresRef.current += 1;
-
-        if (isDecodeError && preferences.autoRemoveCorruptedFiles) {
-          // ... existing corruption handling logic ...
-          // Simplified for brevity in this replace block, retaining core logic
-          toast.showWarning(`${ERROR_MESSAGES.CORRUPTED_FILE_DETECTED}: ${track.name}`, 4000);
-          try {
-            await removeTrack(track.id);
-            // Skip to next
-            if (tracks?.length > 1 && handleNextTrack) {
-              setTimeout(handleNextTrack, 500);
-            } else {
-              setCurrentTrack(null);
-            }
-          } catch (e) {
-            toast.showError('Could not remove corrupted track');
-          }
-          return;
-        }
-
+        setLoadingTrackIndex(null);
+        const reason = describeLoadFailure(error);
+        setFailure({ id: track.id, message: reason });
         const title = track.title || track.name;
-        const reason = describeLoadFailure(err);
-        if (!useStore.getState().playing) {
-          // Nothing is playing (e.g. restoring the last session): report only.
+        consecutiveFailures.current++;
+        const playing = useStore.getState().playing;
+        if (!playing || retry || /audio (system|device)|no audio device/i.test(String(error))) {
+          if (playing) useStore.getState().setPlaying(false);
           toast.showError(`Couldn't load "${title}": ${reason}`);
           return;
         }
-
-        const failureLimit = Math.min(MAX_CONSECUTIVE_LOAD_FAILURES, Math.max(1, currentTracks.length));
-        if (consecutiveFailuresRef.current >= failureLimit) {
-          consecutiveFailuresRef.current = 0;
+        if (consecutiveFailures.current >= Math.min(MAX_CONSECUTIVE_LOAD_FAILURES, Math.max(1, source.length))) {
+          consecutiveFailures.current = 0;
           useStore.getState().setPlaying(false);
-          toast.showError(`Couldn't play "${title}" (${reason}). Several tracks in a row failed, so playback stopped.`);
+          toast.showError(`Couldn't play "${title}". Several tracks in a row failed, so playback stopped.`);
           return;
         }
-
-        // Skip the unplayable track instead of stopping on it.
-        toast.showWarning(`Couldn't play "${title}" (${reason}). Skipping to the next track.`, 4000);
+        toast.showWarning(`Couldn't play "${title}" (${reason}) Skipping to the next track.`, 4000);
         handleNextTrack();
-        if (useStore.getState().currentTrack === targetTrackIndex) {
-          // No other track to move to (end of playlist, or a single track).
-          consecutiveFailuresRef.current = 0;
-          useStore.getState().setPlaying(false);
-        }
+        if (isCurrent()) useStore.getState().setPlaying(false);
       }
     };
-
-    loadTrack();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack]); // Intentionally only depend on currentTrack change
-  // Only re-run when currentTrack index or loadedTrackId changes
-  // All other values (tracks, audio, etc.) are accessed from the closure
-
-  // Position saving is handled by usePlaybackEffects (debounced).
+    void load();
+    return () => { cancelled = true; };
+    // Identity changes even when a source switch keeps the same row number.
+  }, [selectedId, retryRevision]);
 
   return {
     loadedTrackId,
+    trackLoadError: failure?.id === selectedId ? failure.message : null,
+    retryCurrentTrack,
     hasRestoredTrack,
-    setHasRestoredTrack
+    setHasRestoredTrack,
   };
 }

@@ -6,7 +6,7 @@ use crate::time_utils::now_millis;
 use log::info;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::Window;
+use tauri::{Emitter, Window};
 
 fn register_scan(state: &AppState, scan_id: &str) -> AppResult<Arc<AtomicBool>> {
     let mut operations = state
@@ -60,6 +60,7 @@ pub async fn scan_folder(
     let window_clone = window.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let _ = db.begin_library_scan(&folder_path_clone);
         let result = (|| {
             let tracks = Scanner::scan_directory(
                 &folder_path_clone,
@@ -96,6 +97,14 @@ pub async fn scan_folder(
             );
             Ok(tracks)
         })();
+        let diagnostic = result.as_ref().err().map(ToString::to_string);
+        let _ = db.finish_library_scan(&folder_path_clone, diagnostic.as_deref());
+        if result.is_ok() {
+            let _ = window_clone.emit(
+                "scan-complete",
+                result.as_ref().map(|tracks| tracks.len()).unwrap_or(0),
+            );
+        }
         if let Ok(mut operations) = scan_operations.lock() {
             operations.remove(&scan_id);
         }
@@ -125,6 +134,7 @@ pub async fn scan_folder_incremental(
     let folder_path_clone = folder_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let _ = db.begin_library_scan(&folder_path_clone);
         let result = (|| {
             // Perform incremental scan (only new/modified files)
             let tracks = Scanner::scan_directory_incremental(
@@ -165,6 +175,14 @@ pub async fn scan_folder_incremental(
 
             Ok(tracks)
         })();
+        let diagnostic = result.as_ref().err().map(ToString::to_string);
+        let _ = db.finish_library_scan(&folder_path_clone, diagnostic.as_deref());
+        if result.is_ok() {
+            let _ = window_clone.emit(
+                "scan-complete",
+                result.as_ref().map(|tracks| tracks.len()).unwrap_or(0),
+            );
+        }
         if let Ok(mut operations) = scan_operations.lock() {
             operations.remove(&scan_id);
         }

@@ -10,7 +10,7 @@ describe('VPlayer UI', () => {
 
   it('renders main player and can open options', async () => {
     render(<App />);
-    // Settings button has aria-label="Open Settings" (may be inside a lazy-loaded window)
+    // The Player gear opens full settings directly, including before selecting music.
     const settingsBtn = await screen.findByRole(
       'button',
       { name: /open settings/i },
@@ -19,6 +19,7 @@ describe('VPlayer UI', () => {
     expect(settingsBtn).toBeInTheDocument();
     // click should not throw and should keep app rendered
     fireEvent.click(settingsBtn);
+    expect(screen.queryByRole('dialog', { name: 'Playback tools' })).not.toBeInTheDocument();
     // Wait for the options modal to appear - look for Settings header and Appearance tab (default)
     await waitFor(() => {
       expect(screen.getByText('Settings')).toBeInTheDocument();

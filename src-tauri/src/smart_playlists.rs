@@ -501,7 +501,8 @@ mod tests {
                 date_added INTEGER NOT NULL,
                 rating INTEGER DEFAULT 0,
                 play_count INTEGER DEFAULT 0,
-                last_played INTEGER DEFAULT 0
+                last_played INTEGER DEFAULT 0,
+                bitrate INTEGER
             );
             ",
         )
@@ -643,7 +644,8 @@ mod tests {
                 date_added INTEGER NOT NULL,
                 rating INTEGER DEFAULT 0,
                 play_count INTEGER DEFAULT 0,
-                last_played INTEGER DEFAULT 0
+                last_played INTEGER DEFAULT 0,
+                bitrate INTEGER
             );
             INSERT INTO folders (id, path, name, date_added)
             VALUES ('slash-root', 'C:/Music', 'Music', 1),

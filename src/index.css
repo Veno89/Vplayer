@@ -4,6 +4,15 @@ html, body, #root {
   height: 100%;
 }
 
+/* Artwork grows only when the Player has both width and height to spare. */
+.player-album-art { width: 80px; height: 80px; }
+@container (min-width: 400px) and (min-height: 400px) {
+  .player-album-art { width: 112px; height: 112px; }
+}
+@container (min-width: 550px) and (min-height: 480px) {
+  .player-album-art { width: 144px; height: 144px; }
+}
+
 body {
   @apply bg-slate-950;
 }

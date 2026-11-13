@@ -29,6 +29,11 @@ fn cache_key(path: &str, bars: usize) -> String {
     let mut h = DefaultHasher::new();
     path.hash(&mut h);
     bars.hash(&mut h);
+    // Replacing or editing a file at the same path must invalidate its peaks.
+    if let Ok(metadata) = fs::metadata(path) {
+        metadata.len().hash(&mut h);
+        metadata.modified().ok().hash(&mut h);
+    }
     format!("{:016x}.waveform", h.finish())
 }
 
@@ -231,5 +236,24 @@ mod tests {
         assert_eq!(read_cached_waveform(&path, bars), Some(expected));
 
         let _ = fs::remove_file(cache_path);
+    }
+
+    #[test]
+    fn replacing_a_file_at_the_same_path_invalidates_its_waveform() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let source = std::env::temp_dir().join(format!("vplayer-waveform-source-{nonce}"));
+        fs::write(&source, b"old audio").unwrap();
+        let path = source.to_str().unwrap();
+        let original = cache_key(path, 16);
+        write_cached_waveform(path, 16, &[0.5; 16], 1);
+        assert!(read_cached_waveform(path, 16).is_some());
+        fs::write(&source, b"replacement audio with different content").unwrap();
+        assert_ne!(cache_key(path, 16), original);
+        assert!(read_cached_waveform(path, 16).is_none());
+        let _ = fs::remove_file(waveform_cache_dir().join(original));
+        let _ = fs::remove_file(source);
     }
 }

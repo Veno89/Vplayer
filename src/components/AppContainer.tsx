@@ -109,7 +109,7 @@ export const AppContainer = ({ children }: { children: ReactNode }) => {
         <div className="fixed top-0 left-0 right-0 z-[100] bg-red-900/90 backdrop-blur-xs text-white px-4 py-3 text-center text-sm border-b border-red-700">
           <div className="font-semibold">Audio System Unavailable</div>
           <div className="text-xs mt-1 text-red-200">
-            {audioBackendError}. Playback controls are disabled. Please restart the application.
+            {audioBackendError}. Reconnect your audio device, then use Retry playback in the Player.
           </div>
         </div>
       )}

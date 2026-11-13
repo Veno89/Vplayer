@@ -15,6 +15,7 @@ fn temp_root(test_name: &str) -> PathBuf {
 
 fn sample_track(id: &str, path: &Path, title: &str) -> Track {
     Track {
+        bitrate: None,
         id: id.to_string(),
         path: path.to_string_lossy().into_owned(),
         name: path

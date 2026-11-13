@@ -23,6 +23,7 @@ fn cleanup_db_files(path: &Path) {
 
 fn sample_track(id: &str, title: &str, artist: &str, album: &str, duration: f64) -> Track {
     Track {
+        bitrate: None,
         id: id.to_string(),
         path: format!("C:/Music/{}.mp3", id),
         name: format!("{}.mp3", id),

@@ -244,6 +244,7 @@ impl Database {
                         track.last_played,
                         track.rating,
                         crate::database_tracks::file_modified_seconds(&track.path),
+                        track.bitrate,
                     ],
                 )?;
             }

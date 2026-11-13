@@ -36,6 +36,8 @@ interface TrackMenuEvent {
 }
 
 interface TrackRowData {
+  onDragEnd?: () => void;
+  onPlayTrack?: (index: number) => void;
   listId: string;
   tracks: Track[];
   currentTrack: number | null;
@@ -70,6 +72,9 @@ export interface TrackListHandle {
 }
 
 interface TrackListProps {
+  onDragEnd?: () => void;
+  onRowsRendered?: (start: number, stop: number) => void;
+  onBatchActionIndices?: (action: string, indices: number[]) => void;
   tracks: Track[];
   currentTrack: number | null;
   onSelect: (index: number) => void;
@@ -166,7 +171,7 @@ const TrackRow = ({
   const isFocused = index === focusedIndex;
   const isSelected = selectedIndices.has(index);
 
-  if (!track) return null;
+  if (!track) return <div {...ariaAttributes} role="option" aria-label="Loading track" style={style} className="px-3 py-2 text-slate-400 text-sm">Loading track...</div>;
 
   const handleRatingChange = async (newRating: number) => {
     if (onRatingChange) {
@@ -194,6 +199,7 @@ const TrackRow = ({
       style={style}
       draggable={isDraggable && !isMultiSelectMode}
       onDragStart={(e) => isDraggable && !isMultiSelectMode && onDragStart?.(e, index)}
+      onDragEnd={() => data.onDragEnd?.()}
       onDragOver={(e) => isDraggable && !isMultiSelectMode && onDragOver?.(e, index)}
       onDrop={(e) => isDraggable && !isMultiSelectMode && onDrop?.(e, index)}
       onContextMenu={(e) => {
@@ -223,7 +229,8 @@ const TrackRow = ({
             : 'hover:bg-slate-700/60 text-slate-300'
         } ${isLoading ? 'opacity-50' : ''} ${isDragging ? 'opacity-40' : ''}`}
       onClick={handleClick}
-      title={`${track.title || 'Unknown'} - ${track.artist || 'Unknown Artist'}`}
+      onDoubleClick={() => data.onPlayTrack?.(index)}
+      title={`${track.title || track.name || 'Unknown'} - ${track.artist || 'Unknown Artist'}`}
     >
       {/* Selection Checkbox / Drag Handle */}
       {isMultiSelectMode ? (
@@ -260,8 +267,8 @@ const TrackRow = ({
         className="flex items-center gap-1 px-1 overflow-hidden"
         style={{ width: columnWidths?.title || 200, minWidth: 80 }}
       >
-        <span className="truncate font-medium" title={track.title || 'Unknown'}>
-          {track.title || 'Unknown'}
+        <span className="truncate font-medium" title={track.title || track.name || 'Unknown'}>
+          {track.title || track.name || 'Unknown'}
         </span>
         {queuePos !== undefined && (
           <span className="shrink-0 text-cyan-400 text-xs font-bold">({queuePos})</span>
@@ -376,6 +383,9 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   selectedIndices,
   onSelectionChange,
   onBatchAction,
+  onBatchActionIndices,
+  onRowsRendered,
+  onDragEnd,
   columnWidths,
   queuePositions,
 }, ref) {
@@ -404,7 +414,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       setIsMultiSelectMode(false);
     },
     selectAll: () => {
-      setActualSelectedIndices(new Set(tracks.map((_, i) => i)));
+      setActualSelectedIndices(new Set(tracks.keys()));
       setIsMultiSelectMode(true);
     }
   }));
@@ -463,6 +473,12 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     });
   }, [lastSelectedIndex, isMultiSelectMode, setActualSelectedIndices]);
 
+  const dispatchBatchAction = useCallback((action: string) => {
+    const indices = Array.from(actualSelectedIndices).sort((a, b) => a - b);
+    if (onBatchActionIndices) onBatchActionIndices(action, indices);
+    else onBatchAction?.(action, indices.map(index => tracks[index]).filter(Boolean));
+  }, [actualSelectedIndices, onBatchActionIndices, onBatchAction, tracks]);
+
   // Keyboard navigation handler
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (tracks.length === 0) return;
@@ -472,7 +488,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       if (e.key === 'a') {
         // Select all
         e.preventDefault();
-        setActualSelectedIndices(new Set(tracks.map((_, i) => i)));
+        setActualSelectedIndices(new Set(tracks.keys()));
         setIsMultiSelectMode(true);
         return;
       }
@@ -489,9 +505,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     if (e.key === 'Delete' && isMultiSelectMode && actualSelectedIndices.size > 0) {
       // Batch delete
       e.preventDefault();
-      if (onBatchAction) {
-        onBatchAction('delete', Array.from(actualSelectedIndices).map(i => tracks[i]));
-      }
+      dispatchBatchAction('delete');
       return;
     }
 
@@ -556,13 +570,14 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       default:
         break;
     }
-  }, [tracks, focusedIndex, onSelect, onPlayTrack, enableMultiSelect, handleToggleSelect, isMultiSelectMode, actualSelectedIndices, onBatchAction, setActualSelectedIndices]);
+  }, [tracks, focusedIndex, onSelect, onPlayTrack, enableMultiSelect, handleToggleSelect, isMultiSelectMode, actualSelectedIndices, onBatchAction, setActualSelectedIndices, dispatchBatchAction]);
 
   const itemData = React.useMemo(() => ({
+    onPlayTrack, onDragEnd,
     listId,
     tracks,
     currentTrack,
-    onSelect,
+    onSelect: (index: number) => { setFocusedIndex(index); onSelect(index); },
     currentColors,
     loadingTrackIndex,
     onRatingChange,
@@ -608,7 +623,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     handleToggleSelect,
     isMultiSelectMode,
     queuePositions,
-    listId
+    listId, onPlayTrack, onDragEnd
   ]);
 
   return (
@@ -631,9 +646,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
           <div className="flex gap-2">
             <button
               onClick={() => {
-                if (onBatchAction) {
-                  onBatchAction('queue', Array.from(actualSelectedIndices).map(i => tracks[i]));
-                }
+                dispatchBatchAction('queue');
               }}
               className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-sm transition-colors"
             >
@@ -641,9 +654,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
             </button>
             <button
               onClick={() => {
-                if (onBatchAction) {
-                  onBatchAction('playlist', Array.from(actualSelectedIndices).map(i => tracks[i]));
-                }
+                dispatchBatchAction('playlist');
               }}
               className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-sm transition-colors"
             >
@@ -665,6 +676,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         listRef={listRef}
         role="presentation"
         rowComponent={TrackRow}
+        onRowsRendered={onRowsRendered ? (visible, all) => onRowsRendered(all.startIndex, all.stopIndex) : undefined}
         rowCount={tracks.length}
         rowHeight={itemSize}
         rowKey={trackRowKey}

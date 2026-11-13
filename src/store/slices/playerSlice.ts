@@ -54,7 +54,14 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             console.warn('[setCurrentTrack] Index', trackIndex, 'out of bounds (tracks length:', tracks.length, ')');
         }
 
-        return { currentTrack: trackIndex, currentTrackId: trackId, progress: 0 };
+        return {
+            currentTrack: trackIndex, currentTrackId: trackId, progress: 0,
+            ...(trackId === null ? { playing: false, loadingTrackIndex: null } : {}),
+            ...(trackId !== state.currentTrackId ? {
+                duration: 0,
+                abRepeat: { enabled: false, pointA: null, pointB: null },
+            } : {}),
+        };
     }),
 
     setPlaying: (playingOrUpdater) =>
@@ -84,6 +91,11 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
                 // that components checking `currentTrackId !== null` stay consistent
                 // with `getCurrentTrackData()` returning null.
                 currentTrackId: remapped !== -1 ? trackId : null,
+                ...(remapped === -1 ? {
+                    progress: 0, duration: 0, loadingTrackIndex: null,
+                    ...(tracks.length === 0 ? { playing: false } : {}),
+                    abRepeat: { enabled: false, pointA: null, pointB: null },
+                } : {}),
             };
         }),
 
@@ -109,6 +121,8 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
                 currentTrackId: null,
                 loadingTrackIndex: null,
                 playing: false,
+                progress: 0, duration: 0,
+                abRepeat: { enabled: false, pointA: null, pointB: null },
             };
         }),
 
@@ -123,6 +137,8 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
             currentTrack: trackIndex,
             currentTrackId: trackId,
             progress: 0,
+            duration: 0,
+            abRepeat: { enabled: false, pointA: null, pointB: null },
         });
         return true;
     },
@@ -159,18 +175,22 @@ export const createPlayerSlice = (set: SetFn, get: GetFn): PlayerSlice => ({
     setRepeatMode: (mode) => set({ repeatMode: mode }),
 
     // === A-B Repeat Actions ===
-    setPointA: (time) => set((state) => ({
-        abRepeat: { ...state.abRepeat, pointA: time }
-    })),
+    setPointA: (time) => set((state) => {
+        if (time !== null && (!Number.isFinite(time) || time < 0 || (state.duration > 0 && time >= state.duration))) return {};
+        const pointB = time !== null && state.abRepeat.pointB !== null && state.abRepeat.pointB > time
+            ? state.abRepeat.pointB : null;
+        return { abRepeat: { pointA: time, pointB, enabled: state.abRepeat.enabled && pointB !== null } };
+    }),
 
-    setPointB: (time) => set((state) => ({
-        abRepeat: { ...state.abRepeat, pointB: time, enabled: time !== null && state.abRepeat.pointA !== null }
-    })),
+    setPointB: (time) => set((state) => {
+        if (time !== null && (!Number.isFinite(time) || state.abRepeat.pointA === null || time <= state.abRepeat.pointA || (state.duration > 0 && time > state.duration))) return {};
+        return { abRepeat: { ...state.abRepeat, pointB: time, enabled: time !== null && state.abRepeat.pointA !== null } };
+    }),
 
     toggleABRepeat: () => set((state) => ({
         abRepeat: {
             ...state.abRepeat,
-            enabled: state.abRepeat.pointA !== null && state.abRepeat.pointB !== null
+            enabled: state.abRepeat.pointA !== null && state.abRepeat.pointB !== null && state.abRepeat.pointB > state.abRepeat.pointA
                 ? !state.abRepeat.enabled
                 : false
         }

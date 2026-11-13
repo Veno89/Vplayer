@@ -1,4 +1,5 @@
 use crate::database::Database;
+use crate::error::error_chain;
 use crate::time_utils::now_millis;
 use lofty::prelude::TaggedFileExt;
 use log::{error, info, warn};
@@ -11,7 +12,7 @@ use walkdir::WalkDir;
 
 /// Standard SELECT column list for Track::from_row.
 /// Every query that uses Track::from_row MUST select exactly these columns in this order.
-pub const TRACK_SELECT_COLUMNS: &str = "id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, rating, play_count, last_played";
+pub const TRACK_SELECT_COLUMNS: &str = "id, path, name, title, artist, album, genre, year, track_number, disc_number, duration, date_added, rating, play_count, last_played, bitrate";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
@@ -26,6 +27,8 @@ pub struct Track {
     pub track_number: Option<i32>,
     pub disc_number: Option<i32>,
     pub duration: f64,
+    #[serde(default)]
+    pub bitrate: Option<i32>,
     pub date_added: i64,
     #[serde(default)]
     pub rating: i32,
@@ -54,6 +57,7 @@ impl Track {
             track_number: row.get(8)?,
             disc_number: row.get(9)?,
             duration: row.get(10)?,
+            bitrate: row.get(15)?,
             date_added: row.get(11)?,
             rating: row.get(12).unwrap_or(0),
             play_count: row.get(13).unwrap_or(0),
@@ -69,6 +73,14 @@ pub struct ScanProgress {
     pub current_file: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ScanSummary {
+    total: usize,
+    imported: usize,
+    failed: usize,
+    first_error: Option<String>,
+}
+
 pub struct Scanner;
 
 /// Supported audio file extensions, shared with watcher module.
@@ -76,7 +88,7 @@ pub const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "m4a", "flac", "wav", "ogg", "op
 
 impl Scanner {
     /// Collect all audio file paths from a directory tree.
-    fn collect_audio_files(path: &str) -> Vec<std::path::PathBuf> {
+    fn collect_audio_files(path: &str) -> Result<Vec<std::path::PathBuf>, String> {
         let root_path = std::path::Path::new(path);
         // Canonicalize once so symlink resolution comparisons are consistent.
         // Falls back to the original path on error (e.g. unusual Windows paths).
@@ -84,7 +96,7 @@ impl Scanner {
             .canonicalize()
             .unwrap_or_else(|_| root_path.to_path_buf());
 
-        WalkDir::new(path)
+        let entries = WalkDir::new(path)
             .follow_links(true)
             .into_iter()
             .filter_entry(|entry| {
@@ -107,23 +119,29 @@ impl Scanner {
                         false
                     }
                 }
-            })
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file())
-            .filter(|e| {
-                e.path()
+            });
+
+        let mut files = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("Unable to scan folder: {error}"))?;
+            if entry.file_type().is_file()
+                && entry
+                    .path()
                     .extension()
                     .and_then(|ext| ext.to_str())
                     .map(|ext| AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
                     .unwrap_or(false)
-            })
-            .map(|e| e.path().to_path_buf())
-            .collect()
+            {
+                files.push(entry.into_path());
+            }
+        }
+        Ok(files)
     }
 
     /// Shared processing loop for scanning audio files.
-    /// Handles cancellation, progress events, failed-track skipping, and extraction.
+    /// Handles cancellation, progress events, failure diagnostics, and extraction.
     fn process_files(
+        root: &str,
         files: &[std::path::PathBuf],
         window: Option<&Window>,
         cancel_flag: &Option<Arc<AtomicBool>>,
@@ -131,6 +149,8 @@ impl Scanner {
     ) -> Result<Vec<Track>, String> {
         let mut tracks = Vec::new();
         let total = files.len();
+        let mut failures = 0;
+        let mut first_error = None;
 
         if let Some(win) = window {
             let _ = win.emit("scan-total", total);
@@ -151,21 +171,10 @@ impl Scanner {
             let processed = i + 1;
             let path_str = path_buf.to_string_lossy().to_string();
 
-            // Skip if this path previously failed
-            if let Some(database) = db
-                && database.is_failed_track(&path_str)
-            {
-                if let Some(win) = window {
-                    let _ = win.emit(
-                        "scan-skip",
-                        format!("Skipping previously failed: {:?}", path_buf.file_name()),
-                    );
-                }
-                continue;
-            }
-
             // Emit progress update
-            if let Some(win) = window {
+            if let Some(win) = window
+                && (processed == 1 || processed == total || processed.is_multiple_of(25))
+            {
                 let progress = ScanProgress {
                     current: processed,
                     total,
@@ -180,6 +189,12 @@ impl Scanner {
 
             match Self::extract_track_info(path_buf) {
                 Ok(mut track) => {
+                    // A past parser/I/O failure is not a permanent blacklist.
+                    if let Some(database) = db
+                        && let Err(error) = database.remove_failed_track(&path_str)
+                    {
+                        warn!("Unable to clear recovered scan failure: {error}");
+                    }
                     // Track IDs are durable foreign keys. Preserve the ID already
                     // assigned to a path so rescans update the row in place instead
                     // of deleting/recreating it and cascading playlist/art data.
@@ -195,6 +210,8 @@ impl Scanner {
                     tracks.push(track)
                 }
                 Err(e) => {
+                    failures += 1;
+                    first_error.get_or_insert_with(|| format!("{}: {e}", path_buf.display()));
                     error!("Failed to extract info from {:?}: {}", path_buf, e);
                     if let Some(database) = db {
                         let _ = database.add_failed_track(&path_str, &e);
@@ -209,12 +226,40 @@ impl Scanner {
             }
         }
 
+        if let Some(database) = db {
+            let _ = database.record_library_scan(
+                root,
+                total,
+                tracks.len(),
+                failures,
+                first_error.as_deref(),
+            );
+        }
+
+        if tracks.is_empty()
+            && let Some(first_error) = &first_error
+        {
+            return Err(format!(
+                "Found {total} audio files, but none could be read. First error: {first_error}"
+            ));
+        }
+
         info!(
-            "Scan completed: {} tracks successfully extracted",
-            tracks.len()
+            "Scan completed: {} tracks successfully extracted, {} failed out of {} files",
+            tracks.len(),
+            failures,
+            total
         );
         if let Some(win) = window {
-            let _ = win.emit("scan-complete", tracks.len());
+            let _ = win.emit(
+                "scan-summary",
+                ScanSummary {
+                    total,
+                    imported: tracks.len(),
+                    failed: failures,
+                    first_error,
+                },
+            );
         }
 
         Ok(tracks)
@@ -248,7 +293,7 @@ impl Scanner {
             .collect();
 
         // Collect all audio files and filter to only new/modified
-        let all_files = Self::collect_audio_files(path);
+        let all_files = Self::collect_audio_files(path)?;
         let files_to_scan: Vec<std::path::PathBuf> = all_files
             .into_iter()
             .filter(|path_buf| {
@@ -277,7 +322,7 @@ impl Scanner {
             files_to_scan.len()
         );
 
-        Self::process_files(&files_to_scan, window, &cancel_flag, Some(db))
+        Self::process_files(path, &files_to_scan, window, &cancel_flag, Some(db))
     }
 
     pub fn scan_directory(
@@ -296,20 +341,40 @@ impl Scanner {
             return Ok(Vec::new());
         }
 
-        let files = Self::collect_audio_files(path);
+        let files = Self::collect_audio_files(path)?;
         info!("Found {} audio files to scan", files.len());
 
-        Self::process_files(&files, window, &cancel_flag, db)
+        Self::process_files(path, &files, window, &cancel_flag, db)
     }
 
     pub fn extract_track_info(path: &Path) -> Result<Track, String> {
         use lofty::prelude::{Accessor, AudioFile};
         use lofty::probe::Probe;
 
+        let options = lofty::config::ParseOptions::new()
+            .parsing_mode(lofty::config::ParsingMode::Relaxed)
+            .read_cover_art(false);
         let tagged_file = Probe::open(path)
             .map_err(|e| e.to_string())?
+            .options(options)
+            .guess_file_type()
+            .map_err(|e| e.to_string())?
             .read()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error_chain(&error));
+
+        let tagged_file = match tagged_file {
+            Ok(file) => file,
+            Err(metadata_error) => {
+                // Metadata errors must not hide audio the playback reader supports.
+                warn!(
+                    "Metadata reader failed for {}: {metadata_error}; trying audio reader",
+                    path.display()
+                );
+                return Self::extract_with_symphonia(path).map_err(|audio_error| {
+                    format!("Metadata reader: {metadata_error}; audio reader: {audio_error}")
+                });
+            }
+        };
 
         let tags = tagged_file
             .primary_tag()
@@ -324,6 +389,10 @@ impl Scanner {
         let disc_number = tags.and_then(|t| t.disk()).map(|n| n as i32);
 
         let duration = tagged_file.properties().duration().as_secs_f64();
+        let bitrate = tagged_file
+            .properties()
+            .audio_bitrate()
+            .and_then(|value| i32::try_from(value).ok());
 
         let file_name = path
             .file_name()
@@ -348,11 +417,114 @@ impl Scanner {
             track_number,
             disc_number,
             duration,
+            bitrate,
             date_added: now,
             rating: 0,
             play_count: 0,
             last_played: 0,
         })
+    }
+
+    fn extract_with_symphonia(path: &Path) -> Result<Track, String> {
+        use symphonia::core::common::Limit;
+        use symphonia::core::formats::probe::Hint;
+        use symphonia::core::formats::{FormatOptions, TrackType};
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::{MetadataOptions, StandardTag};
+
+        let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+        let stream = MediaSourceStream::new(Box::new(file), Default::default());
+        let mut hint = Hint::new();
+        if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
+            hint.with_extension(extension);
+        }
+        let mut format = symphonia::default::get_probe()
+            .probe(
+                &hint,
+                stream,
+                FormatOptions::default(),
+                MetadataOptions::default().limit_visual_bytes(Limit::Maximum(0)),
+            )
+            .map_err(|error| error_chain(&error))?;
+        let audio = format
+            .default_track(TrackType::Audio)
+            .ok_or_else(|| "No audio track found".to_string())?;
+        if audio
+            .codec_params
+            .as_ref()
+            .and_then(|params| params.audio())
+            .is_none()
+        {
+            return Err("No audio codec parameters found".to_string());
+        }
+        let audio_id = u64::from(audio.id);
+        let duration = audio
+            .time_base
+            .zip(audio.duration)
+            .and_then(|(base, duration)| base.calc_duration(duration))
+            .map(|time| time.as_secs_f64())
+            .unwrap_or(0.0);
+        let mut track = Track {
+            bitrate: None,
+            id: Self::track_id_for_path(path),
+            path: path.to_string_lossy().into_owned(),
+            name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            title: None,
+            artist: None,
+            album: None,
+            genre: None,
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration,
+            date_added: now_millis(),
+            rating: 0,
+            play_count: 0,
+            last_played: 0,
+        };
+        let mut metadata = format.metadata();
+        while let Some(revision) = metadata.current() {
+            let tags = revision.media.tags.iter().chain(
+                revision
+                    .per_track
+                    .iter()
+                    .filter(|entry| entry.track_id == audio_id)
+                    .flat_map(|entry| entry.metadata.tags.iter()),
+            );
+            for tag in tags {
+                match tag.std.as_ref() {
+                    Some(StandardTag::TrackTitle(value)) => track.title = Some(value.to_string()),
+                    Some(StandardTag::Artist(value)) => track.artist = Some(value.to_string()),
+                    Some(StandardTag::Album(value)) => track.album = Some(value.to_string()),
+                    Some(StandardTag::Genre(value)) => track.genre = Some(value.to_string()),
+                    Some(StandardTag::TrackNumber(value)) => {
+                        track.track_number = i32::try_from(*value).ok()
+                    }
+                    Some(StandardTag::DiscNumber(value)) => {
+                        track.disc_number = i32::try_from(*value).ok()
+                    }
+                    Some(StandardTag::RecordingYear(value) | StandardTag::ReleaseYear(value)) => {
+                        track.year = Some(i32::from(*value));
+                    }
+                    Some(StandardTag::RecordingDate(value) | StandardTag::ReleaseDate(value)) => {
+                        track.year = value.get(..4).and_then(|year| year.parse().ok());
+                    }
+                    _ => {}
+                }
+            }
+            if metadata.pop().is_none() {
+                break;
+            }
+        }
+        warn!(
+            "Recovered metadata using audio reader for {}",
+            path.display()
+        );
+        Ok(track)
     }
 
     /// Produce a compact, deterministic ID without embedding a potentially
@@ -384,7 +556,7 @@ impl Scanner {
         let tagged_file = Probe::open(path)
             .map_err(|e| format!("Failed to open file: {}", e))?
             .read()
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+            .map_err(|e| format!("Failed to read file: {}", error_chain(&e)))?;
 
         let tags = tagged_file
             .primary_tag()
@@ -429,7 +601,8 @@ mod tests {
         fs::write(&txt, b"dummy").expect("write txt placeholder failed");
         fs::write(&no_ext, b"dummy").expect("write no-ext placeholder failed");
 
-        let mut files = Scanner::collect_audio_files(&dir.to_string_lossy());
+        let mut files =
+            Scanner::collect_audio_files(&dir.to_string_lossy()).expect("collect audio files");
         files.sort();
 
         assert_eq!(files.len(), 2);

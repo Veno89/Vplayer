@@ -13,6 +13,7 @@ export interface Track {
     album?: string;
     genre?: string;
     year?: number;
+    bitrate?: number;
     duration: number;
     track_number?: number;
     disc_number?: number;
@@ -36,6 +37,10 @@ export interface TrackFilter {
     durationFrom?: number | null;
     durationTo?: number | null;
     folderId?: string | null;
+    yearFrom?: number | null;
+    yearTo?: number | null;
+    format?: string | null;
+    bitrateMin?: number | null;
 }
 
 // =============================================================================

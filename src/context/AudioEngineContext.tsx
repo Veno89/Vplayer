@@ -88,13 +88,15 @@ export function AudioEngineProvider({
 
       if (!pbTracks?.length) {
         useStore.getState().setPlaying(false);
-      } else if (currentRepeatMode === 'one') {
-        audio.seek(0);
-        audio.play().catch(err => {
+      } else if (currentRepeatMode === 'one' || (currentRepeatMode === 'all' && pbTracks.length === 1 && state.queue.length === 0)) {
+        audio.seek(0).then(() => {
+          const latest = useStore.getState();
+          if (latest.playing && latest.currentTrackId === state.currentTrackId) return audio.play();
+        }).catch(err => {
           console.error('Failed to replay:', err);
           toast.showError('Failed to replay track');
         });
-      } else if (currentRepeatMode === 'all' || (currentTrackIdx ?? 0) < (pbTracks.length) - 1) {
+      } else if (state.queue.length > 0 || currentRepeatMode === 'all' || (state.shuffle ? state.shuffleOrder.length > 0 : (currentTrackIdx ?? 0) < pbTracks.length - 1)) {
         playerHookRef.current?.handleNextTrack();
       } else {
         useStore.getState().setPlaying(false);

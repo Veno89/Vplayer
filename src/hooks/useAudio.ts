@@ -61,6 +61,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg = 'Operation t
 
 /** Playback-tick payload emitted by the Rust broadcast thread. */
 interface PlaybackTickPayload {
+  loadRequestId?: number;
   position: number;
   duration: number;
   isPlaying: boolean;
@@ -138,6 +139,9 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
     const setup = async () => {
       unlistenTick = await TauriAPI.onEvent<PlaybackTickPayload>('playback-tick', (event) => {
         if (isSeekingRef.current || isRecoveringRef.current) return;
+        if (event.payload.loadRequestId !== undefined && event.payload.loadRequestId !== lastLoadRequestId) return;
+        const selectedId = useStore.getState().currentTrackId;
+        if (currentTrackRef.current && selectedId !== undefined && selectedId !== currentTrackRef.current.id) return;
 
         const { position, duration, isPlaying } = event.payload;
         const clamped = duration > 0 ? Math.min(position, duration) : position;
@@ -169,6 +173,8 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
 
       unlistenEnded = await TauriAPI.onEvent<TrackEndedPayload | null>('track-ended', (event) => {
         const payload = event.payload ?? {};
+        const selectedId = useStore.getState().currentTrackId;
+        if (currentTrackRef.current && selectedId !== undefined && selectedId !== currentTrackRef.current.id) return;
         // The backend reports each track's end exactly once. Only ignore it
         // when it belongs to a track the user has already moved away from.
         if (payload.loadRequestId && payload.loadRequestId !== lastLoadRequestId) {
@@ -236,7 +242,9 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
   // ── loadTrack ─────────────────────────────────────────────────────
   const loadTrack = useCallback(async (track: Track) => {
     const loadGeneration = ++lastLoadGeneration;
-    const isCurrentLoad = () => loadGeneration === lastLoadGeneration;
+    const selectedAtStart = useStore.getState().currentTrackId === track.id;
+    const isCurrentLoad = () => loadGeneration === lastLoadGeneration
+      && (!selectedAtStart || useStore.getState().currentTrackId === track.id);
     // Self-healing: if we have a stale error from a previous device disconnect,
     // check if a device is available again before giving up.
     if (audioBackendError) {
@@ -449,11 +457,12 @@ export function useAudio({ onEnded, onDeviceLost, onTimeUpdate, initialVolume = 
   // ── seek ──────────────────────────────────────────────────────────
   const seek = useCallback(async (position: number) => {
     if (audioBackendError || isRecoveringRef.current) return;
-
+    const targetId = useStore.getState().currentTrackId;
+    const requestId = lastLoadRequestId;
     isSeekingRef.current = true;
     try {
       await withTimeout(TauriAPI.seekTo(position), 2000, 'Seek timed out');
-      useStore.getState().setProgress(position);
+      if (useStore.getState().currentTrackId === targetId && lastLoadRequestId === requestId) useStore.getState().setProgress(position);
     } catch (err) {
       console.error('Failed to seek:', err);
       if (typeof err === 'object' && err !== null && 'message' in err && (err as any).message.includes('timed out')) {

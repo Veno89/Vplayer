@@ -30,9 +30,8 @@ export function useLibrary() {
   // 2. Manage Data (Tracks & Folders) - Depends on activeParams
   const {
     tracks,
-    setTracks,
+    rows, totalMatches, overview, isLoading, loadError, queryRevision, loadRange,
     libraryFolders,
-    setLibraryFolders,
     refreshTracks: refreshTrackData,
     loadAllFolders,
     addFolder: addFolderData,
@@ -73,7 +72,7 @@ export function useLibrary() {
   // Keep the aggregate stable when an ancestor rerenders for playback ticks.
   return useMemo(() => ({
     // Data
-    tracks,
+    tracks, rows, totalMatches, overview, isLoading, loadError, queryRevision, loadRange, activeParams,
     libraryFolders,
 
     // Scanning
@@ -83,13 +82,14 @@ export function useLibrary() {
     scanTotal,
     scanCurrentFile,
     cancelScan,
+    scanFolder: scanNewFolder,
 
     // Filtering & Sorting
     searchQuery,
     sortBy,
     sortOrder,
     advancedFilters,
-    filteredTracks: tracks, // Helper alias: 'tracks' IS the filtered view now
+    filteredTracks: rows, // Sparse browsing rows; totals are supplied separately by SQLite.
 
     // Actions
     setSearchQuery,
@@ -102,6 +102,7 @@ export function useLibrary() {
     removeTrack,
     refreshTracks: refreshLibraryData,
   }), [
+    rows, totalMatches, overview, isLoading, loadError, queryRevision, loadRange, activeParams,
     tracks,
     libraryFolders,
     isScanning,
@@ -110,6 +111,7 @@ export function useLibrary() {
     scanTotal,
     scanCurrentFile,
     cancelScan,
+    scanNewFolder,
     searchQuery,
     sortBy,
     sortOrder,

@@ -83,6 +83,7 @@ export const EVENTS = {
   SCAN_TOTAL: 'scan-total',
   SCAN_PROGRESS: 'scan-progress',
   SCAN_COMPLETE: 'scan-complete',
+  SCAN_SUMMARY: 'scan-summary',
   SCAN_CANCELLED: 'scan-cancelled',
   SCAN_ERROR: 'scan-error',
   GLOBAL_SHORTCUT: 'global-shortcut',

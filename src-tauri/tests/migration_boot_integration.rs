@@ -112,7 +112,7 @@ fn legacy_database_boot_runs_migrations() {
             row.get(0)
         })
         .expect("schema_version query should succeed");
-    assert_eq!(schema_version, 11);
+    assert_eq!(schema_version, 12);
 
     let album_art_columns: Vec<String> = conn
         .prepare("PRAGMA table_info(track_album_art)")

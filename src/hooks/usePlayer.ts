@@ -135,17 +135,19 @@ export function usePlayer({
         // Normal playback logic
         if (isShuffled) {
             if (effectiveTotalTracks <= 0) return null;
-            if (effectiveTotalTracks === 1) return 0;
+            if (effectiveTotalTracks === 1) return repeat === 'all' ? 0 : null;
 
             const signature = currentTracks.map((track: Track) => track.id).join('|');
-            if ((store?.shuffleSignature ?? '') !== signature) {
+            const signatureMatches = (store?.shuffleSignature ?? '') === signature;
+            if (!signatureMatches) {
                 store?.setShuffleOrder([]);
                 store?.setShuffleSignature(signature);
             }
 
-            const currentOrder = store?.shuffleOrder ?? [];
+            const currentOrder = signatureMatches ? store?.shuffleOrder ?? [] : [];
 
             if (currentOrder.length === 0) {
+                if (store && signatureMatches && repeat !== 'all') return null;
                 const candidates = Array.from({ length: effectiveTotalTracks }, (_, idx) => idx)
                     .filter(idx => idx !== current);
                 // Fisher-Yates shuffle with crypto-grade randomness
@@ -211,10 +213,30 @@ export function usePlayer({
     ): number | null => _getNextTrackIndex(current, total, isShuffled, repeat, true),
     [_getNextTrackIndex]);
 
-    // Crossfade monitoring effect — uses peek (non-destructive)
+    // Prepare the shuffle order outside render so the preview and navigation
+    // read the same next entry, including before gapless preloading starts.
+    useEffect(() => {
+        if (shuffle && currentTrack !== null && tracks.length > 0) {
+            peekNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
+        }
+    }, [shuffle, currentTrack, tracks, repeatMode, peekNextTrackIndex]);
+
+    const navigationState = storeGetter?.();
+    const holdCrossfade = repeatMode === 'one' || navigationState?.playing === false
+        || !!navigationState?.stopAfterCurrent || !!navigationState?.abRepeat?.enabled;
+
+    // Crossfade monitoring effect - uses peek (non-destructive)
     useEffect(() => {
         if (!tracks?.length || currentTrack === null || !duration) return;
         if (!crossfade || !crossfade.enabled) return;
+        if (holdCrossfade) {
+            if (crossfadeInProgressRef.current) {
+                crossfade.cancelCrossfade(vol => { audio.changeVolume(vol).catch(() => {}); });
+                crossfadeInProgressRef.current = false;
+                crossfadeStartedRef.current = false;
+            }
+            return;
+        }
 
         if (crossfade.shouldCrossfade(progress, duration) && !crossfadeStartedRef.current) {
             const nextIdx = peekNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
@@ -230,7 +252,18 @@ export function usePlayer({
                     },
                     currentVolume: userVolumeRef.current,
                     onMidpoint: () => {
-                        setCurrentTrack(nextIdx);
+                        const live = storeGetter?.();
+                        if (live && (live.currentTrackId !== tracks[currentTrack]?.id || live.playing === false || live.stopAfterCurrent || live.abRepeat?.enabled || live.repeatMode === 'one')) {
+                            crossfade.cancelCrossfade(vol => { audio.changeVolume(vol).catch(() => {}); });
+                            crossfadeInProgressRef.current = false;
+                            crossfadeStartedRef.current = false;
+                            return;
+                        }
+                        const chosen = consumeNextTrackIndex(currentTrack, tracks.length, shuffle, repeatMode);
+                        if (chosen !== null) {
+                            if (shuffle) live?.pushShuffleHistory(currentTrack);
+                            setCurrentTrack(chosen);
+                        }
                     },
                     onComplete: () => {
                         crossfadeStartedRef.current = false;
@@ -247,7 +280,7 @@ export function usePlayer({
         if (progress < 1) {
             crossfadeStartedRef.current = false;
         }
-    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, peekNextTrackIndex]);
+    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, setCurrentTrack, audio, peekNextTrackIndex, consumeNextTrackIndex, storeGetter, holdCrossfade]);
 
     // Pre-load next track for gapless playback — uses peek (non-destructive).
     useEffect(() => {
@@ -255,6 +288,7 @@ export function usePlayer({
 
         const gaplessEnabled = storeGetter ? storeGetter().gaplessPlayback : true;
         if (!gaplessEnabled) return;
+        if (holdCrossfade) return;
 
         const crossfadeSecs = crossfade?.enabled ? (crossfade.duration / 1000) : 0;
         const preloadLeadTime = Math.max(5, crossfadeSecs + 2);
@@ -279,7 +313,7 @@ export function usePlayer({
         if (progress < 1) {
             nextTrackPreloadedRef.current = false;
         }
-    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, peekNextTrackIndex, storeGetter]);
+    }, [progress, duration, currentTrack, tracks, shuffle, repeatMode, crossfade, peekNextTrackIndex, storeGetter, holdCrossfade]);
 
     /**
      * Skip to the next track — uses consume (destructive).
@@ -304,6 +338,14 @@ export function usePlayer({
 
         const nextIdx = consumeNextTrackIndex(currentTrackIdx, currentTracks.length, currentShuffle, currentRepeatMode);
         if (nextIdx !== null) {
+            const target = storeGetter?.().activePlaybackTracks[nextIdx] ?? currentTracks[nextIdx];
+            if (target && target.id === store?.currentTrackId) {
+                audio.seek(0).then(() => {
+                    const live = storeGetter?.();
+                    if (live?.playing && live.currentTrackId === target.id) return audio.play();
+                }).catch(err => toast.showError(`Could not restart track: ${err}`));
+                return;
+            }
             // Record current track in shuffle history before moving forward
             if (currentShuffle && store) {
                 store.pushShuffleHistory(currentTrackIdx);
@@ -312,7 +354,7 @@ export function usePlayer({
             nextTrackPreloadedRef.current = false;
             crossfadeStartedRef.current = false;
         }
-    }, [setCurrentTrack, crossfade, audio, consumeNextTrackIndex]);
+    }, [setCurrentTrack, crossfade, audio, consumeNextTrackIndex, storeGetter, toast]);
 
     /**
      * Go to previous track or restart current track.
@@ -385,8 +427,11 @@ export function usePlayer({
      * @param percent - Position as percentage (0-100)
      */
     const handleSeek = useCallback((percent: number) => {
-        if (duration > 0) {
-            const time = (percent / 100) * duration;
+        const snapshot = storeGetter?.();
+        const currentDuration = snapshot?.duration ?? duration;
+        const targetId = snapshot?.currentTrackId;
+        if (currentDuration > 0 && Number.isFinite(percent)) {
+            const time = (Math.max(0, Math.min(100, percent)) / 100) * currentDuration;
             const now = Date.now();
 
             // Clear any pending seek
@@ -399,6 +444,7 @@ export function usePlayer({
             const delay = timeSinceLastSeek < 100 ? 100 - timeSinceLastSeek : 0;
 
             seekTimeoutRef.current = setTimeout(() => {
+                if (storeGetter && storeGetter().currentTrackId !== targetId) return;
                 lastSeekTimeRef.current = Date.now();
                 audio.seek(time).catch(err => {
                     console.error('Failed to seek:', err);
@@ -406,7 +452,7 @@ export function usePlayer({
                 });
             }, delay);
         }
-    }, [duration, audio, toast]);
+    }, [duration, audio, toast, storeGetter]);
 
     /**
      * Set volume to specific level

@@ -22,6 +22,7 @@ fn cleanup_db_files(path: &Path) {
 
 fn sample_track(id: &str, path: &str, title: &str, artist: &str, rating: i32) -> Track {
     Track {
+        bitrate: None,
         id: id.to_string(),
         path: path.to_string(),
         name: format!("{}.mp3", title.to_lowercase().replace(' ', "_")),
@@ -93,6 +94,7 @@ fn get_filtered_tracks_respects_artist_search_and_rating() {
         duration_from: None,
         duration_to: None,
         folder_id: None,
+        ..Default::default()
     };
 
     let filtered = db
@@ -177,6 +179,7 @@ fn folder_filter_uses_case_insensitive_directory_boundaries_and_both_separators(
             duration_from: None,
             duration_to: None,
             folder_id: Some("music-folder".to_string()),
+            ..Default::default()
         })
         .expect("folder-filtered query should succeed");
 

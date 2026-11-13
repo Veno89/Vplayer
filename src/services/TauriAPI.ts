@@ -6,6 +6,28 @@ import { DEFAULT_EFFECT_ORDER, type EffectId } from '../types/audioEffects';
 
 // ========== API-specific types ==========
 
+export interface FolderHealth {
+    id: string;
+    path: string;
+    name: string;
+    totalTracks: number;
+    matchingTracks: number;
+    availability: 'available' | 'offline' | 'inaccessible';
+    accessError: string | null;
+    lastAttempt: number | null;
+    lastSuccess: number | null;
+    failed: number;
+    firstError: string | null;
+}
+
+export interface LibraryOverview {
+    totalTracks: number;
+    matchingTracks: number;
+    folders: FolderHealth[];
+}
+
+export interface LibraryFacet { label: string; artist: string | null; count: number; }
+
 /** Matches Rust EffectsConfig struct */
 export type { EffectId };
 export { DEFAULT_EFFECT_ORDER };
@@ -231,7 +253,7 @@ class TauriAPIService {
 
         // Map common errors to user-friendly messages
         if (errorStr.includes('Decode error')) {
-            return new Error(`Audio file is corrupted or in an unsupported format`);
+            return new Error(`Audio file is corrupted or in an unsupported format. ${errorStr}`);
         }
         if (errorStr.includes('permission denied') || errorStr.includes('Access denied')) {
             return new Error(`Permission denied. Check file/folder permissions.`);
@@ -383,6 +405,18 @@ class TauriAPIService {
 
     async getAllTracks(): Promise<Track[]> {
         return this._invoke('get_all_tracks');
+    }
+
+    async getLibraryOverview(filter: TrackFilter): Promise<LibraryOverview> {
+        return this._invoke('get_library_overview', { filter });
+    }
+
+    async getLibraryFacets(kind: 'artists' | 'albums', filter: TrackFilter): Promise<LibraryFacet[]> {
+        return this._invoke('get_library_facets', { kind, filter });
+    }
+
+    async getSelectedLibraryTracks(filter: TrackFilter, indices: number[]): Promise<Track[]> {
+        return this._invoke('get_selected_library_tracks', { filter, indices });
     }
 
     async getFilteredTracks(filter: TrackFilter): Promise<Track[]> {

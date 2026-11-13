@@ -118,6 +118,7 @@ describe('useAudio', () => {
       playing: false,
       progress: 0,
       duration: 0,
+      currentTrackId: undefined,
       volume: 0.7,
       setPlaying: vi.fn(),
       setProgress: vi.fn((p: number) => { storeMock.progress = p; }),
@@ -661,6 +662,22 @@ describe('useAudio', () => {
   // Event-driven updates (replaces old polling tests)
   // ─────────────────────────────────────────────────────────────────────────
   describe('event listeners', () => {
+    it('rejects timing from an old native load and from a track already deselected', async () => {
+      const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
+      await act(async () => { await tick(); await result.current.loadTrack(mockTrack()); });
+      const call = vi.mocked(invoke).mock.calls.find(([command]) => command === 'load_track');
+      const requestId = (call?.[1] as { requestId: number }).requestId;
+      storeMock.progress = 0;
+      act(() => fireEvent('playback-tick', { loadRequestId: requestId - 1, position: 99, duration: 999, isPlaying: true }));
+      expect(storeMock.progress).toBe(0);
+      expect(storeMock.duration).toBe(200);
+      storeMock.currentTrackId = 'another-track';
+      act(() => fireEvent('playback-tick', { loadRequestId: requestId, position: 99, duration: 999, isPlaying: true }));
+      expect(storeMock.progress).toBe(0);
+      storeMock.currentTrackId = 'track-1';
+      act(() => fireEvent('playback-tick', { loadRequestId: requestId, position: 12, duration: 200, isPlaying: true }));
+      expect(storeMock.progress).toBe(12);
+    });
     it('should update store progress/duration on playback-tick event', async () => {
       const { result } = renderHook(() => useAudio({ onEnded, onTimeUpdate }));
       await act(async () => { await tick(); });

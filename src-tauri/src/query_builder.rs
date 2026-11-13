@@ -104,7 +104,7 @@ impl QueryBuilder {
                 .replace('_', "\\_");
             let pattern = format!("%{}%", escaped);
             self.and_where_multi(
-                "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')",
+                "(COALESCE(NULLIF(title, ''), name) LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')",
                 vec![
                     Value::from(pattern.clone()),
                     Value::from(pattern.clone()),
@@ -145,6 +145,27 @@ impl QueryBuilder {
             self.and_where("duration <= ?", Value::from(to));
         }
 
+        if let Some(year) = filter.year_from {
+            self.and_where("year >= ?", Value::from(year));
+        }
+        if let Some(year) = filter.year_to {
+            self.and_where("year <= ?", Value::from(year));
+        }
+        if let Some(bitrate) = filter.bitrate_min {
+            self.and_where("bitrate >= ?", Value::from(bitrate));
+        }
+        if let Some(format) = &filter.format {
+            let suffix = format!("%.{}", format.to_ascii_lowercase());
+            if format == "m4a" {
+                self.and_where_multi(
+                    "(LOWER(path) LIKE ? OR LOWER(path) LIKE ?)",
+                    vec![Value::from(suffix), Value::from("%.aac".to_string())],
+                );
+            } else {
+                self.and_where("LOWER(path) LIKE ?", Value::from(suffix));
+            }
+        }
+
         if let Some(folder_id) = &filter.folder_id {
             // Compare normalized paths at a directory boundary. A plain
             // `folder_path || '%'` prefix would make `C:/Music` also match
@@ -173,7 +194,11 @@ impl QueryBuilder {
 
         // Sorting
         let (col, dir) = Self::resolve_sort(filter);
-        self.order_by(&format!("{} {}", col, dir));
+        if filter.sort_by.as_deref() == Some("album") {
+            self.order_by(&format!("artist COLLATE NOCASE {dir}, album COLLATE NOCASE {dir}, disc_number ASC, track_number ASC, title COLLATE NOCASE ASC, id ASC"));
+        } else {
+            self.order_by(&format!("{col} {dir}, id ASC"));
+        }
 
         self
     }
@@ -184,7 +209,7 @@ impl QueryBuilder {
             Some("title") => "title",
             Some("artist") => "artist",
             Some("album") => "artist, album",
-            Some("date" | "date_added") => "date_added",
+            Some("date" | "date_added" | "dateAdded") => "date_added",
             Some("rating") => "rating",
             Some("duration") => "duration",
             Some("play_count") => "play_count",

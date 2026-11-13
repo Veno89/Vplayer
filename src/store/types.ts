@@ -281,6 +281,7 @@ export interface UISliceState {
     tagEditorTrack: Track | null;
     themeEditorOpen: boolean;
     isDraggingTracks: boolean;
+    trackRevealRequest: { trackId: string; target: 'playlist' | 'library'; revision: number } | null;
 }
 
 export interface UISliceActions {
@@ -290,6 +291,7 @@ export interface UISliceActions {
     setMaxZIndex: (zIndex: number) => void;
     bringToFront: (id: string) => void;
     toggleWindow: (id: string) => void;
+    revealTrack: (trackId: string, target: 'playlist' | 'library') => void;
 
     // Theme Actions
     setColorScheme: (scheme: string) => void;
@@ -327,7 +329,12 @@ export type UISlice = UISliceState & UISliceActions;
 // Settings Slice
 // =============================================================================
 
+export interface LibrarySavedView {
+    id: string; name: string; query: string; filters: Record<string, string | number>; sortBy: string; sortOrder: string;
+}
+
 export interface SettingsSliceState {
+    librarySavedViews: LibrarySavedView[];
     // Playback Settings
     gaplessPlayback: boolean;
     autoPlayOnStartup: boolean;

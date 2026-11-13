@@ -397,3 +397,36 @@ revalidated against v0.9.52 and must not be treated as current confirmed defects
 | Item | Description |
 |------|-------------|
 | Console log catcher | In-app panel that captures console logs with filtering by level, and easy copy of individual entries or all at once |
+
+
+## Library browsing and scan health
+
+- `LibraryBrowser.tsx` provides Tracks / Artists / Albums / Folders, controlled advanced filters,
+  saved views, keyboard selection, playback and queue/playlist actions through the shared `TrackList`.
+- `useLibraryData` loads 200-row pages on demand and caches at most six pages. `rows` is sparse:
+  its length is the matching database count and unloaded indices are placeholders. `tracks` contains
+  only cached metadata. Neither is a collection-wide source for statistics or discography.
+- Collection-wide tools call `useCatalogTracks` when opened. Library totals and per-folder counts
+  come from `get_library_overview`, independently of the current result pages.
+- Selections use absolute query indices and are resolved in Rust on explicit bulk actions, including
+  selections across uncached pages. SQL ordering includes a stable ID tie-breaker. Playback captures
+  an explicit source only when requested; searching never changes a running playback source.
+- Advanced filters must pass intact through `AdvancedSearch`, `useLibraryFilters`, `TrackFilter`, and
+  `QueryBuilder`. Format refers to the filename extension; M4A includes AAC. Bitrate is stored in kbps.
+- Schema v12 adds bitrate and persistent `library_scan_status`. Existing rows are marked for metadata
+  refresh on the next rescan. Offline folder roots retain their database records. A successful scan
+  timestamp is recorded only after persistence and only if no files failed.
+- Scanner progress is emitted in batches of 25 files. The scanner hook owns operation lifetime,
+  cancellation, watcher coalescing, and final reloads; per-folder completion events must not end a
+  scan across multiple registered roots. One unavailable root must not prevent scanning the rest.
+
+## Player interactions and track identity
+
+- `PlayerWindow` uses focused Playback/AudioEngine contexts. Progress subscriptions live in `PlayerSeekbar`; static details and tools do not subscribe to playback ticks.
+- Seeking uses pointer capture, an immediate local preview, and one commit on release. Pending seeks verify track identity; keyboard seeking and volume scrolling use configured steps.
+- `useTrackLoading` follows stable IDs, including source changes at the same row. Async completions check the latest selection after each stage; explicit retry reloads the same file and resumes only after a successful load.
+- Rust playback ticks include `loadRequestId`. `useAudio` rejects superseded ticks and end events before updating progress/duration or advancing tracks. Track identity changes clear timing and A–B points atomically.
+- A–B setters reject non-finite, reversed and out-of-track points. Loop enable/disable preserves points; progress-driven loop seeks are single-flight and run only while playing.
+- `selectUpcomingTrack` reads the prepared shuffle/queue order without consuming it. Crossfade consumes that entry at its midpoint; repeat-off shuffle stops when its order is exhausted. Pending queue entries advance even at the end of a playlist, and a one-track repeat-all source restarts explicitly. Source reveal requests are transient UI state consumed once by Playlist/Library views.
+- Waveform requests are deferred during rapid navigation. Static SVG geometry is memoized; only gradient stops change with progress. Native disk keys include file size and modification time.
+- Player artwork uses size container queries: wide, short windows retain compact artwork. Ordinary controls fit the existing 340 × 420 minimum; expanded loop editing or recovery messages can scroll.

@@ -36,29 +36,73 @@ pub fn get_filtered_tracks(
 }
 
 #[tauri::command]
-pub fn get_tracks_page(
+pub async fn get_tracks_page(
     offset: usize,
     limit: usize,
     filter: Option<crate::database::TrackFilter>,
     state: tauri::State<'_, AppState>,
 ) -> AppResult<TracksPageResponse> {
-    let safe_limit = if limit == 0 { 200 } else { limit.min(2000) };
-    let filter = filter.unwrap_or_default();
-
-    let (tracks, total) = state
-        .db
-        .get_tracks_page(filter, offset, safe_limit)
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    let has_more = offset.saturating_add(tracks.len()) < total;
-
-    Ok(TracksPageResponse {
-        tracks,
-        total,
-        offset,
-        limit: safe_limit,
-        has_more,
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = if limit == 0 { 200 } else { limit.min(2000) };
+        let (tracks, total) = db
+            .get_tracks_page(filter.unwrap_or_default(), offset, limit)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let has_more = offset.saturating_add(tracks.len()) < total;
+        Ok(TracksPageResponse {
+            tracks,
+            total,
+            offset,
+            limit,
+            has_more,
+        })
     })
+    .await
+    .map_err(|e| AppError::InvalidState(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn get_library_overview(
+    filter: crate::database::TrackFilter,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<crate::database_library_browser::LibraryOverview> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.library_overview(&filter)
+            .map_err(|e| AppError::Database(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn get_library_facets(
+    kind: String,
+    filter: crate::database::TrackFilter,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<crate::database_library_browser::LibraryFacet>> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.library_facets(&kind, &filter)
+            .map_err(|e| AppError::Database(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn get_selected_library_tracks(
+    filter: crate::database::TrackFilter,
+    indices: Vec<usize>,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<Track>> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.selected_library_tracks(filter, &indices)
+            .map_err(|e| AppError::Database(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InvalidState(e.to_string()))?
 }
 
 #[tauri::command]

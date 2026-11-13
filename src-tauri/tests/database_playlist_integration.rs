@@ -22,6 +22,7 @@ fn cleanup_db_files(path: &Path) {
 
 fn sample_track(id: &str, path: &str) -> Track {
     Track {
+        bitrate: None,
         id: id.to_string(),
         path: path.to_string(),
         name: "Sample".to_string(),

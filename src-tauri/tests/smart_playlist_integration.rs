@@ -31,6 +31,7 @@ fn smart_playlist_executes_against_initialized_database() {
 
     let tracks = vec![
         Track {
+            bitrate: None,
             id: "sp_track_1".to_string(),
             path: "C:/Music/rock-one.mp3".to_string(),
             name: "rock-one.mp3".to_string(),
@@ -48,6 +49,7 @@ fn smart_playlist_executes_against_initialized_database() {
             last_played: now_millis(),
         },
         Track {
+            bitrate: None,
             id: "sp_track_2".to_string(),
             path: "C:/Music/pop-one.mp3".to_string(),
             name: "pop-one.mp3".to_string(),

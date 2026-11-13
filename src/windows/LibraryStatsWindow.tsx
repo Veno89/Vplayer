@@ -1,3 +1,4 @@
+import { useCatalogTracks } from '../hooks/useCatalogTracks';
 import React, { useState, useEffect, type ReactNode } from 'react';
 import { BarChart3, Database, HardDrive, Music, Clock, Disc, User, Folder, Loader, RefreshCw, Trash2, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { useCurrentColors } from '../hooks/useStoreHooks';
@@ -28,7 +29,7 @@ interface LocalStats {
  */
 export function LibraryStatsWindow() {
   const { library } = usePlayerContext();
-  const tracks: Track[] = library.tracks ?? [];
+  const tracks = useCatalogTracks(library.queryRevision);
   const libraryFolders = library.libraryFolders ?? [];
   const currentColors = useCurrentColors();
   const {

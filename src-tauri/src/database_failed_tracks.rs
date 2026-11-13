@@ -15,14 +15,10 @@ impl Database {
         Ok(())
     }
 
-    pub fn is_failed_track(&self, path: &str) -> bool {
+    pub fn remove_failed_track(&self, path: &str) -> Result<()> {
         let conn = self.conn();
-        let result: Result<i32> = conn.query_row(
-            "SELECT 1 FROM failed_tracks WHERE path = ?1",
-            params![path],
-            |row| row.get(0),
-        );
-        result.is_ok()
+        conn.execute("DELETE FROM failed_tracks WHERE path = ?1", params![path])?;
+        Ok(())
     }
 
     pub fn clear_failed_tracks(&self) -> Result<()> {

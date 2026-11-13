@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use serde::Deserialize;
 use std::sync::Mutex;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackFilter {
     pub search_query: Option<String>,
@@ -19,6 +19,10 @@ pub struct TrackFilter {
     pub duration_from: Option<f64>,
     pub duration_to: Option<f64>,
     pub folder_id: Option<String>,
+    pub year_from: Option<i32>,
+    pub year_to: Option<i32>,
+    pub format: Option<String>,
+    pub bitrate_min: Option<i32>,
 }
 
 pub struct Database {
@@ -66,6 +70,7 @@ mod tests {
 
     fn sample_track(id: &str, path: &str) -> Track {
         Track {
+            bitrate: None,
             id: id.to_string(),
             path: path.to_string(),
             name: "Sample".to_string(),

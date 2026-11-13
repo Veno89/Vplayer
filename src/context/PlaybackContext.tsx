@@ -28,30 +28,7 @@ import type { ToastAPI } from '../hooks/useToast';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Library data & actions exposed via context. */
-export interface LibraryContextValue {
-  tracks: Track[];
-  libraryFolders: { id: string; path: string; name: string; dateAdded: number }[];
-  isScanning: boolean;
-  scanProgress: number;
-  scanCurrent: number;
-  scanTotal: number;
-  scanCurrentFile: string;
-  searchQuery: string;
-  sortBy: string;
-  sortOrder: string;
-  advancedFilters: Record<string, any>;
-  filteredTracks: Track[];
-  setSearchQuery: (query: string) => void;
-  setSortBy: (sort: string) => void;
-  setSortOrder: (order: string) => void;
-  setAdvancedFilters: Dispatch<SetStateAction<any>>;
-  addFolder: (selectedPath?: string) => Promise<any>;
-  cancelScan: () => Promise<void>;
-  removeFolder: (id: string, path: string) => Promise<void>;
-  refreshFolders: () => Promise<number>;
-  removeTrack: (id: string) => Promise<void>;
-  refreshTracks: () => Promise<void>;
-}
+export type LibraryContextValue = ReturnType<typeof useLibrary>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Context type
@@ -66,6 +43,9 @@ export interface PlaybackContextValue {
   handleVolumeDown: (step?: number) => void;
   handleToggleMute: () => void;
   togglePlay: () => void;
+  loadedTrackId: string | null;
+  trackLoadError: string | null;
+  retryCurrentTrack: () => void;
   playbackTracks: Track[];
   library: LibraryContextValue;
   playlists: PlaylistsAPI;
@@ -179,6 +159,9 @@ export function PlaybackProvider({ children, playerHookRef }: PlaybackProviderPr
     handleVolumeDown: playerHook.handleVolumeDown,
     handleToggleMute: playerHook.handleToggleMute,
     togglePlay: togglePlayCb,
+    loadedTrackId: trackLoading.loadedTrackId,
+    trackLoadError: trackLoading.trackLoadError,
+    retryCurrentTrack: trackLoading.retryCurrentTrack,
     playbackTracks,
     library,
     playlists,
@@ -192,6 +175,9 @@ export function PlaybackProvider({ children, playerHookRef }: PlaybackProviderPr
     playerHook.handleVolumeDown,
     playerHook.handleToggleMute,
     togglePlayCb,
+    trackLoading.loadedTrackId,
+    trackLoading.trackLoadError,
+    trackLoading.retryCurrentTrack,
     playbackTracks,
     library,
     playlists,

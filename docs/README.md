@@ -14,6 +14,14 @@
 2. Add music folders via the Library window or drag & drop folders onto the app
 3. Play music: Double-click tracks or press `Space`
 
+### Player controls
+
+- Drag the timeline to preview a position, then release to seek. Arrow keys use the configured seek step; click the total time to show remaining time.
+- Set A and B to loop a section. The timestamp editor accepts seconds or `m:ss`; disabling a loop keeps its points, and changing tracks clears them.
+- Click the artist or album to browse the Library, or the source name to reveal the playing track. Up next opens the queue.
+- The gear opens full Settings directly. The separate sliders button opens quick playback tools for speed, sleep timer, stop-after-current and equalizer. The track menu provides details, ratings, tag editing and the file location.
+- Loading and file/output errors appear in the Player with a retry action after reconnecting a drive or audio device.
+
 ### For Developers
 ```bash
 git clone https://github.com/Veno89/Vplayer.git
@@ -124,6 +132,12 @@ src-tauri/src/
 - **Waveform Seekbar**: Visual waveform display behind the progress bar, computed by Rust backend
 
 ### Library Management
+- **Browsing**: Full-height track list plus Artists, Albums and Folders views
+- **Search and views**: Advanced metadata filters, active filter chips, built-in views and saved filter/sort combinations
+- **Track actions**: Double-click or Enter to play; right-click for Play next, Queue and Playlist actions; Ctrl/Shift selection
+- **Folder health**: Availability, persistent scan errors, last successful scan and per-folder retry
+- **Large libraries**: On-demand pages with a bounded metadata cache and separate database totals
+- **Bitrate filtering**: Rescan existing folders once to populate bitrate metadata
 - **Auto-scanning**: Add folders, auto-imports new files
 - **Incremental Scanning**: Only processes new or modified files
 - **File Watching**: Automatic library updates on filesystem changes

@@ -1,3 +1,4 @@
+import { useCatalogTracks } from '../hooks/useCatalogTracks';
 import React, { useMemo, useState, useEffect } from 'react';
 import { Sparkles, Play, Calendar, TrendingUp, Music, type LucideIcon } from 'lucide-react';
 import { SimpleTrackList } from '../components/TrackList';
@@ -24,7 +25,7 @@ interface PlaylistTrackWithIndex extends Track {
 
 export function SmartPlaylistsWindow() {
   const { library } = usePlayerContext();
-  const tracks: Track[] = library.tracks;
+  const tracks = useCatalogTracks(library.queryRevision);
   const currentColors = useCurrentColors();
   const setCurrentTrack = useStore(s => s.setCurrentTrack);
   const setActivePlaybackTracks = useStore(s => s.setActivePlaybackTracks);
