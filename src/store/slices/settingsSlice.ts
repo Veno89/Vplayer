@@ -38,6 +38,7 @@ export const SETTINGS_DEFAULTS: SettingsSliceState = {
   startMinimized: false,
   rememberWindowPositions: true,
   playlistAutoScroll: true,
+  playlistView: { widths: { number: 36, title: 220, artist: 150, album: 150, rating: 100, duration: 60 }, showAlbum: true, showRating: true },
   autoResizeWindow: true,
   confirmBeforeDelete: true,
   showNotifications: true,

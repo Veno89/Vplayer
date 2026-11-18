@@ -1,62 +1,36 @@
-import { Plus, Trash2 } from 'lucide-react';
-
-interface PlaylistItem {
-    id: string;
-    name: string;
+import type { ReactNode } from 'react';
+interface Props {
+  playlists: { id: string; name: string }[];
+  currentPlaylist: string | null;
+  currentColors: { accent?: string };
+  onSelect: (id: string) => void;
+  actions: ReactNode;
 }
-
-interface PlaylistSelectorProps {
-    playlists: PlaylistItem[];
-    currentPlaylist: string | null;
-    currentColors: { accent?: string };
-    onSelect: (id: string) => void;
-    onNew: () => void;
-    onDelete: (id: string) => void;
-}
-
-/**
- * Horizontal playlist selector/tab bar
- */
 export function PlaylistSelector({
-    playlists,
-    currentPlaylist,
-    currentColors,
-    onSelect,
-    onNew,
-    onDelete
-}: PlaylistSelectorProps) {
-    return (
-        <div className="flex items-center gap-2 px-3">
-            <div className="flex-1 overflow-x-auto flex gap-1">
-                {playlists.map(pl => (
-                    <button
-                        key={pl.id}
-                        onClick={() => onSelect(pl.id)}
-                        className={`px-3 py-1 text-sm rounded-sm whitespace-nowrap transition-colors ${currentPlaylist === pl.id
-                                ? `${currentColors.accent} bg-slate-800`
-                                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                            }`}
-                    >
-                        {pl.name}
-                    </button>
-                ))}
-            </div>
-            <button
-                onClick={onNew}
-                className="p-1.5 hover:bg-slate-700 rounded-sm transition-colors"
-                title="New Playlist"
-            >
-                <Plus className="w-4 h-4 text-slate-400" />
-            </button>
-            {currentPlaylist && (
-                <button
-                    onClick={() => onDelete(currentPlaylist)}
-                    className="p-1.5 hover:bg-red-900/50 rounded-sm transition-colors"
-                    title="Delete Playlist"
-                >
-                    <Trash2 className="w-4 h-4 text-red-400" />
-                </button>
-            )}
-        </div>
-    );
+  playlists,
+  currentPlaylist,
+  currentColors,
+  onSelect,
+  actions,
+}: Props) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 px-3">
+      <div
+        className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+        aria-label="Choose playlist"
+      >
+        {playlists.map((playlist) => (
+          <button
+            key={playlist.id}
+            aria-pressed={currentPlaylist === playlist.id}
+            onClick={() => onSelect(playlist.id)}
+            className={`whitespace-nowrap rounded-sm px-3 py-1 text-sm transition-colors ${currentPlaylist === playlist.id ? `${currentColors.accent} bg-slate-800` : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+          >
+            {playlist.name}
+          </button>
+        ))}
+      </div>
+      {actions}
+    </div>
+  );
 }

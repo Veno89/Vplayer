@@ -1,881 +1,904 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { List, Loader, Search } from 'lucide-react';
+import React, {
+  useCallback,
+  useId,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  ArrowDownToLine,
+  Crosshair,
+  MoreHorizontal,
+  Play,
+  ListMusic,
+  Plus,
+  ListChecks,
+} from 'lucide-react';
 import { TrackList } from '../components/TrackList';
-import type { TrackListHandle } from '../components/TrackList';
+import { WindowToolbar, WindowToolButton } from '../components/WindowToolbar';
 import { AutoSizer } from '../components/AutoSizer';
-import { StarRating } from '../components/StarRating';
-import { TrackInfoDialog } from '../components/TrackInfoDialog'; // New
-import { formatDuration, formatTotalDuration } from '../utils/formatters';
-import { usePlaylistActions } from '../hooks/usePlaylistActions';
-import { ContextMenu, getTrackContextMenuItems } from '../components/ContextMenu';
-import type { MenuItem } from '../components/ContextMenu';
-import { nativeConfirm } from '../utils/nativeDialog';
-import { useStore } from '../store/useStore';
-import { useCurrentColors } from '../hooks/useStoreHooks';
-import { usePlayerContext } from '../context/PlayerProvider';
-import { TauriAPI } from '../services/TauriAPI';
-import type { Track } from '../types';
+import { TrackInfoDialog } from '../components/TrackInfoDialog';
+import {
+  ContextMenu,
+  getTrackContextMenuItems,
+  type MenuItem,
+} from '../components/ContextMenu';
 import {
   PlaylistSelector,
-  PlaylistHeader,
   PlaylistSearchBar,
   PlaylistColumnHeaders,
-  NewPlaylistDialog,
-  PlaylistPickerDialog,
   RatingDialog,
-  BatchPlaylistPickerDialog
+  BatchPlaylistPickerDialog,
 } from '../components/playlist';
-
-// ============================================================================
-// Local Type Definitions
-// ============================================================================
-
-interface PlaylistContextMenuState {
-  x: number;
-  y: number;
-  items?: MenuItem[];
-  track?: Track;
-  index?: number;
-}
-
-interface PlaylistSortConfig {
-  key: string | null;
-  direction: 'asc' | 'desc';
-}
-
-interface TrackMenuEventLike {
-  clientX: number;
-  clientY: number;
-  preventDefault: () => void;
-  stopPropagation: () => void;
-}
+import { PlaylistDialog } from '../components/playlist/PlaylistDialog';
+import { PlaylistMissingDialog } from '../components/playlist/PlaylistMissingDialog';
+import { usePlaylistActions } from '../hooks/usePlaylistActions';
+import {
+  playlistColumns,
+  usePlaylistFollow,
+  usePlaylistView,
+} from '../hooks/usePlaylistView';
+import { useStore } from '../store/useStore';
+import { useCurrentColors } from '../hooks/useStoreHooks';
+import { usePlaybackContext } from '../context/PlayerProvider';
+import { formatTotalDuration } from '../utils/formatters';
+import type { Track } from '../types';
 
 export const PlaylistWindow = React.memo(function PlaylistWindow() {
-  // ── Store state ───────────────────────────────────────────────────
-  const currentTrack = useStore(s => s.currentTrack);
-  const currentTrackId = useStore(s => s.currentTrackId);
-  const setCurrentTrack = useStore(s => s.setCurrentTrack);
-  const loadingTrackIndex = useStore(s => s.loadingTrackIndex);
-  const isDraggingTracks = useStore(s => s.isDraggingTracks);
-  const setActivePlaybackTracks = useStore(s => s.setActivePlaybackTracks);
-  const setTagEditorTrack = useStore(s => s.setTagEditorTrack);
-
-  // ── Context ───────────────────────────────────────────────────────
-  const { playbackTracks: tracks, library, playlists, toast } = usePlayerContext();
-  const { removeTrack, refreshTracks } = library;
-
-  // ── Derived ───────────────────────────────────────────────────────
-  const currentColors = useCurrentColors();
-  const onEditTags = useCallback((track: Track) => setTagEditorTrack?.(track), [setTagEditorTrack]);
-  const onActiveTracksChange = setActivePlaybackTracks;
-  /* eslint-disable no-unused-vars */
-  const [contextMenu, setContextMenu] = useState<PlaylistContextMenuState | null>(null);
-  const [showNewPlaylistDialog, setShowNewPlaylistDialog] = useState(false);
-  const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-
-  // Debounce the search query so the expensive filter/sort useMemo doesn't
-  // re-run on every keystroke. The input stays snappy; filtering follows after
-  // a short pause (150 ms).
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 150);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-  // New dialogs for context menu
-  const [showPlaylistPicker, setShowPlaylistPicker] = useState<Track | null>(null); // track to add
-  const [showRatingDialog, setShowRatingDialog] = useState<Track | null>(null); // track for rating
-  const [showInfoDialog, setShowInfoDialog] = useState<Track | null>(null); // track for info/edit
-  // Multi-select state
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  const [sortConfig, setSortConfig] = useState<PlaylistSortConfig>({ key: null, direction: 'asc' });
-  const [columnWidths, setColumnWidths] = useState({
-    number: 40,
-    title: 200,
-    artist: 160,
-    album: 160,
-    rating: 100,
-    duration: 64
-  });
-  const [showBatchPlaylistPicker, setShowBatchPlaylistPicker] = useState(false); // for batch add to playlist
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const trackListRef = useRef<TrackListHandle>(null);
-
-  const onRatingChange = useCallback(async (trackId: string, rating: number) => {
-    try {
-      await TauriAPI.setTrackRating(trackId, rating);
-      await playlists.refreshPlaylistTracks();
-    } catch (err) {
-      console.error('Failed to update rating:', err);
-    }
-  }, [playlists]);
-  const queue = useStore((state) => state.queue);
-  const addToQueue = useStore(state => state.addToQueue);
-
-  // Map track ID → 1-based queue position (only tracks actually in the queue)
-  const queuePositions = React.useMemo(
-    () => new Map(queue.map((t, i) => [t.id, i + 1])),
-    [queue]
+  const { playlists, library, toast } = usePlaybackContext();
+  const currentId = useStore((state) => state.currentTrackId);
+  const loadingIndex = useStore((state) => state.loadingTrackIndex);
+  const activeTracks = useStore((state) => state.activePlaybackTracks);
+  const follow = useStore((state) => state.playlistAutoScroll);
+  const setFollow = useStore((state) => state.setPlaylistAutoScroll);
+  const viewPreferences = useStore((state) => state.playlistView);
+  const updateSetting = useStore((state) => state.updateSetting);
+  const reveal = useStore((state) => state.trackRevealRequest);
+  const colors = useCurrentColors();
+  const view = usePlaylistView(
+    playlists.playlistTracks,
+    playlists.currentPlaylist
   );
-  const playlistAutoScroll = useStore(state => state.playlistAutoScroll);
-  const setPlaylistAutoScroll = useStore(state => state.setPlaylistAutoScroll);
-  const activePlaybackTracks = useStore(state => state.activePlaybackTracks);
-
-  // Listen for global track drop events from VPlayer (internal library drops)
+  const actions = usePlaylistActions(playlists);
+  const { listRef, onListReady, revision, currentIndex } = usePlaylistFollow(
+    view.displayTracks,
+    currentId,
+    follow,
+    playlists.isReady
+  );
+  const searchRef = useRef<HTMLInputElement>(null);
+  const managementButtonRef = useRef<HTMLButtonElement>(null);
+  const selectionToolsId = useId();
+  const [selectionMode, setSelectionMode] = useState(false);
+  const draggedId = useRef<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dropHover, setDropHover] = useState(false);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    items: MenuItem[];
+    kind: 'playlist' | 'track';
+  } | null>(null);
+  const [infoTrack, setInfoTrack] = useState<Track | null>(null);
+  const [ratingTrack, setRatingTrack] = useState<Track | null>(null);
+  const [pickerTracks, setPickerTracks] = useState<Track[]>([]);
+  const [checking, setChecking] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [jumpId, setJumpId] = useState<string | null>(null);
   useEffect(() => {
-    const handleGlobalDrop = (e: Event) => {
-      const detail = (e as CustomEvent<{ data: string; handled?: boolean }>).detail;
-      if (!detail?.data) return;
-
-      // Prevent duplicate handling with a flag
-      if (detail.handled) return;
-      detail.handled = true;
-
-      try {
-        const _parsed = JSON.parse(detail.data);
-        handleExternalDrop({
-          preventDefault: () => { },
-          stopPropagation: () => { },
-          dataTransfer: { getData: (_format: string) => detail.data }
-        } as unknown as React.DragEvent<HTMLDivElement>);
-      } catch (err) {
-        console.error('Failed to handle global drop:', err);
-      }
-    };
-
-    window.addEventListener('vplayer-track-drop', handleGlobalDrop);
-
-    return () => {
-      window.removeEventListener('vplayer-track-drop', handleGlobalDrop);
-    };
+    setSelectionMode(false);
   }, [playlists.currentPlaylist]);
-
-  // Listen for external file drops (from OS file explorer) that were scanned and added to library
-  useEffect(() => {
-    const handleExternalTracksAdded = async (e: Event) => {
-      const detail = (e as CustomEvent<{ trackIds: string[] }>).detail;
-      if (!detail?.trackIds || detail.trackIds.length === 0) return;
-      if (!playlists.currentPlaylist) {
-        toast.showInfo('Select or create a playlist first to add tracks from a dropped folder.');
-        return;
-      }
-
-      try {
-        await playlists.addTracksToPlaylist(playlists.currentPlaylist, detail.trackIds);
-        toast.showSuccess(`Added ${detail.trackIds.length} track(s) to playlist`);
-      } catch (err) {
-        console.error('Failed to add external tracks to playlist:', err);
-        toast.showError('Failed to add tracks to playlist');
-      }
-    };
-
-    window.addEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
-
-    return () => {
-      window.removeEventListener('vplayer-external-tracks-added', handleExternalTracksAdded);
-    };
-  }, [playlists.currentPlaylist, playlists.addTracksToPlaylist, toast]);
-
-  // Filter and Sort tracks
-  const displayTracks = useMemo(() => {
-    let result = [...playlists.playlistTracks]; // Clone for sorting
-
-    // 1. Filter (uses debounced query so we don't re-run on every keystroke)
-    if (debouncedSearch.trim()) {
-      const query = debouncedSearch.toLowerCase();
-      const queryWords = query.split(/\s+/).filter(Boolean);
-
-      result = result.filter((track: Track) => {
-        const fields = [track.title, track.artist, track.album, track.genre].filter(Boolean);
-        const searchableText = fields.join(' ').toLowerCase();
-
-        return queryWords.every(word => {
-          // 1. Exact substring match (existing behavior)
-          if (searchableText.includes(word)) return true;
-
-          // 2. Abbreviated / initial-letter match:
-          //    Each character in the query word must match the start of a
-          //    successive word-boundary in the searchable fields.
-          //    e.g. "jbwm" matches "Just Be What Moves"
-          //    Only activates for query words of 2+ chars that are all letters
-          //    (avoids false positives from numbers/punctuation).
-          if (word.length >= 2 && /^[a-z]+$/.test(word)) {
-            // Extract word-boundary initials from each field individually
-            // so cross-field false positives are avoided.
-            for (const field of fields) {
-              if (!field) continue;
-              const initials = field
-                .split(/[\s\-_./]+/)
-                .map(w => w.charAt(0).toLowerCase())
-                .join('');
-              if (initials.length >= word.length && initials.includes(word)) return true;
-            }
-          }
-
-          return false;
-        });
-      });
-    }
-
-    // 2. Sort
-    if (sortConfig.key) {
-      const sortKey = sortConfig.key;
-      const sortDirection = sortConfig.direction;
-      result.sort((a: Track, b: Track) => {
-        // Special case for album: sort by artist first, then album
-        // This keeps albums grouped by artist instead of mixing them
-        if (sortKey === 'album') {
-          const artistA = (a.artist || '').toString().toLowerCase();
-          const artistB = (b.artist || '').toString().toLowerCase();
-
-          // First compare by artist
-          if (artistA < artistB) return sortDirection === 'asc' ? -1 : 1;
-          if (artistA > artistB) return sortDirection === 'asc' ? 1 : -1;
-
-          // If same artist, compare by album
-          const albumA = (a.album || '').toString().toLowerCase();
-          const albumB = (b.album || '').toString().toLowerCase();
-
-          if (albumA < albumB) return sortDirection === 'asc' ? -1 : 1;
-          if (albumA > albumB) return sortDirection === 'asc' ? 1 : -1;
-          return 0;
-        }
-
-        const valA = (a as unknown as Record<string, unknown>)[sortKey];
-        const valB = (b as unknown as Record<string, unknown>)[sortKey];
-
-        // Handle numbers (rating, duration, year)
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-          if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-          return 0;
-        }
-
-        // Handle strings
-        const strA = (valA || '').toString().toLowerCase();
-        const strB = (valB || '').toString().toLowerCase();
-
-        if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
-        if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
+  const finishSelection = () => {
+    setSelectionMode(false);
+    view.setSelectedIds(new Set());
+  };
+  const selectedPlaylist = playlists.playlists.find(
+    (item) => item.id === playlists.currentPlaylist
+  );
+  const playlistHasCurrent =
+    !!currentId &&
+    playlists.playlistTracks.some((track) => track.id === currentId);
+  const hiddenCurrent = playlistHasCurrent && currentIndex < 0;
+  const manualOrder =
+    !view.query.trim() && !view.debouncedQuery.trim() && !view.sort.key;
+  const canReorder =
+    !!playlists.currentPlaylist &&
+    manualOrder &&
+    playlists.isReady &&
+    !actions.busy;
+  const totalDuration = useMemo(
+    () =>
+      formatTotalDuration(
+        view.displayTracks.reduce(
+          (total, track) => total + (track.duration || 0),
+          0
+        )
+      ),
+    [view.displayTracks]
+  );
+  const queue = useStore((state) => state.queue);
+  const queuePositions = useMemo(() => {
+    const result = new Map<string, number>();
+    queue.forEach((track, index) => {
+      if (!result.has(track.id)) result.set(track.id, index + 1);
+    });
     return result;
-  }, [playlists.playlistTracks, debouncedSearch, sortConfig]);
+  }, [queue]);
+  const loadingId =
+    loadingIndex === null ? null : activeTracks[loadingIndex]?.id;
+  const displayLoadingIndex = loadingId
+    ? view.displayTracks.findIndex((track) => track.id === loadingId)
+    : -1;
 
-  // Map every playlist indicator through the stable track ID. Source indices
-  // are not interchangeable when this playlist is filtered or sorted.
-  const displayCurrentTrack = useMemo(() => {
-    if (!currentTrackId) return null;
-    const index = displayTracks.findIndex(track => track.id === currentTrackId);
-    return index === -1 ? null : index;
-  }, [currentTrackId, displayTracks]);
-
-  const displayLoadingTrack = useMemo(() => {
-    if (loadingTrackIndex === null) return null;
-    const loadingTrackId = activePlaybackTracks[loadingTrackIndex]?.id;
-    if (!loadingTrackId) return null;
-    const index = displayTracks.findIndex(track => track.id === loadingTrackId);
-    return index === -1 ? null : index;
-  }, [activePlaybackTracks, displayTracks, loadingTrackIndex]);
-
-  const currentTrackInDisplayedSource = activePlaybackTracks === displayTracks
-    ? currentTrack
-    : null;
-
-  // Use the extracted playlist actions hook
-  const {
-    handleSort,
-    handleDragStart,
-    handleDragOver,
-    handleDrop,
-    handleRemoveFromPlaylist,
-    handleExternalDrop,
-    handleRemoveTrack,
-    handleCreatePlaylist,
-    handleDeletePlaylist,
-    handleSelectPlaylist,
-    closeContextMenu,
-  } = usePlaylistActions({
-    playlists,
-    displayTracks,
-    currentTrack: currentTrackInDisplayedSource,
-    setCurrentTrack,
-    draggedIndex,
-    setDraggedIndex,
-    setDragOverIndex,
-    setIsDraggingOver,
-    setContextMenu: setContextMenu as (menu: { x: number; y: number; track: Track; index: number } | null) => void,
-    setShowNewPlaylistDialog,
-    newPlaylistName,
-    setNewPlaylistName,
-    setSortConfig: (updater) => setSortConfig(prev => {
-      const result = updater({ key: prev.key ?? '', direction: prev.direction });
-      return result;
-    }),
-    onActiveTracksChange,
-  });
-
-
-
-  const setPlaying = useStore(s => s.setPlaying);
-
-  // Handle track selection
-  const handleTrackSelect = useCallback((filteredIndex: number) => {
-    const selectedTrack = displayTracks[filteredIndex];
-    if (!selectedTrack) return;
-
-    // Set the playback context BEFORE changing the track index.
-    // Both writes are synchronous Zustand mutations — useTrackLoading reads
-    // activePlaybackTracks via useStore.getState() inside its effect, so it
-    // always sees the latest value. No setTimeout needed.
-    if (onActiveTracksChange) {
-      onActiveTracksChange(displayTracks);
-    }
-    setCurrentTrack(filteredIndex);
-    setPlaying(true);
-
-  }, [displayTracks, onActiveTracksChange, setCurrentTrack, setPlaying]);
-
-  // Auto-scroll to current track when it changes
   useEffect(() => {
-    if (playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0 && trackListRef.current) {
-      trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
+    if (reveal?.target === 'playlist') {
+      view.setQuery('');
+      setJumpId(reveal.trackId);
     }
-  }, [displayCurrentTrack, playlistAutoScroll]);
-
-  // Manual scroll to current track
-  const scrollToCurrentTrack = useCallback(() => {
-    if (displayCurrentTrack !== null && displayCurrentTrack >= 0 && trackListRef.current) {
-      trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
-    }
-  }, [displayCurrentTrack]);
-
-  const reveal = useStore(state => state.trackRevealRequest);
+  }, [reveal, view.setQuery]);
   useEffect(() => {
-    if (reveal?.target !== 'playlist') return;
-    setSearchQuery('');
-    setSortConfig({ key: null, direction: 'asc' });
-  }, [reveal]);
-  useEffect(() => {
-    if (reveal?.target !== 'playlist' || displayCurrentTrack === null || debouncedSearch || searchQuery || sortConfig.key !== null || !trackListRef.current) return;
-    trackListRef.current.scrollToItem(displayCurrentTrack, 'center');
-    setSelectedIndices(new Set([displayCurrentTrack]));
-    useStore.setState({ trackRevealRequest: null });
-  }, [reveal, displayCurrentTrack, debouncedSearch, searchQuery, sortConfig.key]);
+    if (!jumpId || !playlists.isReady || view.query || view.debouncedQuery)
+      return;
+    const index = view.displayTracks.findIndex((track) => track.id === jumpId);
+    if (index >= 0 && !listRef.current) return;
+    if (index >= 0) {
+      listRef.current?.scrollToItem(index, 'center');
+    } else toast.showInfo('This track is not in the selected playlist.');
+    setJumpId(null);
+    const request = useStore.getState().trackRevealRequest;
+    if (request?.target === 'playlist' && request.trackId === jumpId)
+      useStore.setState({ trackRevealRequest: null });
+  }, [
+    jumpId,
+    playlists.isReady,
+    view.query,
+    view.debouncedQuery,
+    view.displayTracks,
+    revision,
+    listRef,
+    view.setSelectedIds,
+    toast,
+  ]);
 
-  // Handle batch actions from multi-select
-  const handleBatchAction = useCallback(async (action: string, selectedTracks: Track[]) => {
-    if (!selectedTracks || selectedTracks.length === 0) return;
-
-    switch (action) {
-      case 'queue':
-        // Add all selected tracks to queue
-        selectedTracks.forEach((track: Track) => addToQueue(track, 'end'));
-        // Clear selection
-        setSelectedIndices(new Set());
-        break;
-
-      case 'playlist':
-        // Show playlist picker for batch add
-        setShowBatchPlaylistPicker(true);
-        break;
-
-      case 'delete': {
-        // Remove selected tracks from current playlist
-        if (!playlists.currentPlaylist) return;
-        let batchConfirmed = false;
-        try {
-          batchConfirmed = await nativeConfirm(`Remove ${selectedTracks.length} track(s) from this playlist?`);
-        } catch {
-          return; // Dialog error — treat as cancelled
-        }
-        if (batchConfirmed) {
-          try {
-            for (const track of selectedTracks) {
-              await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
-            }
-          } catch (err) {
-            console.error('Failed to remove tracks from playlist:', err);
-          }
-          setSelectedIndices(new Set());
-        }
-        break;
-      }
-
-      default:
-        console.warn('Unknown batch action:', action);
+  const play = useCallback(
+    (track: Track, source = playlists.playlistTracks) => {
+      const index = source.findIndex((item) => item.id === track.id);
+      if (index < 0) return;
+      const state = useStore.getState();
+      const changingTrack = state.currentTrackId !== track.id;
+      state.setActivePlaybackTracks(source);
+      // Source remapping already updates the index for the same song. Setting it
+      // again resets progress, including on the extra clicks in a double-click.
+      if (changingTrack) state.setCurrentTrack(index);
+      state.setPlaying(true);
+    },
+    [playlists.playlistTracks]
+  );
+  const activate = (index: number) => {
+    const track = view.displayTracks[index];
+    if (track) play(track);
+  };
+  const jump = () => {
+    if (currentId) {
+      view.setQuery('');
+      setJumpId(currentId);
     }
-  }, [addToQueue, playlists, setSelectedIndices]);
-
-  // Get selected tracks from indices
-  const getSelectedTracks = useCallback(() => {
-    return Array.from(selectedIndices).map((i: number) => displayTracks[i]).filter(Boolean);
-  }, [selectedIndices, displayTracks]);
-
-  // Note: last playlist ID is now persisted by usePlaylists hook via Zustand store
-
-  // Handle Context Menu
-  const handleShowMenu = useCallback((index: number, e: TrackMenuEventLike) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const track = displayTracks[index];
+  };
+  const batch = (action: string) => {
+    if (!view.selectedTracks.length) return;
+    if (action === 'queue') {
+      useStore.getState().addToQueue(view.selectedTracks, 'end');
+      toast.showInfo(`Queued ${view.selectedTracks.length} tracks`);
+    } else if (action === 'playlist') setPickerTracks(view.selectedTracks);
+    else if (action === 'delete' && playlists.currentPlaylist) {
+      const id = playlists.currentPlaylist;
+      const ids = view.selectedTracks.map((track) => track.id);
+      actions.run(async () => {
+        if (await actions.remove(id, ids)) view.setSelectedIds(new Set());
+      });
+    }
+  };
+  const rate = useCallback(async (id: string, rating: number) => {
+    try {
+      await playlists.updateTrackRating(id, rating);
+      setRatingTrack(track => track?.id === id ? null : track);
+      await library.refreshTracks();
+    } catch (error) {
+      toast.showError(String(error));
+    }
+  }, [playlists.updateTrackRating, library.refreshTracks, toast]);
+  const showTrackMenu = (
+    index: number,
+    event: {
+      clientX: number;
+      clientY: number;
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    }
+  ) => {
+    const track = view.displayTracks[index];
     if (!track) return;
-
+    event.preventDefault();
+    event.stopPropagation();
+    const id = playlists.currentPlaylist;
     const items = getTrackContextMenuItems({
       track,
-      currentTrack: displayCurrentTrack,
-      onPlay: () => {
-        if (onActiveTracksChange) {
-          onActiveTracksChange(displayTracks);
-          setTimeout(() => setCurrentTrack(index), 0);
-        } else {
-          setCurrentTrack(index);
-        }
+      isPlaylist: true,
+      onPlay: () => play(track),
+      onAddToQueue: () => useStore.getState().addToQueue(track, 'end'),
+      onRemove: () => {
+        if (id) actions.run(() => actions.remove(id, [track.id]));
       },
-      onAddToQueue: () => addToQueue(track),
-      onAddToPlaylist: () => setShowPlaylistPicker(track),
-      onRemove: () => handleRemoveTrack(index),
-      onSetRating: () => setShowRatingDialog(track),
-      onShowInfo: () => {
-        setShowInfoDialog(track);
+      onShowInfo: () => setInfoTrack(track),
+      onSetRating: () => setRatingTrack(track),
+    });
+    items.splice(
+      2,
+      0,
+      {
+        label: 'Play next',
+        onClick: () => useStore.getState().addToQueue(track, 'next'),
       },
-      isPlaylist: true
-    });
-
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items
-    });
-  }, [displayTracks, displayCurrentTrack, onActiveTracksChange, setCurrentTrack, addToQueue, handleRemoveTrack, setContextMenu]);
-
-
-
-  // Close context menu on outside click
-  useEffect(() => {
-    if (contextMenu) {
-      const handler = () => closeContextMenu();
-      document.addEventListener('click', handler);
-      return () => document.removeEventListener('click', handler);
-    }
-  }, [contextMenu]);
-
-  // Empty state
-  if (playlists.playlistTracks.length === 0 && !searchQuery) {
-    return (
-      <div
-        className="flex flex-col h-full"
-        ref={containerRef}
-        onDrop={handleExternalDrop}
-        onDragOver={(e) => {
-          console.log('[PlaylistWindow EMPTY] dragover event');
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'copy';
-          setIsDraggingOver(true);
-        }}
-        onDragLeave={(e) => {
-          if (!e.relatedTarget || (e.relatedTarget as HTMLElement).nodeName === 'HTML') {
-            setIsDraggingOver(false);
-          }
-        }}
-      >
-        {/* Playlist Selector */}
-        <PlaylistSelector
-          playlists={playlists.playlists}
-          currentPlaylist={playlists.currentPlaylist}
-          currentColors={currentColors}
-          onSelect={handleSelectPlaylist}
-          onNew={() => setShowNewPlaylistDialog(true)}
-          onDelete={handleDeletePlaylist}
-        />
-
-        {/* Empty State with Drop Zone */}
-        <div
-          className={`flex-1 flex flex-col items-center justify-center text-center p-4 transition-colors ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''
-            }`}
-        >
-          <List className="w-12 h-12 text-slate-600 mb-3" />
-          <p className="text-slate-400 text-sm mb-2">
-            {isDraggingOver
-              ? 'Drop tracks here to add them'
-              : 'No tracks in this playlist'}
-          </p>
-          <p className="text-slate-500 text-xs">
-            Drag tracks from your library to this playlist
-          </p>
-        </div>
-
-        {/* New Playlist Dialog */}
-        {showNewPlaylistDialog && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl">
-              <h3 className="text-white font-semibold mb-3">New Playlist</h3>
-              <input
-                type="text"
-                value={newPlaylistName}
-                onChange={(e) => setNewPlaylistName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
-                placeholder="Playlist name"
-                className="w-full px-3 py-2 bg-slate-900 text-white rounded-sm border border-slate-700 focus:outline-hidden focus:border-blue-500 mb-3"
-                autoFocus
-              />
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() => setShowNewPlaylistDialog(false)}
-                  className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreatePlaylist}
-                  className={`px-3 py-1.5 text-sm text-white rounded-sm transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {
+        label: 'Add to another playlist…',
+        onClick: () => setPickerTracks([track]),
+      }
     );
-  }
-
-  const itemSize = 48;
-  // const listHeight = Math.min(500, displayTracks.length * itemSize); // Removed static calculation
+    setMenu({ x: event.clientX, y: event.clientY, items, kind: 'track' });
+  };
+  const showManagementMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (menu?.kind === 'playlist') {
+      setMenu(null);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const unavailable = !selectedPlaylist || actions.busy || !playlists.isReady;
+    setMenu({
+      kind: 'playlist',
+      x: rect.left,
+      y: rect.bottom,
+      items: [
+        {
+          label: 'Rename…',
+          onClick: () => actions.promptName('Rename'),
+          disabled: unavailable,
+        },
+        {
+          label: 'Duplicate…',
+          onClick: () => actions.promptName('Duplicate'),
+          disabled: unavailable,
+        },
+        { type: 'separator' },
+        {
+          label: 'Import M3U…',
+          onClick: actions.importPlaylist,
+          disabled: actions.busy,
+        },
+        {
+          label: 'Export M3U…',
+          onClick: actions.exportPlaylist,
+          disabled: unavailable,
+        },
+        {
+          label: 'Check for missing tracks…',
+          onClick: () => {
+            if (selectedPlaylist)
+              setChecking({
+                id: selectedPlaylist.id,
+                name: selectedPlaylist.name,
+              });
+          },
+          disabled: unavailable,
+        },
+        { type: 'separator' },
+        {
+          label: `${viewPreferences.showAlbum ? 'Hide' : 'Show'} album column`,
+          onClick: () =>
+            updateSetting('playlistView', {
+              ...viewPreferences,
+              showAlbum: !viewPreferences.showAlbum,
+            }),
+        },
+        {
+          label: `${viewPreferences.showRating ? 'Hide' : 'Show'} rating column`,
+          onClick: () =>
+            updateSetting('playlistView', {
+              ...viewPreferences,
+              showRating: !viewPreferences.showRating,
+            }),
+        },
+        {
+          label: 'Reset column widths',
+          onClick: () =>
+            updateSetting('playlistView', { ...viewPreferences, widths: {} }),
+        },
+        { type: 'separator' },
+        {
+          label: 'Delete playlist…',
+          onClick: actions.deletePlaylist,
+          danger: true,
+          disabled: unavailable,
+        },
+      ],
+    });
+  };
+  const dropOnTrack = (event: React.DragEvent, index: number) => {
+    if (!draggedId.current) return; // External drops are handled by the panel.
+    event.preventDefault();
+    event.stopPropagation();
+    const from = playlists.playlistTracks.findIndex(
+      (track) => track.id === draggedId.current
+    );
+    draggedId.current = null;
+    setDragging(false);
+    if (!canReorder || from < 0 || from === index || !playlists.currentPlaylist)
+      return;
+    const reordered = [...playlists.playlistTracks];
+    reordered.splice(index, 0, reordered.splice(from, 1)[0]);
+    const id = playlists.currentPlaylist;
+    actions.run(() =>
+      playlists.reorderPlaylistTracks(
+        id,
+        reordered.map((track, position) => [track.id, position])
+      )
+    );
+  };
+  const externalDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    setDropHover(false);
+    if (draggedId.current) {
+      draggedId.current = null;
+      setDragging(false);
+      return;
+    }
+    const id = playlists.currentPlaylist;
+    if (!id || !playlists.isReady || actions.busy) return;
+    try {
+      const data: unknown = JSON.parse(
+        event.dataTransfer.getData('application/json') ||
+          event.dataTransfer.getData('text/plain')
+      );
+      if (
+        !Array.isArray(data) ||
+        data.length > 10000 ||
+        !data.every((track) => track && typeof track.id === 'string')
+      )
+        throw new Error('Drop up to 10,000 library tracks onto a playlist.');
+      actions.run(() =>
+        playlists.addTracksToPlaylist(id, [
+          ...new Set(data.map((track) => track.id)),
+        ])
+      );
+    } catch (error) {
+      toast.showError(`Could not add tracks: ${String(error)}`);
+    }
+  };
 
   return (
     <div
-      ref={containerRef}
-      className={`flex flex-col h-full gap-3 ${isDraggingOver ? 'bg-blue-500/5 border-2 border-dashed border-blue-500' : ''
-        }`}
-      style={{ pointerEvents: 'auto' }}
-      onDrop={(e) => {
-        console.log('[PlaylistWindow MAIN] DROP EVENT FIRED!', (e.target as HTMLElement).className);
-        handleExternalDrop(e);
+      className={`flex h-full min-h-0 min-w-0 flex-col gap-3 py-2 ${dropHover ? 'ring-2 ring-cyan-500' : ''}`}
+      aria-label="Playlist panel"
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          !target.closest(
+            'button, input, select, textarea, [role="option"], [role="menu"], [role="dialog"]'
+          )
+        )
+          view.setSelectedIds(new Set());
       }}
-      onDragOver={(e) => {
-        console.log('[PlaylistWindow MAIN] dragover event, target:', (e.target as HTMLElement).className);
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-        setIsDraggingOver(true);
-      }}
-      onDragLeave={(e) => {
-        if (!e.relatedTarget || (e.relatedTarget as HTMLElement).nodeName === 'HTML') {
-          setIsDraggingOver(false);
+      onKeyDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          event.key === 'Escape' &&
+          !target.closest(
+            'input, textarea, [contenteditable="true"], [role="menu"], [role="dialog"]'
+          )
+        ) {
+          finishSelection();
+          event.preventDefault();
+          event.stopPropagation();
         }
       }}
+      onKeyDownCapture={(event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === 'f'
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        }
+      }}
+      onDragOver={(event) => {
+        if (playlists.currentPlaylist && !draggedId.current) {
+          event.preventDefault();
+          setDropHover(true);
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setDropHover(false);
+      }}
+      onDrop={externalDrop}
     >
-      {/* Playlist Selector */}
       <PlaylistSelector
         playlists={playlists.playlists}
         currentPlaylist={playlists.currentPlaylist}
-        currentColors={currentColors}
-        onSelect={handleSelectPlaylist}
-        onNew={() => setShowNewPlaylistDialog(true)}
-        onDelete={handleDeletePlaylist}
+        currentColors={colors}
+        onSelect={playlists.setCurrentPlaylist}
+        actions={
+          <WindowToolbar label="Playlist tools">
+            <WindowToolButton
+              label="New playlist"
+              onClick={() => actions.promptName('New')}
+              disabled={actions.busy}
+            >
+              <Plus className="h-4 w-4" />
+            </WindowToolButton>
+            <WindowToolButton
+              label="Follow playback"
+              tooltip={`Follow playback: ${follow ? 'On' : 'Off'}. Keep the playing track in view.`}
+              aria-pressed={follow}
+              onClick={() => setFollow(!follow)}
+              style={{
+                color: follow ? '#4ade80' : '#f87171',
+                backgroundColor: follow
+                  ? 'rgb(34 197 94 / .12)'
+                  : 'rgb(239 68 68 / .10)',
+              }}
+            >
+              <ArrowDownToLine className="h-4 w-4" />
+            </WindowToolButton>
+            <WindowToolButton
+              label="Jump to current track"
+              tooltip={
+                !currentId
+                  ? 'Jump to current track. Choose a song to play first.'
+                  : !playlists.isReady
+                    ? 'Jump to current track. Wait for the playlist to load.'
+                    : !playlistHasCurrent
+                      ? 'The current track is not in this playlist.'
+                      : 'Jump to the currently playing track in this playlist.'
+              }
+              disabled={!playlistHasCurrent || !playlists.isReady}
+              onClick={jump}
+            >
+              <Crosshair className="h-4 w-4" />
+            </WindowToolButton>
+            <WindowToolButton
+              label="Selection tools"
+              tooltip={`Selection mode: ${selectionMode ? 'On' : 'Off'}. Select tracks for queue, playlist and removal actions.`}
+              aria-pressed={selectionMode}
+              aria-expanded={selectionMode}
+              aria-controls={selectionMode ? selectionToolsId : undefined}
+              disabled={!playlists.isReady}
+              onClick={() => {
+                if (selectionMode) finishSelection();
+                else setSelectionMode(true);
+              }}
+              style={
+                selectionMode
+                  ? {
+                      color: colors.accentHex,
+                      backgroundColor: 'rgb(51 65 85 / .6)',
+                    }
+                  : undefined
+              }
+            >
+              <ListChecks className="h-4 w-4" />
+            </WindowToolButton>
+            <WindowToolButton
+              ref={managementButtonRef}
+              label="Playlist actions"
+              aria-haspopup="menu"
+              aria-expanded={menu?.kind === 'playlist'}
+              onClick={showManagementMenu}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </WindowToolButton>
+          </WindowToolbar>
+        }
       />
-
-      {/* Adding Progress Indicator */}
-      {playlists.addingProgress.isAdding && (
-        <div className="bg-blue-900/20 border border-blue-700/50 rounded-sm p-3 mx-3 mb-3">
-          <div className="flex items-center gap-3">
-            <Loader className="w-5 h-5 text-blue-400 animate-spin shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="text-blue-300 text-sm font-medium mb-1">
-                Adding tracks to playlist...
-              </div>
-              <div className="text-blue-400 text-xs">
-                {playlists.addingProgress.current} / {playlists.addingProgress.total} tracks
-              </div>
-            </div>
-          </div>
-          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-2">
-            <div
-              className="h-full bg-linear-to-r from-blue-500 to-cyan-500 transition-all duration-300 ease-out"
-              style={{ width: `${(playlists.addingProgress.current / playlists.addingProgress.total) * 100}%` }}
-            />
-          </div>
+      <div className="flex flex-wrap items-center gap-2 px-3 text-xs text-slate-400">
+        <span className="mr-auto">
+          {view.query.trim() ? `${view.displayTracks.length} / ` : ''}
+          {playlists.playlistTracks.length} tracks · {totalDuration}
+        </span>
+      </div>
+      <PlaylistSearchBar
+        value={view.query}
+        onChange={view.setQuery}
+        onClear={() => view.setQuery('')}
+        inputRef={searchRef}
+      />
+      {(view.query || view.sort.key) && (
+        <div className="flex flex-wrap items-center gap-2 px-3 text-xs text-slate-400">
+          {view.sort.key ? (
+            <button
+              className="rounded-sm bg-slate-800 px-2 py-1 text-slate-200"
+              onClick={() => view.setSort({ key: null, direction: 'asc' })}
+            >
+              Original order
+            </button>
+          ) : null}
+          {view.query && (
+            <button
+              disabled={
+                !view.displayTracks.length ||
+                view.query !== view.debouncedQuery ||
+                !playlists.isReady
+              }
+              className="flex items-center gap-1 rounded-sm bg-slate-800 px-2 py-1 text-slate-200 disabled:opacity-40"
+              onClick={() => play(view.displayTracks[0], view.displayTracks)}
+            >
+              <Play className="h-3 w-3" />
+              Play results
+            </button>
+          )}
+          <span>Clear search and use original order to rearrange tracks.</span>
         </div>
       )}
-
-      {/* Header */}
-      <PlaylistHeader
-        playlistName={playlists.currentPlaylist
-          ? playlists.playlists.find(p => p.id === playlists.currentPlaylist)?.name
-          : null}
-        trackCount={displayTracks.length}
-        totalTracks={playlists.playlistTracks.length}
-        searchQuery={debouncedSearch}
-        autoScroll={playlistAutoScroll}
-        onToggleAutoScroll={() => setPlaylistAutoScroll(!playlistAutoScroll)}
-        onScrollToCurrentTrack={scrollToCurrentTrack}
-        showScrollButton={!playlistAutoScroll && displayCurrentTrack !== null && displayCurrentTrack >= 0}
-        currentColors={currentColors}
-      />
-
-      {/* Search Bar */}
-      <PlaylistSearchBar
-        value={searchQuery}
-        onChange={setSearchQuery}
-        onClear={() => { setSearchQuery(''); setDebouncedSearch(''); }}
-      />
-
-      {/* Column Headers */}
-      <PlaylistColumnHeaders
-        sortConfig={sortConfig}
-        onSort={handleSort}
-        columnWidths={columnWidths}
-        onColumnResize={setColumnWidths}
-      />
-
-      {/* Virtualized Track List */}
-      <AutoSizer className="flex-1 overflow-hidden relative">
-        {({ height, width }) => displayTracks.length === 0 && debouncedSearch ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-400">
-            <Search className="w-12 h-12 mb-3 opacity-50" />
-            <p className="text-lg font-medium">No results found</p>
-            <p className="text-sm text-slate-500">Try a different search term</p>
+      {hiddenCurrent && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 text-xs text-amber-200">
+          <span>Current track is hidden by search.</span>
+          <button onClick={jump} className="underline">
+            Reveal current track
+          </button>
+        </div>
+      )}
+      {selectionMode && (
+        <div
+          id={selectionToolsId}
+          role="region"
+          aria-label="Playlist selection tools"
+          className="flex flex-wrap items-center gap-2 bg-slate-800/70 px-3 py-2 text-xs text-slate-200"
+        >
+          <span className="mr-auto">
+            {view.selectedTracks.length} selected
+            {view.selectedTracks.length > view.selectedIndices.size
+              ? ` (${view.selectedTracks.length - view.selectedIndices.size} hidden)`
+              : ''}
+          </span>
+          <button
+            disabled={!view.displayTracks.length}
+            onClick={() =>
+              view.setSelectedIds(
+                (previous) =>
+                  new Set([
+                    ...previous,
+                    ...view.displayTracks.map((track) => track.id),
+                  ])
+              )
+            }
+            className="rounded-sm px-2 py-1 hover:bg-slate-700 disabled:opacity-40"
+          >
+            {view.query.trim() ? 'Select all results' : 'Select all'}
+          </button>
+          <button
+            disabled={!view.selectedTracks.length}
+            onClick={() => batch('queue')}
+            className="rounded-sm px-2 py-1 hover:bg-slate-700"
+          >
+            Queue
+          </button>
+          <button
+            disabled={actions.busy || !view.selectedTracks.length}
+            onClick={() => batch('playlist')}
+            className="rounded-sm px-2 py-1 hover:bg-slate-700"
+          >
+            Add to playlist
+          </button>
+          <button
+            disabled={
+              actions.busy || !playlists.isReady || !view.selectedTracks.length
+            }
+            onClick={() => batch('delete')}
+            className="rounded-sm px-2 py-1 text-red-300 hover:bg-slate-700"
+          >
+            Remove
+          </button>
+          <button
+            aria-label="Clear selection"
+            disabled={!view.selectedTracks.length}
+            onClick={() => view.setSelectedIds(new Set())}
+            className="rounded-sm px-2 py-1 hover:bg-slate-700"
+          >
+            Clear
+          </button>
+          <button
+            onClick={finishSelection}
+            className="rounded-sm px-2 py-1 text-cyan-300 hover:bg-slate-700"
+          >
+            Done
+          </button>
+        </div>
+      )}
+      {actions.receipt && (
+        <div
+          role="status"
+          className="flex items-center gap-3 px-3 text-xs text-slate-300"
+        >
+          <span>Removed {actions.receipt.removed} from playlist.</span>
+          <button
+            disabled={actions.busy}
+            onClick={actions.undo}
+            className="text-cyan-300 underline"
+          >
+            Undo
+          </button>
+          <button
+            aria-label="Dismiss undo"
+            onClick={() => actions.setReceipt(null)}
+            className="ml-auto"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      {(playlists.addingProgress.isAdding || actions.busy) && (
+        <div role="status" className="px-3 text-xs text-slate-400">
+          Updating playlist…
+        </div>
+      )}
+      {playlists.loadError && (
+        <div
+          role="alert"
+          className="flex flex-wrap gap-2 px-3 text-xs text-red-300"
+        >
+          <span>Could not refresh playlist: {playlists.loadError}</span>
+          <button
+            className="underline"
+            onClick={() => actions.run(playlists.refreshPlaylistTracks)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {playlists.isLoading ? (
+          <div role="status" className="p-6 text-center text-slate-400">
+            Loading playlist…
           </div>
-        ) : displayTracks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-400">
-            <List className="w-12 h-12 mb-3 opacity-50" />
-            <p className="text-lg font-medium">No tracks in this playlist</p>
-            <p className="text-sm text-slate-500">Drag tracks here to add them</p>
+        ) : view.displayTracks.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-slate-400">
+            <ListMusic className="h-8 w-8 opacity-50" />
+            <p>
+              {view.query
+                ? 'No matching tracks.'
+                : selectedPlaylist
+                  ? 'Drag tracks here from the Library.'
+                  : 'Choose a playlist or create one to get started.'}
+            </p>
+            {view.query && (
+              <button
+                onClick={() => view.setQuery('')}
+                className="text-cyan-300 underline"
+              >
+                Clear search
+              </button>
+            )}
           </div>
         ) : (
-          <TrackList
-            ref={trackListRef}
-            tracks={displayTracks}
-            currentTrack={displayCurrentTrack}
-            onSelect={handleTrackSelect}
-            currentColors={currentColors}
-            loadingTrackIndex={displayLoadingTrack}
-            onShowMenu={handleShowMenu}
-            isDraggable={!!playlists.currentPlaylist}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            draggedIndex={draggedIndex}
-            height={height}
-            itemSize={itemSize}
-            enableMultiSelect={true}
-            selectedIndices={selectedIndices}
-            onSelectionChange={setSelectedIndices}
-            onBatchAction={handleBatchAction}
-            showRating={true} // Enable rating display
-            onRatingChange={onRatingChange}
-            columnWidths={columnWidths} // Pass dynamic widths
-            queuePositions={queuePositions}
-          />
-        )
-        }
-      </AutoSizer>
-
-      {/* Drop Indicator Overlay */}
-      {isDraggingOver && (
-        <div className="absolute inset-0 bg-blue-500/10 pointer-events-none flex items-center justify-center">
-          <div className="text-blue-400 text-lg font-semibold">
-            Drop to add to playlist
-          </div>
-        </div>
-      )}
-
-      {/* New Playlist Dialog */}
-      {showNewPlaylistDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl">
-            <h3 className="text-white font-semibold mb-3">New Playlist</h3>
-            <input
-              type="text"
-              value={newPlaylistName}
-              onChange={(e) => setNewPlaylistName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
-              placeholder="Playlist name"
-              className="w-full px-3 py-2 bg-slate-900 text-white rounded-sm border border-slate-700 focus:outline-hidden focus:border-blue-500 mb-3"
-              autoFocus
-            />
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowNewPlaylistDialog(false)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreatePlaylist}
-                className={`px-3 py-1.5 text-sm text-white rounded-sm transition-colors ${currentColors.accent} bg-slate-900 hover:bg-slate-800`}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Track Info & Editor Dialog */}
-      {showInfoDialog && createPortal(
-        <TrackInfoDialog
-          track={showInfoDialog}
-          onClose={() => setShowInfoDialog(null)}
-          onSave={() => {
-            refreshTracks();
+          <AutoSizer>
+            {({ height, width }) => {
+              const columns = playlistColumns(
+                Math.max(0, width - 16),
+                viewPreferences.widths,
+                viewPreferences.showAlbum,
+                viewPreferences.showRating
+              );
+              return (
+                <div className="h-full min-w-0">
+                  <div className="h-9">
+                    <PlaylistColumnHeaders
+                      columnWidths={columns.widths}
+                      sortConfig={view.sort}
+                      onSort={(key) =>
+                        view.setSort((previous) =>
+                          key === 'number'
+                            ? { key: null, direction: 'asc' }
+                            : {
+                                key,
+                                direction:
+                                  previous.key === key &&
+                                  previous.direction === 'asc'
+                                    ? 'desc'
+                                    : 'asc',
+                              }
+                        )
+                      }
+                      onColumnResize={(update) => {
+                        const widths = update(columns.widths);
+                        updateSetting('playlistView', {
+                          ...viewPreferences,
+                          widths: { ...viewPreferences.widths, ...widths },
+                        });
+                      }}
+                      {...columns}
+                    />
+                  </div>
+                  <TrackList
+                    key={playlists.currentPlaylist}
+                    ref={listRef}
+                    onReady={onListReady}
+                    tracks={view.displayTracks}
+                    currentTrack={currentIndex < 0 ? null : currentIndex}
+                    loadingTrackIndex={
+                      displayLoadingIndex < 0 ? null : displayLoadingIndex
+                    }
+                    currentColors={colors}
+                    height={Math.max(0, height - 36)}
+                    itemSize={48}
+                    columnWidths={columns.widths}
+                    showAlbum={columns.showAlbum}
+                    showArtist={columns.showArtist}
+                    showRating={columns.showRating}
+                    showNumber={columns.showNumber}
+                    panelColumns
+                    selectOnClick
+                    selectionMode={selectionMode}
+                    enableMultiSelect={selectionMode}
+                    hideSelectionToolbar
+                    selectedIndices={view.selectedIndices}
+                    onSelectionChange={view.setSelectedIndices}
+                    onSelect={(index) => {
+                      if (!selectionMode) {
+                        activate(index);
+                        return;
+                      }
+                      const track = view.displayTracks[index];
+                      if (track)
+                        view.setSelectedIds((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(track.id)) next.delete(track.id);
+                          else next.add(track.id);
+                          return next;
+                        });
+                    }}
+                    onPlayTrack={selectionMode ? undefined : activate}
+                    onEnterTrack={(index) => {
+                      if (view.displayTracks[index])
+                        play(view.displayTracks[index]);
+                    }}
+                    onBatchAction={batch}
+                    onRatingChange={rate}
+                    onShowMenu={showTrackMenu}
+                    queuePositions={queuePositions}
+                    isDraggable={canReorder && !selectionMode}
+                    draggedIndex={
+                      dragging
+                        ? view.displayTracks.findIndex(
+                            (track) => track.id === draggedId.current
+                          )
+                        : null
+                    }
+                    onDragStart={(event, index) => {
+                      draggedId.current = view.displayTracks[index].id;
+                      setDragging(true);
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData(
+                        'application/x-vplayer-playlist',
+                        draggedId.current
+                      );
+                    }}
+                    onDragEnd={() => {
+                      draggedId.current = null;
+                      setDragging(false);
+                      setDropHover(false);
+                    }}
+                    onDragOver={(event) => {
+                      if (draggedId.current) event.preventDefault();
+                    }}
+                    onDrop={dropOnTrack}
+                  />
+                </div>
+              );
+            }}
+          </AutoSizer>
+        )}
+      </div>
+      {actions.nameDialog && (
+        <PlaylistDialog
+          title={`${actions.nameDialog.kind} playlist`}
+          onClose={() => {
+            if (!actions.busy) actions.setNameDialog(null);
           }}
-        />,
-        document.body
-      )}
-
-      {/* Playlist Picker Dialog */}
-      {showPlaylistPicker && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]" onClick={() => setShowPlaylistPicker(null)}>
-          <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl max-h-96 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <h3 className="text-white font-semibold mb-3">Add to Playlist</h3>
-            <p className="text-slate-400 text-sm mb-3 truncate">
-              "{showPlaylistPicker.title || showPlaylistPicker.name}"
-            </p>
-            <div className="flex-1 overflow-y-auto space-y-1">
-              {playlists.playlists.length === 0 ? (
-                <p className="text-slate-500 text-sm text-center py-4">No playlists yet</p>
-              ) : (
-                playlists.playlists.map(pl => (
-                  <button
-                    key={pl.id}
-                    onClick={async () => {
-                      try {
-                        await playlists.addTrackToPlaylist(pl.id, showPlaylistPicker!.id);
-                        setShowPlaylistPicker(null);
-                      } catch (err) {
-                        console.error('Failed to add to playlist:', err);
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded-sm transition-colors"
-                  >
-                    {pl.name}
-                  </button>
-                ))
-              )}
-            </div>
-            <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
-              <button
-                onClick={() => setShowPlaylistPicker(null)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Rating Dialog */}
-      {showRatingDialog && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]" onClick={() => setShowRatingDialog(null)}>
-          <div className="bg-slate-800 rounded-lg p-4 w-72 shadow-xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-white font-semibold mb-3">Set Rating</h3>
-            <p className="text-slate-400 text-sm mb-4 truncate">
-              "{showRatingDialog.title || showRatingDialog.name}"
-            </p>
-            <div className="flex justify-center mb-4">
-              <StarRating
-                rating={showRatingDialog.rating || 0}
-                onRatingChange={async (newRating: number) => {
-                  try {
-                    await TauriAPI.setTrackRating(showRatingDialog!.id, newRating);
-                    await playlists.refreshPlaylistTracks();
-                    setShowRatingDialog(null);
-                  } catch (err) {
-                    console.error('Failed to set rating:', err);
-                  }
-                }}
-                size="lg"
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              actions.submitName();
+            }}
+          >
+            <label className="mb-2 block text-sm">
+              Playlist name
+              <input
+                autoFocus
+                value={actions.name}
+                onChange={(event) => actions.setName(event.target.value)}
+                maxLength={255}
+                className="mt-2 w-full rounded-sm border border-slate-600 bg-slate-800 p-2 text-white"
               />
-            </div>
-            <div className="flex gap-2 justify-end">
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
               <button
-                onClick={() => setShowRatingDialog(null)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
+                type="button"
+                disabled={actions.busy}
+                onClick={() => actions.setNameDialog(null)}
+                className="rounded-sm px-3 py-2 hover:bg-slate-700"
               >
                 Cancel
               </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Batch Playlist Picker Dialog */}
-      {showBatchPlaylistPicker && selectedIndices.size > 0 && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]" onClick={() => setShowBatchPlaylistPicker(false)}>
-          <div className="bg-slate-800 rounded-lg p-4 w-80 shadow-xl max-h-96 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <h3 className="text-white font-semibold mb-3">Add {selectedIndices.size} Tracks to Playlist</h3>
-            <div className="flex-1 overflow-y-auto space-y-1">
-              {playlists.playlists.length === 0 ? (
-                <p className="text-slate-500 text-sm text-center py-4">No playlists yet</p>
-              ) : (
-                playlists.playlists.map(pl => (
-                  <button
-                    key={pl.id}
-                    onClick={async () => {
-                      try {
-                        const selectedTracks = getSelectedTracks();
-                        await playlists.addTracksToPlaylist(pl.id, selectedTracks.map((t: Track) => t.id));
-                        setShowBatchPlaylistPicker(false);
-                        setSelectedIndices(new Set());
-                      } catch (err) {
-                        console.error('Failed to add tracks to playlist:', err);
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-white bg-slate-700/50 hover:bg-slate-700 rounded-sm transition-colors"
-                  >
-                    {pl.name}
-                  </button>
-                ))
-              )}
-            </div>
-            <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-slate-700">
               <button
-                onClick={() => setShowBatchPlaylistPicker(false)}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-sm transition-colors"
+                disabled={!actions.name.trim() || actions.busy}
+                className="rounded-sm bg-cyan-800 px-3 py-2 disabled:opacity-40"
               >
-                Cancel
+                {actions.busy
+                  ? 'Saving…'
+                  : actions.nameDialog.kind === 'New'
+                    ? 'Create'
+                    : actions.nameDialog.kind === 'Duplicate'
+                      ? 'Duplicate'
+                      : 'Save'}
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
+          </form>
+        </PlaylistDialog>
       )}
-
-      {/* Footer with stats */}
-      {displayTracks.length > 0 && (
-        <div className="border-t border-slate-700 pt-2 px-3 text-xs text-slate-400 flex justify-between">
-          <span>
-            {displayCurrentTrack !== null
-              ? `Playing: Track ${displayCurrentTrack + 1} of ${displayTracks.length}`
-              : currentTrackId
-                ? 'Playing track is not in this playlist'
-                : 'No track playing'}
-          </span>
-          <span>
-            Total: {formatTotalDuration(displayTracks.reduce((sum: number, t: Track) => sum + (t.duration || 0), 0))}
-          </span>
-        </div>
+      {checking && (
+        <PlaylistMissingDialog
+          playlistId={checking.id}
+          playlistName={checking.name}
+          onClose={() => setChecking(null)}
+          onRemove={async (ids) => {
+            await actions.exclusive(() =>
+              actions.remove(checking.id, ids, true)
+            );
+          }}
+        />
       )}
-
-      {/* Context Menu */}
-      {contextMenu && contextMenu.items && (
+      <RatingDialog
+        track={ratingTrack}
+        onClose={() => setRatingTrack(null)}
+        onRate={rate}
+      />
+      <BatchPlaylistPickerDialog
+        isOpen={pickerTracks.length > 0}
+        selectedCount={pickerTracks.length}
+        playlists={playlists.playlists}
+        onClose={() => setPickerTracks([])}
+        onAdd={(id) =>
+          actions.run(async () => {
+            await playlists.addTracksToPlaylist(
+              id,
+              pickerTracks.map((track) => track.id)
+            );
+            setPickerTracks([]);
+            toast.showSuccess('Tracks added to playlist');
+          })
+        }
+      />
+      <TrackInfoDialog
+        track={infoTrack}
+        onClose={() => setInfoTrack(null)}
+        onSave={() =>
+          actions.run(async () => {
+            await playlists.refreshPlaylistTracks();
+            await library.refreshTracks();
+          })
+        }
+      />
+      {menu && (
         <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenu.items}
-          onClose={() => setContextMenu(null)}
+          {...menu}
+          triggerRef={
+            menu.kind === 'playlist' ? managementButtonRef : undefined
+          }
+          onClose={() => setMenu(null)}
         />
       )}
     </div>

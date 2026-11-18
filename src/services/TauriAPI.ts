@@ -5,6 +5,9 @@ import { Track, Playlist, PlaylistTrack, TrackFilter } from '../types';
 import { DEFAULT_EFFECT_ORDER, type EffectId } from '../types/audioEffects';
 
 // ========== API-specific types ==========
+export interface PlaylistRemoval { playlistId: string; before: string[]; after: string[]; removed: number; }
+export interface PlaylistFileIssue { trackId: string; title: string; path: string; status: 'missing' | 'rootUnavailable' | 'inaccessible'; reason: string; }
+export interface PlaylistCheckProgress { scanId: string; checked: number; total: number; }
 
 export interface FolderHealth {
     id: string;
@@ -619,6 +622,22 @@ class TauriAPIService {
 
     async removeTrackFromPlaylist(playlistId: string, trackId: string): Promise<void> {
         return this._invoke('remove_track_from_playlist', { playlistId, trackId });
+    }
+
+    async removePlaylistTracks(playlistId: string, trackIds: string[], missingOnly = false): Promise<PlaylistRemoval> {
+        return this._invoke('remove_playlist_tracks', { playlistId, trackIds, missingOnly }, 120000);
+    }
+
+    async undoPlaylistRemoval(receipt: PlaylistRemoval): Promise<void> {
+        return this._invoke('undo_playlist_removal', { receipt });
+    }
+
+    async duplicatePlaylist(playlistId: string, name: string): Promise<string> {
+        return this._invoke('duplicate_playlist', { playlistId, name });
+    }
+
+    async checkPlaylistTracks(playlistId: string, scanId: string): Promise<PlaylistFileIssue[]> {
+        return this._invoke('check_playlist_tracks', { playlistId, scanId }, 120000);
     }
 
     async reorderPlaylistTracks(playlistId: string, trackPositions: [string, number][]): Promise<void> {

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { TauriAPI } from '../services/TauriAPI';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { TauriAPI, type PlaylistRemoval } from '../services/TauriAPI';
 import { log } from '../utils/logger';
 import { useStore } from '../store/useStore';
 import type { Track } from '../types';
@@ -22,6 +22,7 @@ export interface PlaylistsAPI {
   setCurrentPlaylist: (id: string | null) => void;
   playlistTracks: Track[];
   isLoading: boolean;
+  loadError: string | null;
   isReady: boolean;
   addingProgress: AddingProgress;
   createPlaylist: (name: string) => Promise<string>;
@@ -30,9 +31,13 @@ export interface PlaylistsAPI {
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
+  removeTracksFromPlaylist: (playlistId: string, trackIds: string[], missingOnly?: boolean) => Promise<PlaylistRemoval>;
+  undoRemoval: (receipt: PlaylistRemoval) => Promise<void>;
+  duplicatePlaylist: (playlistId: string, name: string) => Promise<string>;
   reorderPlaylistTracks: (playlistId: string, trackPositions: [string, number][]) => Promise<void>;
   loadPlaylists: () => Promise<void>;
   refreshPlaylistTracks: () => Promise<void>;
+  updateTrackRating: (trackId: string, rating: number) => Promise<void>;
 }
 
 export function usePlaylists(): PlaylistsAPI {
@@ -43,11 +48,16 @@ export function usePlaylists(): PlaylistsAPI {
   const setLastPlaylistId = useStore(state => state.setLastPlaylistId);
   const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
   const [currentPlaylist, setCurrentPlaylist] = useState<string | null>(lastPlaylistId);
+  const currentPlaylistRef = useRef(currentPlaylist);
+  currentPlaylistRef.current = currentPlaylist;
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(Boolean(lastPlaylistId));
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [hasLoadedPlaylists, setHasLoadedPlaylists] = useState(false);
   const [loadedPlaylistId, setLoadedPlaylistId] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
+  const ratingWrites = useRef(new Map<string, Promise<void>>());
+  const ratingsDuringLoad = useRef<Map<string, number> | null>(null);
   // Use a ref instead of state so setting it does not re-create loadPlaylists
   // (which would cause a spurious second IPC call on mount via its useEffect).
   const hasRestoredPlaylistRef = useRef(false);
@@ -94,6 +104,8 @@ export function usePlaylists(): PlaylistsAPI {
 
   const loadPlaylistTracks = useCallback(async (playlistId: string | null) => {
     const requestId = ++loadRequestRef.current;
+    ratingsDuringLoad.current = playlistId ? new Map() : null;
+    setLoadError(null);
     if (!playlistId) {
       setPlaylistTracks([]);
       setLoadedPlaylistId(null);
@@ -105,16 +117,21 @@ export function usePlaylists(): PlaylistsAPI {
       setIsLoading(true);
       const tracks = await TauriAPI.getPlaylistTracks(playlistId);
       if (requestId !== loadRequestRef.current) return;
-      setPlaylistTracks(tracks);
+      // A read already in flight can finish after a rating was saved. Preserve
+      // those confirmed writes rather than showing the older query snapshot.
+      const ratings = ratingsDuringLoad.current;
+      setPlaylistTracks(ratings?.size ? tracks.map(track =>
+        ratings.has(track.id) ? { ...track, rating: ratings.get(track.id)! } : track
+      ) : tracks);
       setLoadedPlaylistId(playlistId);
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
-      setPlaylistTracks([]);
-      setLoadedPlaylistId(playlistId);
+      setLoadError(String(err));
       console.error('Failed to load playlist tracks:', err);
       throw err;
     } finally {
       if (requestId === loadRequestRef.current) {
+        ratingsDuringLoad.current = null;
         setIsLoading(false);
       }
     }
@@ -135,7 +152,7 @@ export function usePlaylists(): PlaylistsAPI {
     try {
       await TauriAPI.deletePlaylist(playlistId);
       await loadPlaylists();
-      if (currentPlaylist === playlistId) {
+      if (currentPlaylistRef.current === playlistId) {
         setCurrentPlaylist(null);
         setPlaylistTracks([]);
       }
@@ -158,7 +175,7 @@ export function usePlaylists(): PlaylistsAPI {
   const addTrackToPlaylist = useCallback(async (playlistId: string, trackId: string) => {
     try {
       await TauriAPI.addTrackToPlaylist(playlistId, trackId);
-      if (currentPlaylist === playlistId) {
+      if (currentPlaylistRef.current === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
     } catch (err) {
@@ -177,7 +194,7 @@ export function usePlaylists(): PlaylistsAPI {
       
       setAddingProgress({ current: trackIds.length, total: trackIds.length, isAdding: true });
       
-      if (currentPlaylist === playlistId) {
+      if (currentPlaylistRef.current === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
       
@@ -193,7 +210,7 @@ export function usePlaylists(): PlaylistsAPI {
   const removeTrackFromPlaylist = useCallback(async (playlistId: string, trackId: string) => {
     try {
       await TauriAPI.removeTrackFromPlaylist(playlistId, trackId);
-      if (currentPlaylist === playlistId) {
+      if (currentPlaylistRef.current === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
     } catch (err) {
@@ -205,7 +222,7 @@ export function usePlaylists(): PlaylistsAPI {
   const reorderPlaylistTracks = useCallback(async (playlistId: string, trackPositions: [string, number][]) => {
     try {
       await TauriAPI.reorderPlaylistTracks(playlistId, trackPositions);
-      if (currentPlaylist === playlistId) {
+      if (currentPlaylistRef.current === playlistId) {
         await loadPlaylistTracks(playlistId);
       }
     } catch (err) {
@@ -213,6 +230,24 @@ export function usePlaylists(): PlaylistsAPI {
       throw err;
     }
   }, [currentPlaylist, loadPlaylistTracks]);
+
+  const removeTracksFromPlaylist = useCallback(async (playlistId: string, ids: string[], missingOnly = false) => {
+    const receipt = await TauriAPI.removePlaylistTracks(playlistId, ids, missingOnly);
+    // Keep the undo receipt even if the subsequent read fails. loadError exposes a retry.
+    if (currentPlaylistRef.current === playlistId) await loadPlaylistTracks(playlistId).catch(() => {});
+    return receipt;
+  }, [loadPlaylistTracks]);
+
+  const undoRemoval = useCallback(async (receipt: PlaylistRemoval) => {
+    await TauriAPI.undoPlaylistRemoval(receipt);
+    if (currentPlaylistRef.current === receipt.playlistId) await loadPlaylistTracks(receipt.playlistId).catch(() => {});
+  }, [loadPlaylistTracks]);
+
+  const duplicatePlaylist = useCallback(async (playlistId: string, name: string) => {
+    const id = await TauriAPI.duplicatePlaylist(playlistId, name);
+    await loadPlaylists();
+    return id;
+  }, [loadPlaylists]);
 
   // Load playlists on mount
   useEffect(() => {
@@ -227,6 +262,7 @@ export function usePlaylists(): PlaylistsAPI {
 
   const isReady = hasLoadedPlaylists
     && !isLoading
+    && !loadError
     && loadedPlaylistId === currentPlaylist;
 
   const refreshPlaylistTracks = useCallback(async () => {
@@ -235,12 +271,40 @@ export function usePlaylists(): PlaylistsAPI {
     }
   }, [currentPlaylist, loadPlaylistTracks]);
 
-  return {
+  const updateTrackRating = useCallback((trackId: string, rating: number) => {
+    // Serialize writes to the same song, including rapid clicks. Only publish a
+    // rating after SQLite accepts it; a failed write leaves the displayed data intact.
+    const previous = ratingWrites.current.get(trackId) ?? Promise.resolve();
+    const write = previous.catch(() => {}).then(async () => {
+      await TauriAPI.updateTrackRating(trackId, rating);
+      ratingsDuringLoad.current?.set(trackId, rating);
+      setPlaylistTracks(tracks => tracks.some(track => track.id === trackId) ? tracks.map(track =>
+        track.id === trackId ? { ...track, rating } : track
+      ) : tracks);
+      const state = useStore.getState();
+      if (state.activePlaybackTracks.some(track => track.id === trackId)) {
+        state.setActivePlaybackTracks(state.activePlaybackTracks.map(track =>
+          track.id === trackId ? { ...track, rating } : track
+        ));
+      }
+    });
+    ratingWrites.current.set(trackId, write);
+    const cleanup = () => {
+      if (ratingWrites.current.get(trackId) === write) ratingWrites.current.delete(trackId);
+    };
+    void write.then(cleanup, cleanup);
+    return write;
+  }, []);
+
+  // PlaybackProvider also renders on audio ticks. Keep its playlist dependency
+  // stable so those ticks do not invalidate every visible row and its bounds cache.
+  return useMemo(() => ({
     playlists,
     currentPlaylist,
     setCurrentPlaylist,
     playlistTracks,
     isLoading,
+    loadError,
     isReady,
     addingProgress,
     createPlaylist,
@@ -249,8 +313,18 @@ export function usePlaylists(): PlaylistsAPI {
     addTrackToPlaylist,
     addTracksToPlaylist,
     removeTrackFromPlaylist,
+    removeTracksFromPlaylist,
+    undoRemoval,
+    duplicatePlaylist,
     reorderPlaylistTracks,
     loadPlaylists,
     refreshPlaylistTracks,
-  };
+    updateTrackRating,
+  }), [
+    playlists, currentPlaylist, playlistTracks, isLoading, loadError, isReady,
+    addingProgress, createPlaylist, deletePlaylist, renamePlaylist,
+    addTrackToPlaylist, addTracksToPlaylist, removeTrackFromPlaylist,
+    removeTracksFromPlaylist, undoRemoval, duplicatePlaylist,
+    reorderPlaylistTracks, loadPlaylists, refreshPlaylistTracks, updateTrackRating,
+  ]);
 }

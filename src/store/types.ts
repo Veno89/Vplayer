@@ -359,6 +359,7 @@ export interface SettingsSliceState {
     startMinimized: boolean;
     rememberWindowPositions: boolean;
     playlistAutoScroll: boolean;
+    playlistView: { widths: Record<string, number>; showAlbum: boolean; showRating: boolean };
     autoResizeWindow: boolean;
     confirmBeforeDelete: boolean;
     showNotifications: boolean;

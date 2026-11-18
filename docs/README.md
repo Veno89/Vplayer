@@ -22,6 +22,15 @@
 - The gear opens full Settings directly. The separate sliders button opens quick playback tools for speed, sleep timer, stop-after-current and equalizer. The track menu provides details, ratings, tag editing and the file location.
 - Loading and file/output errors appear in the Player with a retry action after reconnecting a drive or audio device.
 
+### Playlist controls
+
+- Player and Playlist tools share an icon row at the upper right. Hover or focus a tool for its explanation; use the Playlist **+** to create a playlist.
+- Follow playback reveals the current track on startup, when the Playlist is reopened, and as playback advances. Its icon is green when on and red when off, and its tooltip states the setting. The crosshair jumps to the current track; if search hides it, Reveal clears the search.
+- Click a track to play it, or press Enter. Right-click for queue actions and other track tools. Open **Selection tools** in the upper-right toolbar to show checkboxes and bulk actions; clicks then select tracks. **Done**, Escape in the list, or toggling the tool off exits selection mode and clears the selection. Searching keeps normal playback in the full playlist; **Play results** explicitly plays only the matches. Ctrl+F focuses playlist search and Escape clears it.
+- Selection follows track identities through sorting and filtering. Queue and remove selected tracks in batches; removal offers Undo. Drag to rearrange tracks after clearing search and restoring **Original order**.
+- In selection mode, click tracks to toggle them, or use **Select all**, **Clear**, and the checkboxes. Clicking empty playlist space also clears the selection. The playing track keeps its separate playback highlight.
+- The three-dot menu contains Rename, Duplicate, M3U Import/Export, column preferences, and **Check for missing tracks**. The check shows progress and a preview before removing playlist entries, preserves unavailable drives and access failures, and rechecks files before removal. It never deletes music files or library entries. Undo preserves the original order and refuses to overwrite later playlist edits.
+
 ### For Developers
 ```bash
 git clone https://github.com/Veno89/Vplayer.git

@@ -14,11 +14,13 @@ mod database_folders;
 mod database_library_browser;
 mod database_library_integrity;
 mod database_playlist;
+mod database_playlist_maintenance;
 mod database_schema;
 mod database_tracks;
 mod effects;
 mod error;
 mod lyrics;
+mod playlist_files;
 mod playlist_io;
 mod query_builder;
 mod replaygain;
@@ -106,6 +108,7 @@ use commands::{
     analyze_replaygain,
     cancel_scan,
     check_missing_files,
+    check_playlist_tracks,
     // Cache/System commands
     clear_album_art_cache,
     clear_failed_tracks,
@@ -117,6 +120,7 @@ use commands::{
     create_smart_playlist,
     delete_playlist,
     delete_smart_playlist,
+    duplicate_playlist,
     enforce_cache_limit,
     execute_smart_playlist,
     export_playlist,
@@ -174,6 +178,7 @@ use commands::{
     remove_duplicate_folders,
     remove_folder,
     remove_library_duplicates,
+    remove_playlist_tracks,
     remove_track,
     remove_track_from_playlist,
     rename_playlist,
@@ -203,6 +208,7 @@ use commands::{
     stop_audio,
     stop_folder_watch,
     swap_to_preloaded,
+    undo_playlist_removal,
     update_smart_playlist,
     update_track_path,
     update_track_tags,
@@ -480,6 +486,10 @@ fn main() {
             add_track_to_playlist,
             add_tracks_to_playlist,
             remove_track_from_playlist,
+            check_playlist_tracks,
+            remove_playlist_tracks,
+            undo_playlist_removal,
+            duplicate_playlist,
             reorder_playlist_tracks,
             get_playlist_tracks,
             increment_play_count,

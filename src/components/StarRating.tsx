@@ -47,6 +47,10 @@ export function StarRating({ rating = 0, onRatingChange, readOnly = false, size 
     <div 
       className="flex gap-0.5 items-center"
       onMouseLeave={handleMouseLeave}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+      }}
       role="group"
       aria-label={`Rating: ${rating} of 5 stars`}
     >

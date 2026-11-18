@@ -36,6 +36,8 @@ interface TrackMenuEvent {
 }
 
 interface TrackRowData {
+  selectOnClick?: boolean;
+  panelColumns?: boolean;
   onDragEnd?: () => void;
   onPlayTrack?: (index: number) => void;
   listId: string;
@@ -72,6 +74,13 @@ export interface TrackListHandle {
 }
 
 interface TrackListProps {
+  selectionMode?: boolean;
+  onReady?: () => void;
+  onEnterTrack?: (index: number) => void;
+  selectOnClick?: boolean;
+  panelColumns?: boolean;
+  onRemoveSelected?: () => void;
+  hideSelectionToolbar?: boolean;
   onDragEnd?: () => void;
   onRowsRendered?: (start: number, stop: number) => void;
   onBatchActionIndices?: (action: string, indices: number[]) => void;
@@ -180,7 +189,7 @@ const TrackRow = ({
   };
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelectMode) {
+    if (onToggleSelect && (e.shiftKey || e.ctrlKey || e.metaKey || (isMultiSelectMode && !data.selectOnClick))) {
       e.preventDefault();
       if (onToggleSelect) {
         onToggleSelect(index, e.shiftKey, e.ctrlKey || e.metaKey);
@@ -195,13 +204,14 @@ const TrackRow = ({
       {...ariaAttributes}
       id={`${listId}-track-${index}`}
       role="option"
-      aria-selected={isSelected || isActive}
+      aria-selected={isSelected || (!data.selectOnClick && isActive)}
+      aria-current={isActive ? 'true' : undefined}
       style={style}
-      draggable={isDraggable && !isMultiSelectMode}
-      onDragStart={(e) => isDraggable && !isMultiSelectMode && onDragStart?.(e, index)}
+      draggable={isDraggable && (!isMultiSelectMode || !!data.selectOnClick && (selectedIndices?.size ?? 0) <= 1)}
+      onDragStart={(e) => isDraggable && onDragStart?.(e, index)}
       onDragEnd={() => data.onDragEnd?.()}
-      onDragOver={(e) => isDraggable && !isMultiSelectMode && onDragOver?.(e, index)}
-      onDrop={(e) => isDraggable && !isMultiSelectMode && onDrop?.(e, index)}
+      onDragOver={(e) => isDraggable && onDragOver?.(e, index)}
+      onDrop={(e) => isDraggable && onDrop?.(e, index)}
       onContextMenu={(e) => {
         if (onShowMenu) {
           e.preventDefault();
@@ -235,18 +245,18 @@ const TrackRow = ({
       {/* Selection Checkbox / Drag Handle */}
       {isMultiSelectMode ? (
         <div className="w-6 flex items-center justify-center">
-          <div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${isSelected
+          <button type="button" role="checkbox" aria-checked={isSelected} aria-label={`${isSelected ? 'Deselect' : 'Select'} ${track.title || track.name || 'track'}`} onClick={event => { event.stopPropagation(); onToggleSelect?.(index, false, true); }} onDoubleClick={event => event.stopPropagation()} className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${isSelected
             ? 'bg-cyan-500 border-cyan-500'
             : 'border-slate-500 hover:border-cyan-400'
             }`}>
             {isSelected && <Check className="w-3 h-3 text-white" />}
-          </div>
+          </button>
         </div>
       ) : isDraggable ? (
         <div className="w-6 flex items-center justify-center text-slate-500 cursor-grab active:cursor-grabbing">
           <GripVertical className="w-4 h-4" />
         </div>
-      ) : null}
+      ) : data.panelColumns ? <span className="w-6 shrink-0" /> : null}
 
       {/* Track Number */}
       {showNumber && (
@@ -289,7 +299,7 @@ const TrackRow = ({
       {/* Album */}
       {showAlbum && (
         <span
-          className="truncate text-slate-500 hidden lg:block px-1"
+          className={`truncate text-slate-500 px-1 ${data.panelColumns ? '' : 'hidden lg:block'}`}
           style={{ width: columnWidths?.album || 160 }}
           title={track.album || 'Unknown Album'}
         >
@@ -388,18 +398,35 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
   onDragEnd,
   columnWidths,
   queuePositions,
+  onReady,
+  onEnterTrack,
+  selectOnClick = false,
+  panelColumns = false,
+  onRemoveSelected,
+  hideSelectionToolbar = false,
+  selectionMode,
 }, ref) {
   const listId = useId();
   const [focusedIndex, setFocusedIndex] = useState<number>(currentTrack ?? 0);
   const [localSelectedIndices, setLocalSelectedIndices] = useState<Set<number>>(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const selectionAnchor = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<ListImperativeAPI>(null);
 
   // Use external or local selection state
   const actualSelectedIndices = selectedIndices ?? localSelectedIndices;
   const setActualSelectedIndices = onSelectionChange ?? setLocalSelectedIndices;
+  const listHeight = !hideSelectionToolbar && isMultiSelectMode && actualSelectedIndices.size > 0
+    ? (height || 300) - 44
+    : (height || 300);
+
+  useEffect(() => { if (listRef.current) onReady?.(); }, [onReady]);
+  useEffect(() => { setFocusedIndex(previous => Math.max(0, Math.min(previous, tracks.length - 1))); }, [tracks]);
+  useEffect(() => {
+    if (selectionMode !== undefined) setIsMultiSelectMode(selectionMode);
+    else if (selectOnClick) setIsMultiSelectMode(actualSelectedIndices.size > 0);
+  }, [selectionMode, selectOnClick, actualSelectedIndices]);
 
   // Expose scrollToItem via ref
   React.useImperativeHandle(ref, () => ({
@@ -431,7 +458,8 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     setActualSelectedIndices((prev: Set<number>) => {
       const newSet = new Set(prev);
 
-      if (isShift && lastSelectedIndex !== null) {
+      const lastSelectedIndex = selectionAnchor.current === null ? -1 : tracks.findIndex(track => track?.id === selectionAnchor.current);
+      if (isShift && lastSelectedIndex >= 0) {
         // Range selection
         const start = Math.min(lastSelectedIndex, index);
         const end = Math.max(lastSelectedIndex, index);
@@ -460,7 +488,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         }
       }
 
-      setLastSelectedIndex(index);
+      selectionAnchor.current = tracks[index]?.id ?? null;
 
       // Enable/disable multi-select mode based on selection count
       if (newSet.size > 0) {
@@ -471,7 +499,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
 
       return newSet;
     });
-  }, [lastSelectedIndex, isMultiSelectMode, setActualSelectedIndices]);
+  }, [tracks, isMultiSelectMode, setActualSelectedIndices]);
 
   const dispatchBatchAction = useCallback((action: string) => {
     const indices = Array.from(actualSelectedIndices).sort((a, b) => a - b);
@@ -485,7 +513,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
 
     // Multi-select shortcuts
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'a') {
+      if (enableMultiSelect && e.key === 'a') {
         // Select all
         e.preventDefault();
         setActualSelectedIndices(new Set(tracks.keys()));
@@ -502,7 +530,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       return;
     }
 
-    if (e.key === 'Delete' && isMultiSelectMode && actualSelectedIndices.size > 0) {
+    if (enableMultiSelect && e.key === 'Delete' && isMultiSelectMode && actualSelectedIndices.size > 0) {
       // Batch delete
       e.preventDefault();
       dispatchBatchAction('delete');
@@ -528,8 +556,8 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         break;
       case 'Enter':
         e.preventDefault();
-        if (onPlayTrack) {
-          onPlayTrack(focusedIndex);
+        if (onEnterTrack || onPlayTrack) {
+          (onEnterTrack ?? onPlayTrack)?.(focusedIndex);
         } else {
           onSelect(focusedIndex);
         }
@@ -570,14 +598,14 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       default:
         break;
     }
-  }, [tracks, focusedIndex, onSelect, onPlayTrack, enableMultiSelect, handleToggleSelect, isMultiSelectMode, actualSelectedIndices, onBatchAction, setActualSelectedIndices, dispatchBatchAction]);
+  }, [tracks, focusedIndex, onSelect, onPlayTrack, onEnterTrack, enableMultiSelect, handleToggleSelect, isMultiSelectMode, actualSelectedIndices, onBatchAction, setActualSelectedIndices, dispatchBatchAction]);
 
   const itemData = React.useMemo(() => ({
-    onPlayTrack, onDragEnd,
+    onPlayTrack, onDragEnd, selectOnClick, panelColumns,
     listId,
     tracks,
     currentTrack,
-    onSelect: (index: number) => { setFocusedIndex(index); onSelect(index); },
+    onSelect: (index: number) => { setFocusedIndex(index); selectionAnchor.current = tracks[index]?.id ?? null; if (selectOnClick) containerRef.current?.focus({ preventScroll: true }); onSelect(index); },
     currentColors,
     loadingTrackIndex,
     onRatingChange,
@@ -596,8 +624,8 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     showNumber,
     showDuration,
     selectedIndices: actualSelectedIndices,
-    onToggleSelect: enableMultiSelect ? handleToggleSelect : undefined,
-    isMultiSelectMode
+    onToggleSelect: enableMultiSelect ? (index: number, shift: boolean, ctrl: boolean) => { setFocusedIndex(index); if (selectOnClick) containerRef.current?.focus({ preventScroll: true }); handleToggleSelect(index, shift, ctrl); } : undefined,
+    isMultiSelectMode: enableMultiSelect && (selectionMode ?? isMultiSelectMode)
   }), [
     tracks,
     currentTrack,
@@ -623,7 +651,7 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
     handleToggleSelect,
     isMultiSelectMode,
     queuePositions,
-    listId, onPlayTrack, onDragEnd
+    listId, onPlayTrack, onDragEnd, selectOnClick, panelColumns, selectionMode
   ]);
 
   return (
@@ -631,19 +659,20 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="outline-hidden focus:outline-hidden"
+      className="outline-hidden focus:outline-hidden min-w-0"
       role="listbox"
       aria-label="Track list"
       aria-activedescendant={tracks[focusedIndex] ? `${listId}-track-${focusedIndex}` : undefined}
       aria-multiselectable={enableMultiSelect}
     >
       {/* Multi-select toolbar */}
-      {isMultiSelectMode && actualSelectedIndices.size > 0 && (
-        <div className="flex items-center justify-between px-3 py-2 bg-cyan-900/30 border-b border-cyan-700/50">
+      {!hideSelectionToolbar && isMultiSelectMode && actualSelectedIndices.size > 0 && (
+        <div className="flex h-11 items-center justify-between gap-2 overflow-x-auto whitespace-nowrap px-3 py-2 bg-cyan-900/30 border-b border-cyan-700/50">
           <span className="text-sm text-cyan-300">
             {actualSelectedIndices.size} track{actualSelectedIndices.size !== 1 ? 's' : ''} selected
           </span>
           <div className="flex gap-2">
+            {onRemoveSelected && <button onClick={onRemoveSelected} className="px-2 py-1 text-xs text-red-300 hover:bg-slate-700 rounded-sm">Remove</button>}
             <button
               onClick={() => {
                 dispatchBatchAction('queue');
@@ -681,11 +710,13 @@ export const TrackList = React.forwardRef<TrackListHandle, TrackListProps>(funct
         rowHeight={itemSize}
         rowKey={trackRowKey}
         rowProps={itemData}
+        // Keep a viewport of rows ready on both sides during scrollbar dragging.
+        // The buffer stays bounded regardless of the number of playlist entries.
+        overscanCount={Math.max(8, Math.ceil(listHeight / itemSize))}
         style={{
-          height: isMultiSelectMode && actualSelectedIndices.size > 0
-            ? (height || 300) - 44
-            : (height || 300),
+          height: listHeight,
           width: '100%',
+          scrollbarGutter: panelColumns ? 'stable' : undefined,
         }}
       />
     </div>

@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { useId } from 'react';
 import { StarRating } from '../StarRating';
 import { useDialogFocus } from '../../hooks/useDialogFocus';
-import type { Track, Playlist } from '../../types';
+import type { Track } from '../../types';
 import type { ColorScheme } from '../../store/types';
 
 interface NewPlaylistDialogProps {
@@ -16,7 +16,7 @@ interface NewPlaylistDialogProps {
 
 interface PlaylistPickerDialogProps {
     track: Track | null;
-    playlists: Playlist[];
+    playlists: { id: string; name: string }[];
     onAdd: (playlistId: string, trackId: string) => void;
     onClose: () => void;
 }
@@ -30,7 +30,7 @@ interface RatingDialogProps {
 interface BatchPlaylistPickerDialogProps {
     isOpen: boolean;
     selectedCount: number;
-    playlists: Playlist[];
+    playlists: { id: string; name: string }[];
     onAdd: (playlistId: string) => void;
     onClose: () => void;
 }

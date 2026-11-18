@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Window};
 
-fn register_scan(state: &AppState, scan_id: &str) -> AppResult<Arc<AtomicBool>> {
+pub(crate) fn register_scan(state: &AppState, scan_id: &str) -> AppResult<Arc<AtomicBool>> {
     let mut operations = state
         .scan_operations
         .lock()

@@ -1,305 +1,160 @@
-import { useCallback } from 'react';
+import { useRef, useState } from 'react';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { TauriAPI, type PlaylistRemoval } from '../services/TauriAPI';
 import { useStore } from '../store/useStore';
-import { log } from '../utils/logger';
-import { nativeConfirm, nativeAlert } from '../utils/nativeDialog';
+import { nativeConfirm } from '../utils/nativeDialog';
 import { useToast } from './useToast';
-import type { Track } from '../types';
 import type { PlaylistsAPI } from './usePlaylists';
 
-interface SortConfig {
-  key: string;
-  direction: 'asc' | 'desc';
-}
-
-interface ContextMenuState {
-  x: number;
-  y: number;
-  track: Track;
-  index: number;
-}
-
-interface PlaylistActionsParams {
-  playlists: PlaylistsAPI;
-  displayTracks: Track[];
-  currentTrack: number | null;
-  setCurrentTrack: (index: number | null) => void;
-  draggedIndex: number | null;
-  setDraggedIndex: (index: number | null) => void;
-  setDragOverIndex: (index: number | null) => void;
-  setIsDraggingOver: (isDragging: boolean) => void;
-  setContextMenu: (menu: ContextMenuState | null) => void;
-  setShowNewPlaylistDialog: (show: boolean) => void;
-  newPlaylistName: string;
-  setNewPlaylistName: (name: string) => void;
-  setSortConfig: (updater: (current: SortConfig) => SortConfig) => void;
-  onActiveTracksChange?: (tracks: Track[]) => void;
-}
-
-/**
- * Custom hook that extracts playlist action handlers from PlaylistWindow.
- * This reduces the main component size and makes the logic more testable.
- * 
- * @param {Object} params - Hook parameters
- * @param {Object} params.playlists - Playlists hook instance
- * @param {Array} params.displayTracks - Currently displayed tracks
- * @param {number|null} params.currentTrack - Current track index
- * @param {Function} params.setCurrentTrack - Set current track
- * @param {number|null} params.draggedIndex - Dragged item index
- * @param {Function} params.setDraggedIndex - Set dragged index
- * @param {Function} params.setDragOverIndex - Set drag over index
- * @param {Function} params.setIsDraggingOver - Set external drag state
- * @param {Function} params.setContextMenu - Set context menu state
- * @param {Function} params.setShowNewPlaylistDialog - Show new playlist dialog
- * @param {string} params.newPlaylistName - New playlist name input
- * @param {Function} params.setNewPlaylistName - Set new playlist name
- * @param {Function} params.setSortConfig - Set sort config
- * @param {Function} params.onActiveTracksChange - Callback when active tracks change
- */
-export function usePlaylistActions({
-    playlists,
-    displayTracks,
-    currentTrack,
-    setCurrentTrack,
-    draggedIndex,
-    setDraggedIndex,
-    setDragOverIndex,
-    setIsDraggingOver,
-    setContextMenu,
-    setShowNewPlaylistDialog,
-    newPlaylistName,
-    setNewPlaylistName,
-    setSortConfig,
-    onActiveTracksChange,
-}: PlaylistActionsParams) {
-    const toast = useToast();
-
-    // Sort handler
-    const handleSort = useCallback((key: string) => {
-        setSortConfig(current => ({
-            key,
-            direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
-        }));
-    }, [setSortConfig]);
-
-    // Drag and drop handlers for playlist reordering
-    const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
-        setDraggedIndex(index);
-        e.dataTransfer.effectAllowed = 'move';
-    }, [setDraggedIndex]);
-
-    const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        setDragOverIndex(index);
-    }, [setDragOverIndex]);
-
-    const handleDrop = useCallback(async (e: React.DragEvent, dropIndex: number) => {
-        e.preventDefault();
-
-        // Only handle internal reordering
-        if (draggedIndex === null || draggedIndex === dropIndex) {
-            setDraggedIndex(null);
-            setDragOverIndex(null);
-            return;
-        }
-
-        const newTracks = [...displayTracks];
-        const draggedTrack = newTracks[draggedIndex];
-        newTracks.splice(draggedIndex, 1);
-        newTracks.splice(dropIndex, 0, draggedTrack);
-
-        const trackPositions = newTracks.map((track, idx) => [track.id, idx] as [string, number]);
-
-        try {
-            await playlists.reorderPlaylistTracks(playlists.currentPlaylist!, trackPositions);
-        } catch (err) {
-            console.error('Failed to reorder tracks:', err);
-        }
-
-        setDraggedIndex(null);
-        setDragOverIndex(null);
-    }, [draggedIndex, displayTracks, playlists, setDraggedIndex, setDragOverIndex]);
-
-    // Remove track from playlist
-    const handleRemoveFromPlaylist = useCallback(async (track: Track) => {
-        if (!playlists.currentPlaylist) return;
-
-        try {
-            await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
-        } catch (err) {
-            console.error('Failed to remove track from playlist:', err);
-        }
-    }, [playlists]);
-
-    // Handle external track drops
-    const handleExternalDrop = useCallback(async (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDraggingOver(false);
-
-        log.info('[PlaylistWindow] handleExternalDrop called');
-        let data = e.dataTransfer.getData('application/json');
-        if (!data) {
-            data = e.dataTransfer.getData('text/plain');
-        }
-        log.info('[PlaylistWindow] drop data:', data ? `${data.substring(0, 50)}...` : 'EMPTY');
-        if (!data) return;
-
-        try {
-            const tracks = JSON.parse(data);
-
-            if (!playlists.currentPlaylist) {
-                console.warn('Please select or create a playlist first');
-                return;
-            }
-
-            // Limit the number of tracks to prevent freezing
-            const MAX_TRACKS_PER_DROP = 10000;
-            if (tracks.length > MAX_TRACKS_PER_DROP) {
-                console.warn(`Too many tracks (${tracks.length}). Maximum ${MAX_TRACKS_PER_DROP} tracks per drop.`);
-                return;
-            }
-
-            log.info('Adding tracks to playlist:', tracks.length);
-            await playlists.addTracksToPlaylist(playlists.currentPlaylist!, tracks.map((t: { id: string }) => t.id));
-        } catch (err) {
-            await nativeAlert('Failed to add tracks to playlist', 'Error');
-        }
-    }, [playlists, setIsDraggingOver]);
-
-    // Close context menu
-    const closeContextMenu = useCallback(() => {
-        setContextMenu(null);
-    }, [setContextMenu]);
-
-    // Handle track removal with confirmation
-    const handleRemoveTrack = useCallback(async (index: number) => {
-        const track = displayTracks[index];
-        if (!track || !playlists.currentPlaylist) return;
-
-        // Check confirmBeforeDelete setting
-        const shouldConfirm = useStore.getState().confirmBeforeDelete;
-        if (shouldConfirm) {
-            let confirmed = false;
-            try {
-                confirmed = await nativeConfirm(
-                    `Remove "${track.title}" from this playlist?`,
-                    'Remove Track'
-                );
-            } catch {
-                // Dialog error — treat as cancelled
-                closeContextMenu();
-                return;
-            }
-            if (!confirmed) {
-                closeContextMenu();
-                return;
-            }
-        }
-
-        try {
-            await playlists.removeTrackFromPlaylist(playlists.currentPlaylist, track.id);
-        } catch (err) {
-            console.error('Failed to remove track from playlist:', err);
-            toast.showError(`Failed to remove track: ${err instanceof Error ? err.message : String(err)}`);
-            closeContextMenu();
-            return;
-        }
-
-        // Adjust current track if needed
-        if (currentTrack !== null && currentTrack === index) {
-            setCurrentTrack(Math.min(index, displayTracks.length - 2));
-        } else if (currentTrack !== null && currentTrack > index) {
-            setCurrentTrack(currentTrack - 1);
-        }
-
-        closeContextMenu();
-    }, [displayTracks, playlists, currentTrack, setCurrentTrack, closeContextMenu]);
-
-    // Create new playlist
-    const handleCreatePlaylist = useCallback(async () => {
-        if (!newPlaylistName.trim()) return;
-
-        try {
-            const newPlaylist = await playlists.createPlaylist(newPlaylistName);
-            setNewPlaylistName('');
-            setShowNewPlaylistDialog(false);
-            // Auto-select the new playlist
-            if (newPlaylist) {
-                await playlists.setCurrentPlaylist(newPlaylist);
-            }
-        } catch (err) {
-            await nativeAlert('Failed to create playlist', 'Error');
-        }
-    }, [newPlaylistName, playlists, setNewPlaylistName, setShowNewPlaylistDialog]);
-
-    // Delete playlist
-    const handleDeletePlaylist = useCallback(async (playlistId: string) => {
-        log.info('[PlaylistWindow] Deleting playlist immediately, no confirmation:', playlistId);
-        try {
-            await playlists.deletePlaylist(playlistId);
-
-            // Clear saved playlist if we deleted it
-            const lastPlaylistId = useStore.getState().lastPlaylistId;
-            if (lastPlaylistId === playlistId) {
-                useStore.getState().setLastPlaylistId(null);
-            }
-        } catch (err) {
-            await nativeAlert('Failed to delete playlist', 'Error');
-        }
-    }, [playlists]);
-
-    // Switch to playlist
-    const handleSelectPlaylist = useCallback((playlistId: string) => {
-        playlists.setCurrentPlaylist(playlistId);
-    }, [playlists]);
-
-    // Track selection handler — respects doubleClickAction setting
-    const handleTrackSelect = useCallback((index: number) => {
-        const action = useStore.getState().doubleClickAction;
-
-        if (action === 'enqueue') {
-            // Add the track to end of queue
-            const track = displayTracks[index];
-            if (track) {
-                useStore.getState().addToQueue(track, 'end');
-            }
-            return;
-        }
-
-        if (action === 'playNext') {
-            // Insert the track after the current position
-            const track = displayTracks[index];
-            if (track) {
-                useStore.getState().addToQueue(track, 'next');
-            }
-            return;
-        }
-
-        // Default: 'play' — set active tracks and play immediately
-        if (onActiveTracksChange) {
-            onActiveTracksChange(displayTracks);
-        }
-        setCurrentTrack(index);
-    }, [displayTracks, onActiveTracksChange, setCurrentTrack]);
-
-    return {
-        // Sort
-        handleSort,
-        // Drag & drop
-        handleDragStart,
-        handleDragOver,
-        handleDrop,
-        // Track actions
-        handleRemoveFromPlaylist,
-        handleExternalDrop,
-        handleRemoveTrack,
-        handleTrackSelect,
-        // Playlist management
-        handleCreatePlaylist,
-        handleDeletePlaylist,
-        handleSelectPlaylist,
-        // Context menu
-        closeContextMenu,
-    };
+export function usePlaylistActions(playlists: PlaylistsAPI) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const [receipt, setReceipt] = useState<PlaylistRemoval | null>(null);
+  const [nameDialog, setNameDialog] = useState<{
+    kind: 'New' | 'Rename' | 'Duplicate';
+    id?: string;
+  } | null>(null);
+  const [name, setName] = useState('');
+  const exclusive = async <T>(action: () => Promise<T>): Promise<T> => {
+    if (lock.current)
+      throw new Error('Please wait for the current playlist operation.');
+    lock.current = true;
+    setBusy(true);
+    try {
+      return await action();
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const run = (action: () => Promise<unknown>) => {
+    void exclusive(action).catch((error) => toast.showError(String(error)));
+  };
+  const promptName = (kind: 'New' | 'Rename' | 'Duplicate') => {
+    const playlist = playlists.playlists.find(
+      (item) => item.id === playlists.currentPlaylist
+    );
+    setName(
+      kind === 'New'
+        ? ''
+        : `${playlist?.name ?? ''}${kind === 'Duplicate' ? ' (copy)' : ''}`
+    );
+    setNameDialog({ kind, id: playlist?.id });
+  };
+  const submitName = () =>
+    run(async () => {
+      if (!name.trim() || !nameDialog) return;
+      if (nameDialog.kind === 'New')
+        playlists.setCurrentPlaylist(
+          await playlists.createPlaylist(name.trim())
+        );
+      else if (nameDialog.id && nameDialog.kind === 'Rename')
+        await playlists.renamePlaylist(nameDialog.id, name.trim());
+      else if (nameDialog.id)
+        playlists.setCurrentPlaylist(
+          await playlists.duplicatePlaylist(nameDialog.id, name.trim())
+        );
+      setNameDialog(null);
+    });
+  const remove = async (
+    playlistId: string,
+    ids: string[],
+    missingOnly = false
+  ) => {
+    if (!ids.length) return false;
+    if (
+      !missingOnly &&
+      useStore.getState().confirmBeforeDelete &&
+      !(await nativeConfirm(
+        `Remove ${ids.length} track${ids.length === 1 ? '' : 's'} from this playlist? Music files and library entries are kept.`,
+        'Remove from playlist'
+      ))
+    )
+      return false;
+    const result = await playlists.removeTracksFromPlaylist(
+      playlistId,
+      ids,
+      missingOnly
+    );
+    if (result.removed > 0) setReceipt(result);
+    toast.showInfo(
+      result.removed
+        ? `Removed ${result.removed} track${result.removed === 1 ? '' : 's'} from playlist`
+        : 'No entries removed. Files may have become available again.'
+    );
+    return true;
+  };
+  const undo = () =>
+    run(async () => {
+      if (!receipt) return;
+      await playlists.undoRemoval(receipt);
+      setReceipt(null);
+      toast.showSuccess('Playlist entries restored');
+    });
+  const deletePlaylist = () =>
+    run(async () => {
+      const playlist = playlists.playlists.find(
+        (item) => item.id === playlists.currentPlaylist
+      );
+      if (
+        playlist &&
+        (await nativeConfirm(
+          `Delete playlist “${playlist.name}”? Your library and music files are kept.`,
+          'Delete playlist'
+        ))
+      ) {
+        await playlists.deletePlaylist(playlist.id);
+        if (receipt?.playlistId === playlist.id) setReceipt(null);
+      }
+    });
+  const importPlaylist = () =>
+    run(async () => {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: 'M3U playlist', extensions: ['m3u', 'm3u8'] }],
+      });
+      if (typeof path !== 'string') return;
+      const name =
+        path
+          .split(/[\\/]/)
+          .pop()
+          ?.replace(/\.m3u8?$/i, '') || 'Imported playlist';
+      await TauriAPI.importPlaylist(name, path);
+      await playlists.loadPlaylists();
+      toast.showSuccess(`Imported ${name}`);
+    });
+  const exportPlaylist = () =>
+    run(async () => {
+      const playlist = playlists.playlists.find(
+        (item) => item.id === playlists.currentPlaylist
+      );
+      if (!playlist) return;
+      const path = await save({
+        defaultPath: `${playlist.name.replace(/[<>:"/\\|?*]/g, '_')}.m3u`,
+        filters: [{ name: 'M3U playlist', extensions: ['m3u'] }],
+      });
+      if (path) {
+        await TauriAPI.exportPlaylist(playlist.id, path);
+        toast.showSuccess('Playlist exported');
+      }
+    });
+  return {
+    busy,
+    run,
+    receipt,
+    setReceipt,
+    nameDialog,
+    setNameDialog,
+    name,
+    setName,
+    promptName,
+    submitName,
+    remove,
+    undo,
+    deletePlaylist,
+    importPlaylist,
+    exportPlaylist,
+    exclusive,
+  };
 }

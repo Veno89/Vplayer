@@ -45,6 +45,21 @@ beforeEach(() => {
 });
 
 describe('react-window v2 integrations', () => {
+  it('keeps a bounded scroll buffer and renders distant rows during rapid scrollbar jumps', () => {
+    const largePlaylist = Array.from({ length: 10000 }, (_, index) => ({
+      id: `track-${index}`, name: `Song ${index}`, path: `C:/Music/${index}.mp3`, rating: 3, duration: 120,
+    }));
+    render(<TrackList tracks={largePlaylist} currentTrack={0} onSelect={vi.fn()}
+      currentColors={colors} loadingTrackIndex={null} height={480} itemSize={48} showRating />);
+    const scroller = screen.getByRole('listbox').querySelector('[role="presentation"]')!;
+    expect(screen.getByText('Song 19')).toBeInTheDocument();
+    for (const index of [8000, 250, 9500, 4200, 9980, 0]) {
+      fireEvent.scroll(scroller, { target: { scrollTop: index * 48 } });
+      expect(screen.getByText(`Song ${index}`)).toBeInTheDocument();
+      expect(screen.getAllByRole('option').length).toBeLessThanOrEqual(31);
+    }
+  });
+
   it('preserves TrackList listbox navigation and the public scroll adapter', () => {
     const onPlayTrack = vi.fn();
     const listRef = React.createRef<TrackListHandle>();

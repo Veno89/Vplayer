@@ -1,8 +1,21 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Play, Pause, Plus, Trash2, Edit3, Copy, Info, Star,
-  Music, FolderOpen, ListPlus, Eye, EyeOff, ListEnd, RotateCcw
+  Play,
+  Pause,
+  Plus,
+  Trash2,
+  Edit3,
+  Copy,
+  Info,
+  Star,
+  Music,
+  FolderOpen,
+  ListPlus,
+  Eye,
+  EyeOff,
+  ListEnd,
+  RotateCcw,
 } from 'lucide-react';
 import { TauriAPI } from '../services/TauriAPI';
 import type { Track } from '../types';
@@ -34,6 +47,7 @@ interface ContextMenuProps {
   y: number;
   items: MenuItem[];
   onClose: () => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
 interface TrackContextMenuParams {
@@ -75,7 +89,13 @@ interface FolderContextMenuParams {
   onShowInExplorer: () => void;
 }
 
-export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export function ContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+  triggerRef,
+}: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -107,33 +127,46 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const focusTimer = window.setTimeout(() => {
-      menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+      menuRef.current
+        ?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+        ?.focus();
     }, 0);
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+    const handleClickOutside = (e: Event) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        !triggerRef?.current?.contains(e.target as Node)
+      ) {
         onClose();
       }
     };
-    // Block scroll on body while menu is open to prevent detaching
-    // or we can attach listener to reposition? For now, close on scroll.
-    const handleScroll = () => {
-      // Optional: Close on scroll?
+    const handleScroll = (event: Event) => {
+      if (
+        !(event.target instanceof Node) ||
+        !menuRef.current?.contains(event.target)
+      )
+        onClose();
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    // Window shells stop bubbling mouse events; dismissal must run in capture.
+    document.addEventListener('pointerdown', handleClickOutside, true);
+    document.addEventListener('mousedown', handleClickOutside, true);
     window.addEventListener('scroll', handleScroll, true);
 
     return () => {
       window.clearTimeout(focusTimer);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('pointerdown', handleClickOutside, true);
+      document.removeEventListener('mousedown', handleClickOutside, true);
       window.removeEventListener('scroll', handleScroll, true);
       previouslyFocused?.focus();
     };
-  }, [onClose]);
+  }, [onClose, triggerRef]);
 
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const buttons = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [],
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        'button:not(:disabled)'
+      ) ?? []
     );
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -141,15 +174,21 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       onClose();
       return;
     }
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || buttons.length === 0) {
+    if (
+      !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) ||
+      buttons.length === 0
+    ) {
       return;
     }
     event.preventDefault();
-    const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const currentIndex = buttons.indexOf(
+      document.activeElement as HTMLButtonElement
+    );
     let nextIndex = currentIndex;
     if (event.key === 'Home') nextIndex = 0;
     else if (event.key === 'End') nextIndex = buttons.length - 1;
-    else if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1 + buttons.length) % buttons.length;
+    else if (event.key === 'ArrowDown')
+      nextIndex = (currentIndex + 1 + buttons.length) % buttons.length;
     else nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
     buttons[nextIndex]?.focus();
   };
@@ -162,7 +201,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         left: `${position.x}px`,
         top: `${position.y}px`,
         maxHeight: '400px',
-        overflowY: 'auto'
+        overflowY: 'auto',
       }}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={handleMenuKeyDown}
@@ -172,7 +211,13 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       {items.map((item: MenuItem, index: number) => {
         // ... (existing items map)
         if (item.type === 'separator') {
-          return <div key={index} role="separator" className="h-px bg-slate-700 my-2" />;
+          return (
+            <div
+              key={index}
+              role="separator"
+              className="h-px bg-slate-700 my-2"
+            />
+          );
         }
 
         const Icon = item.icon;
@@ -189,9 +234,10 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
             className={`
               w-full flex items-center gap-3 px-4 py-2 text-sm text-left
               transition-colors
-              ${item.disabled
-                ? 'text-slate-500 cursor-not-allowed'
-                : 'text-white hover:bg-slate-700 cursor-pointer'
+              ${
+                item.disabled
+                  ? 'text-slate-500 cursor-not-allowed'
+                  : 'text-white hover:bg-slate-700 cursor-pointer'
               }
               ${item.danger ? 'hover:bg-red-600/20 hover:text-red-400' : ''}
             `}
